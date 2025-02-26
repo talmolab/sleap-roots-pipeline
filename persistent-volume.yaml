@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: local-storage-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany  # Allows multiple pods to access the volume
+  persistentVolumeReclaimPolicy: Retain # Retain the volume after the claim is deleted
+  storageClassName: local-storage
+  hostPath:
+    path: /mnt/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data  # Local storage directory on the Kubernetes node
