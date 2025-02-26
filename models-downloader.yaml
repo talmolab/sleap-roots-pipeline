@@ -1,0 +1,14 @@
+volumes:
+- name: pipeline-storage
+  persistentVolumeClaim:
+    claimName: local-artifacts-pvc
+
+templates:
+- name: models-downloader
+  container:
+    image: registry.gitlab.com/salk-tm/models-downloader:latest
+    command: ["python", "/workspace/src/main.py"]
+    args: ["/workspace/input", "/workspace/output"]
+    volumeMounts:
+      - name: pipeline-storage
+        mountPath: /workspace
