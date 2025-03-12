@@ -1,0 +1,35 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# https://argo-workflows.readthedocs.io/en/latest/workflow-concepts/
+
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: sleap-roots-pipeline- # Appended with a unique identifier
+  namespace: argo
+spec:
+  entrypoint: pipeline
+  arguments:
+    parameters:
+      - name: models-input-dir
+        value: "/workspace/input"
+      - name: models-output-dir
+        value: "/workspace/output"
+
+  volumes:
+    - name: models-input-pv # Volume name
+      persistentVolumeClaim:
+        claimName: models-input-pvc # Claim name
+    - name: models-output-pv # Volume name
+      persistentVolumeClaim:
+        claimName: models-output-pvc  # Claim name
+
+  # Import external templates here
+  templates:
+  - name: pipeline
+    dag:
+      tasks:
+      - name: models-downloader
+        templateRef:
+          name: models-downloader-template  # Reference to external template name
+          template: models-downloader       # Template name inside the WorkflowTemplate
+

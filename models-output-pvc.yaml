@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: models-output-pvc
+  namespace: argo
+spec:
+  accessModes:
+    - ReadWriteMany # Allows multiple pods to access the volume
+  resources:
+    requests:
+      storage: 2Gi # Less storage than the PersistentVolume
+  storageClassName: hostpath # Defined in the PersistentVolume
