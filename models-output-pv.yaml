@@ -8,7 +8,7 @@ spec:
     storage: 5Gi
   accessModes:
     - ReadWriteMany  # Allows multiple pods to access the volume
-  persistentVolumeReclaimPolicy: Retain # Retain the volume after the claim is deleted
+  persistentVolumeReclaimPolicy: Delete # Delete the volume after the claim is deleted
   storageClassName: hostpath # Storage class to use for the volume
   hostPath:
     path: /mnt/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output  # Local storage directory on the Kubernetes node
