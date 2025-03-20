@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: local-workflow-test-
+  namespace: argo
+spec:
+  entrypoint: local-pvc
+  volumes:
+  - name: workdir
+    persistentVolumeClaim:
+      claimName: c-test-pvc
+
+  templates:
+  - name: local-pvc
+    steps:
+    - - name: generate
+        template: hello-world-to-file
+    - - name: print
+        template: print-message-from-file
+  - name: hello-world-to-file
+    container:
+      image: busybox
+      command: [sh, -c]
+      args:
+        - |
+          echo "Checking files before writing:"
+          ls -lah /mnt/vol
+          echo "Writing hello_world.txt..."
+          mkdir -p /mnt/vol
+          echo "hello world" | tee /mnt/vol/hello_world.txt
+          echo "Checking files after writing:"
+          ls -lah /mnt/vol
+          echo "Sleeping for debugging..."
+          sleep 300
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/vol
+
+  - name: print-message-from-file
+    container:
+      image: alpine:latest
+      command: [sh, -c]
+      args:
+        - |
+          echo "Checking files before reading:"
+          ls -lah /mnt/vol
+          echo "Getting message from volume..."
+          cat /mnt/vol/hello_world.txt
+          echo "Sleeping for debugging..."
+          sleep 300
+      volumeMounts:
+      - name: workdir
+        mountPath: /mnt/vol
