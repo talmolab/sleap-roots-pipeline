@@ -1,33 +1,26 @@
 apiVersion: argoproj.io/v1alpha1
-kind: WorkflowTemplate  # Use WorkflowTemplate for reusable templates
+kind: WorkflowTemplate
 metadata:
   name: models-downloader-template
-  namespace: argo  # Ensure it’s in the same namespace as the Workflow
+  namespace: argo
 spec:
   templates:
     - name: models-downloader
+      retryStrategy:
+          limit: 2
       container:
         image: registry.gitlab.com/salk-tm/models-downloader:latest
-        imagePullPolicy: Always # Always pull the latest image
+        imagePullPolicy: Always
         args:
           - "python"
           - "/workspace/src/main.py"
-          - "{{workflow.parameters.models-input-dir}}"
-          - "{{workflow.parameters.models-output-dir}}"
+          - "/workspace/input"
+          - "/workspace/output"
+        volumeMounts:
+          - name: models-input-dir
+            mountPath: /workspace/input
+          - name: models-output-dir
+            mountPath: /workspace/output
         securityContext:
           privileged: true
           runAsUser: 0
-        volumeMounts:
-          - name: models-input-pv
-            mountPath: /workspace/input  # Mount input data only here
-          - name: models-output-pv
-            mountPath: /workspace/output  # Mount output data only here
-        resources:
-          requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "1"
-        retryStrategy:
-          limit: 2
