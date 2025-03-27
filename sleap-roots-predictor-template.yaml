@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-predictor-template
+  namespace: argo
+spec:
+  templates:
+    - name: sleap-roots-predictor
+      retryStrategy:
+          limit: 2
+      container:
+        image: registry.gitlab.com/salk-tm/sleap-roots-predict:latest
+        imagePullPolicy: Always
+        args:
+          - "python"
+          - "/workspace/src/main.py"
+          - "/workspace/images_input"
+          - "/workspace/models_input"
+          - "/workspace/output"
+        volumeMounts:
+          - name: images-input-dir
+            mountPath: /workspace/images_input
+          - name: models-output-dir
+            mountPath: /workspace/models_input
+          - name: predictions-output-dir
+            mountPath: /workspace/output
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        resources:
+          limits:
+            nvidia.com/gpu: 1 # Request 1 GPU

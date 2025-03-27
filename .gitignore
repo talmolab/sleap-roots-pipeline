@@ -1,10 +1,62 @@
+# Logs and temporary files
+*.log
+*.out
+*.err
+*.pid
+nohup.out
+.DS_Store
+Thumbs.db
+
+# Ignore Kubernetes and Argo Workflows YAML outputs
+*.yaml~
+*.yml~
+.kube/
+.kubectl/
+
+# Ignore Kubernetes secrets and service account tokens
+secrets.yaml
+service-account.json
+
+# Docker related
+.dockerignore
+docker-compose.override.yml
+.docker/
+*.tar
+
+# Ignore Argo Workflows logs
+argo_logs/
+argo_cache/
+workflow_cache/
+*.argo.run
+workflow_templates/*.yaml
+
+# Ignore compiled code or bytecode
+*.o
+*.a
+*.pyc
+*.pyo
+*.so
+
+# Ignore local storage and artifacts
+/mnt/data/
+workspace/
+local-storage/
+artifacts/
+models/
+datasets/
+predict_output/
+final_output/
+
+# Ignore IDE and editor-specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
 
 # Distribution / packaging
 .Python
@@ -55,8 +107,7 @@ cover/
 *.mo
 *.pot
 
-# Django stuff:
-*.log
+# Django / Flask / Web Frameworks
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -65,7 +116,7 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 
-# Scrapy stuff:
+# Scrapy
 .scrapy
 
 # Sphinx documentation
@@ -76,7 +127,7 @@ docs/_build/
 target/
 
 # Jupyter Notebook
-.ipynb_checkpoints
+**/.ipynb_checkpoints/
 
 # IPython
 profile_default/
@@ -117,17 +168,17 @@ ipython_config.py
 .pdm-python
 .pdm-build/
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
+# PEP 582; used by PDM / Pyflow
 __pypackages__/
 
-# Celery stuff
+# Celery
 celerybeat-schedule
 celerybeat.pid
 
-# SageMath parsed files
+# SageMath
 *.sage.py
 
-# Environments
+# Python Virtual Environments
 .env
 .venv
 env/
@@ -136,7 +187,7 @@ ENV/
 env.bak/
 venv.bak/
 
-# Spyder project settings
+# Spyder / Rope project settings
 .spyderproject
 .spyproject
 
@@ -146,7 +197,7 @@ venv.bak/
 # mkdocs documentation
 /site
 
-# mypy
+# mypy / Pyre / pytype
 .mypy_cache/
 .dmypy.json
 dmypy.json
@@ -161,11 +212,8 @@ dmypy.json
 cython_debug/
 
 # PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+# See JetBrains.gitignore for full IDE ignores
+# .idea/
 
 # PyPI configuration file
 .pypirc
