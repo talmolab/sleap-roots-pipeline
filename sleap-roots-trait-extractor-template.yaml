@@ -2,12 +2,16 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: sleap-roots-trait-extractor-template
-  namespace: argo
+  labels:
+    project: talmo-lab
+  annotations:
+    preemptible: "true"
 spec:
   templates:
     - name: sleap-roots-trait-extractor
       retryStrategy:
         limit: 2
+        retryPolicy: Always
       container:
         image: registry.gitlab.com/salk-tm/sleap-roots-traits:latest
         imagePullPolicy: Always

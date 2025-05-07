@@ -7,30 +7,32 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: sleap-roots-pipeline-
-  namespace: argo
+  namespace: runai-talmo-lab
+  labels:
+    project: talmo-lab
 spec:
   entrypoint: pipeline
 
   volumes:
     - name: models-input-dir
       hostPath:
-        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
         type: Directory # Check: directory MUST exist on the host 
     - name: models-output-dir
       hostPath:
-        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
         type: Directory
     - name: images-input-dir
       hostPath:
-        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
         type: Directory
     - name: predictions-output-dir
       hostPath:
-        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
         type: Directory
     - name: traits-output-dir
       hostPath:
-        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
         type: Directory
   templates:
     - name: pipeline

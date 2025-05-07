@@ -2,12 +2,17 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: sleap-roots-predictor-template
-  namespace: argo
+  annotations:
+    gpu-fraction: "0.5"
+    preemptible: "true"
+  labels:
+    project: talmo-lab
 spec:
   templates:
     - name: sleap-roots-predictor
       retryStrategy:
-          limit: 2
+        limit: 1
+        retryPolicy: Always
       container:
         image: registry.gitlab.com/salk-tm/sleap-roots-predict:latest
         imagePullPolicy: Always
@@ -27,6 +32,6 @@ spec:
         securityContext:
           privileged: true
           runAsUser: 0
-        resources:
+        resources: 
           limits:
-            nvidia.com/gpu: 1 # Request 1 GPU
+            nvidia.com/gpu: 1
