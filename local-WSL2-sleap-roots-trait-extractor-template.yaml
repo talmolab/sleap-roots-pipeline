@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-trait-extractor-template
+  namespace: argo
+spec:
+  templates:
+    - name: sleap-roots-trait-extractor
+      retryStrategy:
+        limit: 2
+      container:
+        image: registry.gitlab.com/salk-tm/sleap-roots-traits:latest
+        imagePullPolicy: Always
+        args:
+          - "python"
+          - "/workspace/src/main.py"
+          - "/workspace/input"
+          - "/workspace/output"
+        volumeMounts:
+          - name: predictions-output-dir
+            mountPath: /workspace/input
+          - name: traits-output-dir
+            mountPath: /workspace/output
+        securityContext:
+          privileged: true
+          runAsUser: 0
