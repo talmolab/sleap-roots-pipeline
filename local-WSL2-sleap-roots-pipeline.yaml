@@ -1,0 +1,54 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# https://argo-workflows.readthedocs.io/en/latest/workflow-concepts/
+# https://argo-workflows.readthedocs.io/en/latest/walk-through/dag/
+# https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: sleap-roots-pipeline-
+  namespace: argo
+spec:
+  entrypoint: pipeline
+
+  volumes:
+    - name: models-input-dir
+      hostPath:
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
+        type: Directory # Check: directory MUST exist on the host 
+    - name: models-output-dir
+      hostPath:
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
+        type: Directory
+    - name: images-input-dir
+      hostPath:
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
+        type: Directory
+    - name: predictions-output-dir
+      hostPath:
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
+        type: Directory
+    - name: traits-output-dir
+      hostPath:
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
+        type: Directory
+  templates:
+    - name: pipeline
+      dag:
+        tasks:
+          - name: models-downloader
+            templateRef:
+              name: models-downloader-template
+              template: models-downloader
+          - name: predictor
+            templateRef:
+              name: sleap-roots-predictor-template
+              template: sleap-roots-predictor
+            dependencies:
+              - models-downloader
+          - name: trait-extractor
+            templateRef:
+              name: sleap-roots-trait-extractor-template
+              template: sleap-roots-trait-extractor
+            dependencies:
+              - predictor
