@@ -1,19 +1,15 @@
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
-  name: models-downloader-template
-  labels:
-    project: tye-lab
-  annotations:
-    preemptible: "true"
+  name: sleap-roots-trait-extractor-template
+  namespace: argo
 spec:
   templates:
-    - name: models-downloader
+    - name: sleap-roots-trait-extractor
       retryStrategy:
-          limit: 2
-          retryPolicy: Always
+        limit: 2
       container:
-        image: registry.gitlab.com/salk-tm/models-downloader:latest
+        image: registry.gitlab.com/salk-tm/sleap-roots-traits:latest
         imagePullPolicy: Always
         args:
           - "python"
@@ -21,9 +17,9 @@ spec:
           - "/workspace/input"
           - "/workspace/output"
         volumeMounts:
-          - name: models-input-dir
+          - name: predictions-output-dir
             mountPath: /workspace/input
-          - name: models-output-dir
+          - name: traits-output-dir
             mountPath: /workspace/output
         securityContext:
           privileged: true

@@ -2,16 +2,12 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: models-downloader-template
-  labels:
-    project: tye-lab
-  annotations:
-    preemptible: "true"
+  namespace: argo
 spec:
   templates:
     - name: models-downloader
       retryStrategy:
           limit: 2
-          retryPolicy: Always
       container:
         image: registry.gitlab.com/salk-tm/models-downloader:latest
         imagePullPolicy: Always

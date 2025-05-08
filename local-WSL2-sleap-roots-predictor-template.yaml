@@ -2,17 +2,12 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: sleap-roots-predictor-template
-  annotations:
-    gpu-fraction: "0.5"
-    preemptible: "true"
-  labels:
-    project: tye-lab
+  namespace: argo
 spec:
   templates:
-    - name: predictor
+    - name: sleap-roots-predictor
       retryStrategy:
-        limit: 1
-        retryPolicy: Always
+          limit: 2
       container:
         image: registry.gitlab.com/salk-tm/sleap-roots-predict:latest
         imagePullPolicy: Always
@@ -32,6 +27,6 @@ spec:
         securityContext:
           privileged: true
           runAsUser: 0
-        resources: 
+        resources:
           limits:
-            nvidia.com/gpu: 1
+            nvidia.com/gpu: 1 # Request 1 GPU

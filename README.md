@@ -12,14 +12,51 @@ It is designed for reproducible, containerized execution using Kubernetes.
 
 ---
 
-## 🚀 Getting Started
+## 🧰 Requirements
 
-### 🧰 Requirements
+- Kubernetes cluster with GPU support (e.g., Run:AI GPU cluster)
+- [`argo` CLI](https://argo-workflows.readthedocs.io/en/stable/cli/) installed
+- A valid Argo Bearer token exported to your shell (`ARGO_TOKEN`)
+- Storage volumes mounted or available via `hostPath`
+- (Optional for local testing) Docker Desktop with WSL2 integration
 
-- GPU-enabled system with NVIDIA drivers
-- Kubernetes cluster
-- Argo Workflows installed (`argo` CLI + controller in cluster)
-- Volumes exposed via WSL2 (`/run/desktop/mnt/host/...`) for Docker Desktop cluster on WSL2 only.
+---
+
+## 🛠️ Setup and Cluster Access
+
+### ✅ Run:AI login and kubernetes context
+```bash
+runai login remote-browser 
+runai whoami
+```
+
+```bash
+kubectl config use-context system:node:gpu-master@kubernetes
+kubectl config get-contexts
+```
+
+### 🔑 Token check
+
+```bash
+kubectl --server=https://10.7.30.173:6443 \
+  --token="<your-token>" \
+  --insecure-skip-tls-verify \
+  --namespace=runai-talmo-lab \
+  get pods
+```
+
+### ⚙️ Argo CLI Configuration
+
+```bash
+# Argo Server running in HTTP mode
+export ARGO_SERVER=gpu-master:8888
+export ARGO_HTTP1=true
+export ARGO_SECURE=false
+export ARGO_NAMESPACE=runai-talmo-lab
+export ARGO_TOKEN="Bearer <your-token>"
+
+echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
+```
 
 ---
 
@@ -27,127 +64,216 @@ It is designed for reproducible, containerized execution using Kubernetes.
 
 ```text
 .
-├── sleap_roots_pipeline.yaml                # Main Argo Workflow definition
-├── models-downloader-template.yaml          # WorkflowTemplate: downloads models
-├── sleap-roots-predictor-template.yaml      # WorkflowTemplate: runs predictions
-├── sleap-roots-trait-extractor-template.yaml# WorkflowTemplate: extracts traits
-├── run_pipeline.sh                          # CLI tool to register & run pipeline
-└── workflow_logs_<timestamp>.txt            # Log output saved per run
+├── sleap-roots-pipeline.yaml                    # Main Argo Workflow definition
+├── models-downloader-template.yaml              # WorkflowTemplate: downloads models
+├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
+├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
+├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-tye-lab)
+├── local_run_pipeline_first_time.sh             # Local WSL2/Docker Desktop test runner
+├── local-WSL2-*.yaml                            # Local-only templates and workflow configs
+└── workflow_logs_<timestamp>.txt                # Log output saved per run
 ```
 
 ---
 
-## 🛠 Configuring Volume Paths (Important!)
+## 🚀 Running on the GPU Cluster (`runai-tye-lab`)
 
-The workflow uses `hostPath` volumes to map local data directories into each container. **You must modify these paths to match your own setup.**
+You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed at `gpu-master:8888`.
 
-### 🔍 Where to change them:
+### ▶️ One-Time Setup
 
-See this block in [`sleap_roots_pipeline.yaml`](./sleap_roots_pipeline.yaml):
+```bash
+chmod +x runai_run_pipeline.sh
+```
+
+Ensure that `ARGO_TOKEN` is exported and you have access to the cluster.
+
+### ▶️ Run the Pipeline
+
+```bash
+./runai_run_pipeline.sh
+```
+
+This script will:
+- Automatically create or update your `WorkflowTemplates`
+- Submit the pipeline as a `Workflow`
+- Stream logs to your terminal
+- Save logs to `workflow_logs_<timestamp>.txt`
+
+---
+
+## 🧪 Local Testing (Docker Desktop + WSL2)
+
+You can test the pipeline locally using Docker Desktop and WSL2. This setup is useful for rapid iteration on template logic and file handling.
+
+### ▶️ Run Locally
+
+```bash
+./local_run_pipeline_first_time.sh
+```
+
+This uses the `local-WSL2-*` templates and pipeline files.
+
+---
+
+## 🛠 Configuring Volume Paths
+
+You **must** update volume paths in the workflow YAML to point to valid directories on your machine or cluster node.
 
 ```yaml
 volumes:
   - name: models-input-dir
     hostPath:
       path: /run/desktop/mnt/host/wsl/your/path/models_downloader_input
-      type: Directory  # ❗️ Directory must exist
-  - name: models-output-dir
-    hostPath:
-      path: /run/desktop/mnt/host/wsl/your/path/models_downloader_output
       type: Directory
-  # ... and so on for images, predictions, traits
 ```
 
-### ⚠️ hostPath & WSL2 Caveats
-
-- Kubernetes will **fail to start a pod** if a `hostPath` volume with `type: Directory` does not exist.
-- Docker Desktop (WSL2) exposes your Windows filesystem under `/run/desktop/mnt/host/...`.
-- These paths must:
-  - Be **pre-created on the host filesystem**
-  - Be accessible via WSL2 and Kubernetes
-- See [Kubernetes hostPath docs](https://kubernetes.io/docs/concepts/storage/volumes/#hostpath) for behavior by `type`.
-- This can be easilly adapted to other Kubernetes setups and will likely work better.
-
----
-
-## 🔁 Running the Pipeline
-
-1. **Create all required directories** on your host machine.
-
-2. **Run the pipeline**:
-   ```bash
-   ./run_pipeline.sh
-   ```
-
-This will:
-- Register workflow templates
-- Submit the workflow
-- Stream logs to your terminal
-- Save logs to a file
+> ⚠️ Kubernetes will fail pod startup if a `hostPath` volume with `type: Directory` does not already exist.
 
 ---
 
 ## ⚙️ GPU Support
 
-The predictor step requests a GPU:
-   ```yaml
-   resources:
-     limits:
-       nvidia.com/gpu: 1
-   ```
+The predictor step requires a GPU:
 
-To enable GPU inference in Docker Desktop:
+```yaml
+resources:
+  limits:
+    nvidia.com/gpu: 1
+```
 
-1. Enable GPU in **Docker Desktop > Settings > Resources > Advanced**
-2. Verify GPU works:
-   ```bash
-   docker run --gpus all nvidia/cuda:12.2.0-base-ubuntu20.04 nvidia-smi
-   ```
-3. Confirm Kubernetes node shows GPU:
-   ```bash
-   kubectl describe node docker-desktop | grep -A 5 "Capacity"
-   ```
+Example to test GPU support.
+
+```bash
+docker run --gpus all nvidia/cuda:12.2.0-base-ubuntu20.04 nvidia-smi
+kubectl describe node docker-desktop | grep -A 5 "Capacity"
+```
+
+**Note**: GPU support in Kubernetes with WSL2 backend is not supported. Use the CPU for testing locally.
+---
+
+## 📋 Creating WorkflowTemplates (One-Time per Namespace)
+
+```bash
+argo template create models-downloader-template.yaml -n runai-talmo-lab
+argo template create sleap-roots-predictor-template.yaml -n runai-talmo-lab
+argo template create sleap-roots-trait-extractor-template.yaml -n runai-talmo-lab
+```
+
+Check with:
+
+```bash
+argo template list -n runai-talmo-lab
+```
+
+---
+
+## 🚀 Submitting Workflows
+
+```bash
+argo list
+argo submit sleap-roots-pipeline.yaml --watch
+```
 
 ---
 
 ## 🐛 Troubleshooting
 
-Check workflow status:
-
 ```bash
-argo list -n <namespace>
-argo get <workflow-name> -n <namespace>
-argo logs <workflow-name> --log-options tail=100 -n <namespace>
-
+argo list -n runai-talmo-lab
+argo get <workflow-name> -n runai-talmo-lab
+argo logs <workflow-name> -n runai-talmo-lab --log-options tail=100
 ```
 
-To see pod logs:
+Check pod logs:
 
 ```bash
-kubectl get pods -n <namespace>
-kubectl logs <pod-name> -n <namespace>
-kubectk describe <pod-name> -n <namespace>
+kubectl get pods -n runai-talmo-lab
+kubectl logs <pod-name> -n runai-talmo-lab
+kubectl describe pod <pod-name> -n runai-talmo-lab
 ```
-
-### Pod stuck in `PodInitializing`?
-- Check that all directories specified in `hostPath` exist on the host and are accessible to Docker/Kubernetes.
-
-### Pod unschedulable due to GPU?
-- Make sure GPU is enabled in Docker Desktop and visible to Kubernetes (`nvidia.com/gpu` shows up in `kubectl describe node`).
 
 ---
 
-## 📈 Resources
+## 🧠 Run:AI-Specific Configuration in WorkflowTemplates
+
+Your `WorkflowTemplates` include annotations and labels that are interpreted by the Run:AI scheduler to manage GPU allocation and job priority.
+
+### 🔖 `annotations`
+
+```yaml
+annotations:
+  gpu-fraction: "0.5"
+  preemptible: "true"
+```
+
+- **`gpu-fraction`**: Requests a fractional GPU (e.g., 0.5 of a full GPU). Useful for light inference workloads. Run:AI schedules jobs with this annotation accordingly.
+- **`preemptible`**: Allows the job to be evicted if GPU capacity is needed for higher-priority jobs. Recommended to combine with a `retryStrategy` to resubmit the task if it's interrupted.
+
+### 🏷️ `labels`
+
+```yaml
+labels:
+  project: tye-lab
+```
+
+- **`project`**: Used by Run:AI for usage tracking and quota enforcement. Should match a defined project name on the cluster.
+
+### ⚙️ `resources.limits`
+
+```yaml
+resources:
+  limits:
+    nvidia.com/gpu: 1
+```
+
+- Specifies that a GPU is required. Run:AI combines this with `gpu-fraction` to handle fractional allocation.
+
+---
+
+## 🔄 How the Workflow and Templates Work Together
+
+The file `sleap-roots-pipeline.yaml` defines the **Argo Workflow**. It serves as the entry point for running the pipeline.
+
+Inside it, you'll see a `DAG` template that references external steps using `templateRef`. These templates — defined separately — encapsulate logic for downloading models, running inference, and extracting traits.
+
+```yaml
+- name: predictor
+  templateRef:
+    name: sleap-roots-predictor-template
+    template: sleap-roots-predictor
+```
+
+This allows you to version, share, and reuse components across workflows.
+
+---
+
+## 📐 DAG Behavior and Step Failures
+
+Argo’s `DAG` execution has these key properties:
+
+- **Task dependencies** are enforced using the `dependencies:` field.
+- **All steps run in parallel** where possible, unless blocked by a dependency.
+- **Retries** are configured per step using `retryStrategy`. This is necessary for handling failures like preemptions or transient errors.
+- If a task fails and `retryStrategy` is exhausted:
+  - The **entire workflow fails**.
+  - When resubmitting the workflow, **Argo does not resume from the failed step by default** — it starts fresh unless you manually skip steps or use [artifacts/results to track progress](https://argo-workflows.readthedocs.io/en/latest/retry-failed-steps/).
+
+> For full resumability between steps, consider writing success markers to disk or using `workflow.taskResults` to detect completed stages.
+
+---
+
+## 📈 References
 
 - [Argo Workflows Concepts](https://argo-workflows.readthedocs.io/en/latest/workflow-concepts/)
+- [Argo DAG Example](https://argo-workflows.readthedocs.io/en/latest/walk-through/dag/)
 - [Kubernetes Volumes: hostPath](https://kubernetes.io/docs/concepts/storage/volumes/#hostpath)
-- [Argo DAG tutorial](https://argo-workflows.readthedocs.io/en/latest/walk-through/dag/)
-- [Argo Workflow YAML schema](https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec)
+- [Argo YAML Field Reference](https://argo-workflows.readthedocs.io/en/latest/fields/)
 
 ---
 
 ## 🧪 License & Attribution
 
-Developed as part of the [Salk Harnessing Plants Initiative](https://github.com/salk-harnessing-plants-initiative).
+Developed as part of the [Salk Harnessing Plants Initiative](https://github.com/salk-harnessing-plants-initiative).  
 [SLEAP](https://github.com/talmolab/sleap) maintained by [talmolab](https://github.com/talmolab).  
-Trait extraction and workflow architecture by Elizabeth B.
+Trait extraction and workflow architecture by **Elizabeth B.**

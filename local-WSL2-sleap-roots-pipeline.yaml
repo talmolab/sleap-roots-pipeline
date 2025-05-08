@@ -7,32 +7,30 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: sleap-roots-pipeline-
-  namespace: runai-tye-lab
-  labels:
-    project: tye-lab
+  namespace: argo
 spec:
   entrypoint: pipeline
 
   volumes:
     - name: models-input-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
         type: Directory # Check: directory MUST exist on the host 
     - name: models-output-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
         type: Directory
     - name: images-input-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
         type: Directory
     - name: predictions-output-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
         type: Directory
     - name: traits-output-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
+        path: /run/desktop/mnt/host/wsl/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
         type: Directory
   templates:
     - name: pipeline
@@ -45,12 +43,12 @@ spec:
           - name: predictor
             templateRef:
               name: sleap-roots-predictor-template
-              template: predictor
+              template: sleap-roots-predictor
             dependencies:
               - models-downloader
           - name: trait-extractor
             templateRef:
               name: sleap-roots-trait-extractor-template
-              template: trait-extractor
+              template: sleap-roots-trait-extractor
             dependencies:
               - predictor
