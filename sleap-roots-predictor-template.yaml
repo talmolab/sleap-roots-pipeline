@@ -6,10 +6,10 @@ metadata:
     gpu-fraction: "0.5"
     preemptible: "true"
   labels:
-    project: talmo-lab
+    project: tye-lab
 spec:
   templates:
-    - name: sleap-roots-predictor
+    - name: predictor
       retryStrategy:
         limit: 1
         retryPolicy: Always

@@ -3,12 +3,12 @@ kind: WorkflowTemplate
 metadata:
   name: sleap-roots-trait-extractor-template
   labels:
-    project: talmo-lab
+    project: tye-lab
   annotations:
     preemptible: "true"
 spec:
   templates:
-    - name: sleap-roots-trait-extractor
+    - name: trait-extractor
       retryStrategy:
         limit: 2
         retryPolicy: Always
