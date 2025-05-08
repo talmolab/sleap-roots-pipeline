@@ -7,9 +7,9 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: sleap-roots-pipeline-
-  namespace: runai-talmo-lab
+  namespace: runai-tye-lab
   labels:
-    project: talmo-lab
+    project: tye-lab
 spec:
   entrypoint: pipeline
 
@@ -45,12 +45,12 @@ spec:
           - name: predictor
             templateRef:
               name: sleap-roots-predictor-template
-              template: sleap-roots-predictor
+              template: predictor
             dependencies:
               - models-downloader
           - name: trait-extractor
             templateRef:
               name: sleap-roots-trait-extractor-template
-              template: sleap-roots-trait-extractor
+              template: trait-extractor
             dependencies:
               - predictor
