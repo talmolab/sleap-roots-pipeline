@@ -113,10 +113,12 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 
 ### Track B — analyze / analysis-input contract  *(cross-linked dependency — owned by the analyze / bloom-mcp effort, not managed here)*
 
+> **See also:** the analyze/bloom-mcp workstream's own roadmap is §11 of the bloom-mcp design spec (vault `docs/superpowers/specs/2026-05-11-metcalf-2026-evelyn-bloom-mcp-design.md`). B1/B2 here = that spec's contracts#3 + analyze#144; the spec also owns the downstream pieces this roadmap delegates (#142, #120, #119, serializable result types #127–130, and the bloom-mcp data-access layer). **Naming bridge:** that spec's "integration sub-project #2" = tier **A2** above — A2 gates the bloom-mcp data-access layer.
+
 | Tier | Repo | Goal | Depends on | Validation target | Status |
 |---|---|---|---|---|---|
-| **B1 — analysis-input contract** | sleap-roots-contracts | canonical analyze CSV schema + `validate_analysis_input` (co-versions A1 in the same package — a B1 release can force A2 to re-pin; prefer per-`$id` pinning) | A1 | golden-file validation | 🔵 **contracts #3 (eberrigan) / PR #4 (egao28)** |
-| **B2 — analyze consumes the contract** | sleap-roots-analyze | wire `validate_analysis_input` into `run-all` / loaders | B1 | run-all rejects malformed input; reproducibility gates (analyze **#133**, under epic **#130**) | ⬜ **analyze #144** |
+| **B1 — analysis-input contract** | sleap-roots-contracts | canonical analyze CSV schema + `validate_analysis_input` (structural-only: fixed canonical role names, opaque traits, no registry/range checks; co-versions A1 in the same package — a B1 release can force A2 to re-pin; prefer per-`$id` pinning) | A1 | structural validation of canonical role+trait frame; real EDPIE fixtures; drift guard + `--strict` green | 🔵 **contracts #3 (eberrigan) / PR #4 (egao28) — implementation complete, pending review/merge** |
+| **B2 — analyze consumes the contract** | sleap-roots-analyze | wire `validate_analysis_input` into `run-all` / loaders — call it on the **canonicalized, trait-subsetted** frame (after `get_trait_columns` drops metadata + role rename to canonical), **not** the raw wide frame. The contract is structural and has no metadata registry, so column exclusion stays in analyze's config (do not duplicate the denylist in the contract). | B1 | run-all rejects malformed input; reproducibility gates (analyze **#133**, under epic **#130**) | ⬜ **analyze #144** |
 
 ### Cross-cutting
 
@@ -191,6 +193,13 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-11** — **B1** implementation completed on contracts PR #4 (structural validator +
+  `AnalysisInputRow` + emitted schema + real EDPIE fixtures; OpenSpec `--strict` + drift guard +
+  117 tests green; pending review/merge). Recorded the **B2 canonicalization precondition**: analyze
+  calls `validate_analysis_input` on the canonicalized, trait-subsetted frame (after
+  `get_trait_columns`), not the raw wide frame — column exclusion stays in analyze's config (the
+  contract is structural, no metadata registry; duplicating analyze's denylist was rejected — it
+  would fork a second source of truth and inherit analyze Bug #75's brittleness).
 - **2026-06-10** — Roadmap created, corrected (A2 already underway in `salk-bloom`), then
   adversarially reviewed (4 lenses) and reconciled (above). Next: re-commit, reconcile EPIC #9 +
   file A2 sub-issues, add roadmap-review + issue-policy steps to the `roadmap-driven-pipeline`
