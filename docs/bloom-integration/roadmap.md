@@ -37,8 +37,13 @@ log at the bottom).
   prod connection strings in CI.
 - **Contract version pinning** — the cross-language seam is the most failure-prone part: every
   consumer **pins an explicit `sleap-roots-contracts` version** (per-`$id` `vX.Y`). Bumping it
-  is a tracked event that re-pins all consumers. A1 is currently only `v0.1.0a0` (alpha) — A2's
-  consume should pin that explicitly or A1 should cut `v0.1.0` first.
+  is a tracked event that re-pins all consumers. **`v0.1.0a1` is published** (2026-06-11, on PyPI;
+  adds the analysis-input contract; `result_envelope` is unchanged). Cut `v0.1.0` once a consumer
+  round-trips the shape end-to-end.
+  - **Schema `$id` carries the package version**, so a re-pin **re-stamps every schema's `$id`** —
+    including unchanged ones like `result_envelope` (`…/v0.1.0a0/…` → `…/v0.1.0a1/…`, no payload
+    change). **Decision: consumers regenerate and accept the `$id`-only change as a structural
+    no-op** — not a contract revision. At `a1`, only `analysis_input` is genuinely new.
 - **Argo stays** — orchestration remains declarative YAML.
 - **Warm predict worker + stateless traits jobs** — avoid per-scan model reload.
 
@@ -92,7 +97,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 
 | Change | What | Tracking | Status |
 |---|---|---|---|
-| **consume (pin)** | pin `sleap-roots-contracts @ v0.1.0a0`; codegen TS; **migration-matches-schema CI**. *Precedes A* — change A's types-match-contract CI depends on it | #294 | ⬜ planned (do first) |
+| **consume (pin)** | pin `sleap-roots-contracts` (`v0.1.0a0`, or `v0.1.0a1` to track current); codegen TS; **migration-matches-schema CI**. *Precedes A* — change A's types-match-contract CI depends on it. **On any re-pin, `result_envelope`'s `$id` re-stamps with no content change → regenerate and accept the `$id`-only diff (structural no-op); don't treat it as a contract revision** (see version-pinning constraint) | #294 | ⬜ planned (do first) |
 | **A** | `cyl_trait_sources`: jsonb `metadata` (opaque Provenance) + `idempotency_key` UNIQUE + **non-empty CHECK** (empty string would satisfy UNIQUE once then collide, silently merging unrelated envelopes); manual rollback; regenerated TS types. **Do NOT add the `idempotency_key = metadata->>'idempotency_key'` CHECK here** (breaks nullable + opaque-jsonb) | EPIC #9 → **#12**; OpenSpec `add-cyl-trait-source-provenance` | 🔵 **PR #290 open** (TDD 9/9) |
 | **B** | `source_id` FK on `cyl_scan_traits` (+ `cyl_image_traits`) → traceable to its run | #295 | ⬜ |
 | **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage` | #296 | ⬜ |
@@ -193,6 +198,11 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-11** — **B1 released: `sleap-roots-contracts v0.1.0a1`** on PyPI (analysis-input
+  contract + validator + `canonicalize_role_dtypes` + packaged examples; `result_envelope`
+  unchanged). Recorded the **`$id` re-stamp decision** for A2 consume-pin (#294): a re-pin
+  re-stamps every schema's `$id` (version-stamped), so `result_envelope` shows a `$id`-only diff —
+  **regenerate and accept the structural no-op**, don't treat it as a contract revision.
 - **2026-06-11** — **B1** implementation completed on contracts PR #4 (structural validator +
   `AnalysisInputRow` + emitted schema + real EDPIE fixtures; OpenSpec `--strict` + drift guard +
   117 tests green; pending review/merge). Recorded the **B2 canonicalization precondition**: analyze
