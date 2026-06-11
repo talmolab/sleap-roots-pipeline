@@ -46,8 +46,9 @@ log at the bottom).
 
 - **One tracking issue/EPIC per tier** (the row links to it).
 - **Per-change sub-issues created at tier-decomposition time** (not all upfront); each PR
-  references + closes its sub-issue. Since A2 is already decomposed, its B/C/E/read-path/etc.
-  sub-issues are **now due** (filed during issue reconciliation).
+  references + closes its sub-issue. A2 is decomposed, so its sub-issues are filed: #294
+  (consume-pin), #295 (B), #296 (C), #297 (E), #298 (read-path) in `salk-bloom`; D/CLI/backfill
+  stay in #13's checklist (just-in-time when reached).
 - Every PR links to (a) its tracking issue and (b) the roadmap tier/change it advances.
 
 ## Repos
@@ -91,13 +92,13 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 
 | Change | What | Tracking | Status |
 |---|---|---|---|
-| **consume (pin)** | pin `sleap-roots-contracts @ v0.1.0a0`; codegen TS; **migration-matches-schema CI**. *Precedes A* — change A's types-match-contract CI depends on it | sub-issue: to file | ⬜ planned (do first) |
+| **consume (pin)** | pin `sleap-roots-contracts @ v0.1.0a0`; codegen TS; **migration-matches-schema CI**. *Precedes A* — change A's types-match-contract CI depends on it | #294 | ⬜ planned (do first) |
 | **A** | `cyl_trait_sources`: jsonb `metadata` (opaque Provenance) + `idempotency_key` UNIQUE + **non-empty CHECK** (empty string would satisfy UNIQUE once then collide, silently merging unrelated envelopes); manual rollback; regenerated TS types. **Do NOT add the `idempotency_key = metadata->>'idempotency_key'` CHECK here** (breaks nullable + opaque-jsonb) | EPIC #9 → **#12**; OpenSpec `add-cyl-trait-source-provenance` | 🔵 **PR #290 open** (TDD 9/9) |
-| **B** | `source_id` FK on `cyl_scan_traits` (+ `cyl_image_traits`) → traceable to its run | sub-issue: to file | ⬜ |
-| **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage` | sub-issue: to file | ⬜ |
+| **B** | `source_id` FK on `cyl_scan_traits` (+ `cyl_image_traits`) → traceable to its run | #295 | ⬜ |
+| **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage` | #296 | ⬜ |
 | **D** | idempotent **service-role write-back RPC**: upsert source on `idempotency_key`; trait rows w/ `source_id`; blob rows; one txn; re-delivery = no-op. **Enforces `idempotency_key == metadata->>'idempotency_key'` in the RPC** (RPC-only — safe because E makes the RPC the sole writer) | EPIC #9 → **#13** | ⬜ |
-| **E** | RLS lockdown — DROP legacy `authenticated` INSERT policy on `cyl_trait_sources`/`cyl_scan_traits`. **Co-lands with D** | sub-issue: to file | ⬜ |
-| **read-path** | update `get_scan_traits` RPC + `cyl_scan_trait_names` view for the `source_id` dimension + latest-source selection (reprocessing mints new sources → reads must disambiguate) | sub-issue: to file | ⬜ |
+| **E** | RLS lockdown — DROP legacy `authenticated` INSERT policy on `cyl_trait_sources`/`cyl_scan_traits`. **Co-lands with D** | #297 | ⬜ |
+| **read-path** | update `get_scan_traits` RPC + `cyl_scan_trait_names` view for the `source_id` dimension + latest-source selection (reprocessing mints new sources → reads must disambiguate) | #298 | ⬜ |
 | **CLI** | `bloom cyl` ingest command writing a `ResultEnvelope` via D | EPIC #9 → #13 | ⬜ |
 | **backfill** | push Box-resident results via D. **Needs a defined key-derivation for provenance-incomplete legacy results** (missing `code_sha`/`container_digest`/`images_checksum`) or a distinct legacy key scheme, else collisions silently drop/conflate | EPIC #9 → #13 | ⬜ |
 
