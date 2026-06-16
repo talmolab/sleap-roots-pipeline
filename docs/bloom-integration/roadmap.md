@@ -89,17 +89,17 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 | Tier | Repo | Goal | Depends on | Validation target | Status |
 |---|---|---|---|---|---|
 | **A1 — result+provenance contract** | sleap-roots-contracts | Pydantic models + JSON Schema artifact + trait registry | — | drift guard green; round-trip/hash/idempotency tests; on PyPI (currently **`v0.1.0a0` pre-release**) | ✅ **PR #1 merged 2026-06-06; `v0.1.0a0` released 2026-06-08** |
-| **A2 — Bloom schema + write-back + CLI** | salk-bloom | provenance/idempotency schema; FK; blob table; idempotent service-role RPC; RLS lockdown; read-path; `bloom cyl` CLI; consume; Box backfill | **A1 @ v0.1.0a0 (pin)**; EPIC #16 (staging) | same envelope twice → 1 source row, no dup traits; direct write rejected, RPC succeeds; migration up/down; types-match-contract CI | 🔵 **In progress — change A ✅ merged (#290); consume-pin #294 next** |
+| **A2 — Bloom schema + write-back + CLI** | salk-bloom | provenance/idempotency schema; FK; blob table; idempotent service-role RPC; RLS lockdown; read-path; `bloom cyl` CLI; consume; Box backfill | **A1 @ v0.1.0a1 (pinned)**; EPIC #16 (staging) | same envelope twice → 1 source row, no dup traits; direct write rejected, RPC succeeds; migration up/down; types-match-contract CI | 🔵 **In progress — change A ✅ (#290) + consume-pin ✅ (#304); change B (#295) next** |
 | **A3 — producers (predict / traits / training / params)** | predict, sleap-roots, training | see sub-table | A0, **A1 @ pin** | per sub-row | ⬜ Not started |
 | **A4 — event-driven orchestration** | sleap-roots-pipeline | Argo Events: scan ingest → per-scan workflow → predict(warm) → traits → write-back → **notification**. (Experiment-level `analyze` trigger is a **later change**, deps B2 — out of A4 first cut.) | A0, A2, A3 | end-to-end on a reference scan; idempotent re-delivery; notification fires on success **and** failure | ⬜ Not started |
 
-#### A2 change breakdown (consume-pin first; A is in flight)
+#### A2 change breakdown (consume-pin ✅ + A ✅; B next)
 
 | Change | What | Tracking | Status |
 |---|---|---|---|
-| **consume (pin)** | pin `sleap-roots-contracts` (`v0.1.0a0`, or `v0.1.0a1` to track current); codegen TS; **migration-matches-schema CI**. *Precedes A* — change A's types-match-contract CI depends on it. **On any re-pin, `result_envelope`'s `$id` re-stamps with no content change → regenerate and accept the `$id`-only diff (structural no-op); don't treat it as a contract revision** (see version-pinning constraint) | #294 | ⬜ planned (do first) |
+| **consume (pin)** | pinned `sleap-roots-contracts` **`v0.1.0a1`** (vendored under `contracts/` + `pin.json`); codegen TS (`json-schema-to-typescript` exact `15.0.4`) + byte-equal drift guard; **migration-matches-schema CI** (asserts `cyl_trait_sources.metadata` jsonb + `idempotency_key` text + UNIQUE/CHECK by `contype`; contract-side `contract_version` required + `idempotency_key.default == ""`). *Precedes A* — A's types-match-contract CI depends on it. **On any re-pin, `result_envelope`'s `$id` re-stamps with no content change → regenerate and accept the `$id`-only diff (structural no-op)** (see version-pinning constraint). **Codegen caveat:** json2ts drops `BlobRef.kind`/`scan_key`/enum (anyOf-over-properties) → **change C validates blobs against the schema directly** | #294 | ✅ **merged #304 (2026-06-16)**, archived #318 (OpenSpec `pin-sleap-roots-contract` → live spec `contract-pinning`) |
 | **A** | `cyl_trait_sources`: jsonb `metadata` (opaque Provenance) + `idempotency_key` UNIQUE + **non-empty CHECK** (empty string would satisfy UNIQUE once then collide, silently merging unrelated envelopes); manual rollback; regenerated TS types. **Do NOT add the `idempotency_key = metadata->>'idempotency_key'` CHECK here** (breaks nullable + opaque-jsonb) | EPIC #9 → **#12**; OpenSpec `add-cyl-trait-source-provenance` | ✅ **merged #290 (2026-06-11), archived #300** (TDD 10/10) |
-| **B** | `source_id` FK on `cyl_scan_traits` (+ `cyl_image_traits`) → traceable to its run | #295 | ⬜ |
+| **B** | `source_id` FK on `cyl_image_traits` (`cyl_scan_traits` **already has it**) → traceable to its run | #295 | ⬜ |
 | **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage` | #296 | ⬜ |
 | **D** | idempotent **service-role write-back RPC**: upsert source on `idempotency_key`; trait rows w/ `source_id`; blob rows; one txn; re-delivery = no-op. **Enforces `idempotency_key == metadata->>'idempotency_key'` in the RPC** (RPC-only — safe because E makes the RPC the sole writer) | EPIC #9 → **#13** | ⬜ |
 | **E** | RLS lockdown — DROP legacy `authenticated` INSERT policy on `cyl_trait_sources`/`cyl_scan_traits`. **Co-lands with D** | #297 | ⬜ |
@@ -198,6 +198,25 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-16** — **A2 consume-pin merged** (`salk-bloom` #304 → `staging`, squash `539763d`;
+  OpenSpec archive PR #318 → live spec `contract-pinning`). Pinned **`sleap-roots-contracts
+  v0.1.0a1`** (vendored schema + `pin.json` under `contracts/`), codegen TS
+  (`json-schema-to-typescript` exact `15.0.4`) + byte-equal **drift guard** + `node --test`, and a
+  **migration-matches-schema** pytest (asserts `cyl_trait_sources.metadata` jsonb + `idempotency_key`
+  text + UNIQUE/CHECK **by `contype`**, plus contract-side sanity: `contract_version` required,
+  `idempotency_key.default == ""`). 3 adversarial review rounds + `/review-pr` (no blockers);
+  approved by @blm3886. Unblocked only after a separate staging-wide `langchain` CVE bump (#317).
+  **Codegen caveat:** json2ts drops `BlobRef.kind`/`scan_key`/enum (anyOf-over-properties) →
+  **change C must validate blobs against the schema directly**, not the generated `BlobRef`.
+  **@blm3886 (Benfica) review suggestion — handoff to B/D/A4:** lifecycle/audit columns for an
+  eventual scanner-triggered pipeline — `created_at` → audit field for B/D (NB **reconcile** with
+  read-path #298's `max(id)` latest-selection + "no created_at" decision; created_at here =
+  display/sort, not latest-selection); `created_by_user_id` → **D** caller-attribution (the D3
+  hybrid `SECURITY DEFINER` + recorded caller, already on record); `status`
+  (pending/running/complete/failed) + `error_code`/`error_message` → **A4 orchestration** / a future
+  `cyl_pipeline_runs` reached via `Provenance.pipeline_run_id` (the **superseded**-`pipeline_runs`
+  model) — **NOT** on `cyl_trait_sources`. **Open A4 question: whether in-flight run lifecycle
+  becomes a Bloom runs table vs. lives in Argo — not currently planned.** Next: change B (#295).
 - **2026-06-11** — **A2 change A merged** (`salk-bloom` #290 → `staging`, squash `9b17d31`).
   `cyl_trait_sources` += `metadata jsonb` (opaque Provenance) + `idempotency_key` (UNIQUE +
   non-empty CHECK); 1 run → 1 source row. TDD 10/10 on local Supabase; reviewed by @blm3886
