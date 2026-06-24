@@ -27,6 +27,21 @@ log at the bottom).
 > its own Dockerfile + GHCR CI (services) / PyPI (libraries), OpenSpec, the canonical Claude
 > commands, and is built TDD.
 
+## Progress — merged PRs (links)
+
+The shared contract is released to PyPI (`v0.1.0a1`, A1 + B1) and Bloom is now pulling it with a
+drift-CI gate:
+
+- **A1 — result + provenance contract** — [talmolab/sleap-roots-contracts #1](https://github.com/talmolab/sleap-roots-contracts/pull/1) ✅
+- **B1 — analysis-input contract** — [talmolab/sleap-roots-contracts #4](https://github.com/talmolab/sleap-roots-contracts/pull/4) ✅
+- **A2 change A — `cyl_trait_sources` provenance + idempotency** — [Salk-Harnessing-Plants-Initiative/bloom #290](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/290) ✅
+- **A2 consume-pin — pin contract `v0.1.0a1` + codegen TS + drift CI** — [Salk-Harnessing-Plants-Initiative/bloom #304](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/304) ✅
+
+Cross-linked (Track B — analyze/bloom-mcp): [bloom #310](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/310) ✅ · [bloom #339](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/339) (open).
+
+> Note: bare `#NNN` elsewhere in this file are issues/PRs in **`salk-bloom`** (the bloom repo),
+> not this repo — they don't auto-link from here.
+
 ## Hard constraints
 
 - **Bloom DB safety** — schema changes via Supabase migrations only (forward-only + manual
