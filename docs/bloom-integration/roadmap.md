@@ -115,7 +115,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 | **consume (pin)** | pinned `sleap-roots-contracts` **`v0.1.0a1`** (vendored under `contracts/` + `pin.json`); codegen TS (`json-schema-to-typescript` exact `15.0.4`) + byte-equal drift guard; **migration-matches-schema CI** (asserts `cyl_trait_sources.metadata` jsonb + `idempotency_key` text + UNIQUE/CHECK by `contype`; contract-side `contract_version` required + `idempotency_key.default == ""`). *Precedes A* — A's types-match-contract CI depends on it. **On any re-pin, `result_envelope`'s `$id` re-stamps with no content change → regenerate and accept the `$id`-only diff (structural no-op)** (see version-pinning constraint). **Codegen caveat:** json2ts drops `BlobRef.kind`/`scan_key`/enum (anyOf-over-properties) → **change C validates blobs against the schema directly** | #294 | ✅ **merged #304 (2026-06-16)**, archived #318 (OpenSpec `pin-sleap-roots-contract` → live spec `contract-pinning`) |
 | **A** | `cyl_trait_sources`: jsonb `metadata` (opaque Provenance) + `idempotency_key` UNIQUE + **non-empty CHECK** (empty string would satisfy UNIQUE once then collide, silently merging unrelated envelopes); manual rollback; regenerated TS types. **Do NOT add the `idempotency_key = metadata->>'idempotency_key'` CHECK here** (breaks nullable + opaque-jsonb) | EPIC #9 → **#12**; OpenSpec `add-cyl-trait-source-provenance` | ✅ **merged #290 (2026-06-11), archived #300** (TDD 10/10) |
 | **B** | `source_id` FK on `cyl_image_traits` (`cyl_scan_traits` **already has it**) → traceable to its run | #295 | ⬜ |
-| **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage` | #296 | ⬜ |
+| **C** | intermediates/blob table (`source_id, scan_id, kind, s3_location, box_link, checksum, file_size`); mirrors `plates_blob_path_storage`. **Per-scan** `BlobRef` (`scan_key`). **Dual pointer: `s3_location` = Bloom MinIO (canonical) + `box_link` = human share** (both used; `checksum` ties them). **Revise `kind` enum to real artifacts** (`predictions_slp` ✓, add `traits_csv`/`viewer_html`; drop `h5`/`labels`/`qc_image`) → **contract change + re-pin** (#1, not Bloom-only). New flow step (G): write-back also uploads each blob to MinIO + records `s3_location` (today only rclone→Box). **Analyze outputs (`sleap-roots-analyze-output/`) are PER-EXPERIMENT → separate change (#28), NOT C.** Scope on #296. | #296 | ⬜ |
 | **D** | idempotent **service-role write-back RPC**: upsert source on `idempotency_key`; trait rows w/ `source_id`; blob rows; one txn; re-delivery = no-op. **Enforces `idempotency_key == metadata->>'idempotency_key'` in the RPC** (RPC-only — safe because E makes the RPC the sole writer) | EPIC #9 → **#13** | ⬜ |
 | **E** | RLS lockdown — DROP legacy `authenticated` INSERT policy on `cyl_trait_sources`/`cyl_scan_traits`. **Co-lands with D** | #297 | ⬜ |
 | **read-path** | update `get_scan_traits` RPC + `cyl_scan_trait_names` view for the `source_id` dimension + latest-source selection (reprocessing mints new sources → reads must disambiguate) | #298 | ⬜ |
@@ -213,6 +213,20 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-16** — **Change C / blob-storage design settled** (from the real `/run-cylinder-pipeline`
+  Box-upload flow; scope on `salk-bloom` #296). **Per-scan** `BlobRef` (moving off the current
+  per-experiment Box folder). **Dual pointer**: `s3_location` = Bloom **MinIO** (canonical, RLS,
+  mirrors `plates_blob_path_storage`) **+** `box_link` = human-shareable Box link — both stored,
+  `checksum`/`file_size` tie them and detect partial uploads (contract `BlobRef` already supports
+  this; no change needed for the dual-pointer). **`kind` enum must be revised** to the real
+  artifacts (`predictions_slp` ✓; add `traits_csv`/`viewer_html`; `h5`/`labels`/`qc_image` don't
+  match the cylinder pipeline) — that enum lives in `sleap-roots-contracts`, so it's a **contract
+  revision + re-pin** (#1 → re-run consume-pin), cheap now (no consumer). Write-back gains a step
+  (change **G**): upload each blob to MinIO + record `s3_location` (today only rclone→Box).
+  **Decision: `sleap-roots-analyze-output/` (QC/PCA/heritability/plots) is PER-EXPERIMENT → a
+  separate change at #28's analyze-side provenance grain, NOT change C** (C is per-scan only).
+  Also: OpenSpec backlog reconciled (`salk-bloom` #319 — archived 8 deployed changes, removed 2
+  superseded; live specs 2 → 9).
 - **2026-06-16** — **A2 consume-pin merged** (`salk-bloom` #304 → `staging`, squash `539763d`;
   OpenSpec archive PR #318 → live spec `contract-pinning`). Pinned **`sleap-roots-contracts
   v0.1.0a1`** (vendored schema + `pin.json` under `contracts/`), codegen TS
