@@ -79,7 +79,7 @@ Cross-linked (Track B — analyze/bloom-mcp): [bloom #310](https://github.com/Sa
 | **Bloom (A2, A4-trigger)** | `salk-bloom` = `Salk-harnessing-plants-initiative/bloom` | GitHub; **staging-first** (`staging` → `main`; gated by EPIC #16) |
 | predict (A3) | `sleap-roots-predict` | GitHub talmolab; GHCR |
 | **traits producer (A3)** | `sleap-roots` (traits lib) | GitHub talmolab; GHCR (trait-extractor) |
-| training (A3) | `sleap-roots-training` | GitHub **eberrigan** (transfer to talmolab in A0) |
+| training (A3) | `sleap-roots-training` | GitHub **talmolab** (scaffolded under talmolab in A0; old `eberrigan` repo archival pending) |
 | Orchestration (A4) | `sleap-roots-pipeline` | GitHub talmolab; Argo YAML |
 | Analyze (B2, cross-linked) | `sleap-roots-analyze` | GitHub talmolab |
 
@@ -94,9 +94,9 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 
 | Repo | Need | Validation target | Status |
 |---|---|---|---|
-| sleap-roots-predict | openspec init, canonical commands, Dockerfile, GHCR CI | `openspec validate` passes; commands present; GHCR image builds | ⬜ |
-| sleap-roots (traits) | already has openspec/.claude; add GHCR for trait-extractor if missing | GHCR image builds | ⬜ |
-| sleap-roots-training | transfer to talmolab; openspec + commands | repo under talmolab; openspec validates | ⬜ |
+| sleap-roots-predict | openspec init, canonical commands, Dockerfile, GHCR CI | `openspec validate` passes; commands present; GHCR image builds | 🔵 **Tooling merged** ([PR #4](https://github.com/talmolab/sleap-roots-predict/pull/4): openspec + 18 commands + Dockerfile + `docker-build.yml`). ⚠️ **GHCR build FAILING on `main`** (post-merge `docker-build.yml` run red 2026-06-30) — fix before ✅. |
+| sleap-roots (traits) | already has openspec/.claude; add GHCR for trait-extractor if missing | GHCR image builds | 🔵 **Commands ✅** ([#249](https://github.com/talmolab/sleap-roots/pull/249) merged, closes #223). ⚠️ **GHCR trait-extractor image still missing** — `build.yml` is PyPI-only; needs a docker build+push workflow. |
+| sleap-roots-training | transfer to talmolab; openspec + commands | repo under talmolab; openspec validates | ✅ **[PR #2](https://github.com/talmolab/sleap-roots-training/pull/2) merged 2026-06-30** — scaffolded under talmolab (openspec + 18 commands + CI); `standardize-dev-commands` audit fixed `fix-formatting` drift. (Old `eberrigan` repo archival pending — not A0.) |
 | sleap-roots-pipeline | openspec init + canonical commands | `openspec validate` passes | ✅ **PR #4 merged 2026-06-30** (openspec + 9 canonical commands; + RunAI skill + `talmo-lab` manifest fix) |
 
 ### Track A — per-scan Bloom pipeline
@@ -146,7 +146,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 |---|---|
 | Canonical dev-command set (in `scaffolding-lab-python-repo` skill) | ✅ |
 | Command alignment — contracts #2 / analyze #126 | ✅ closed |
-| Command alignment — sleap-roots #223 ([PR #249](https://github.com/talmolab/sleap-roots/pull/249), supersedes #228) | 🔵 PR open 2026-06-30 |
+| Command alignment — sleap-roots #223 ([PR #249](https://github.com/talmolab/sleap-roots/pull/249), supersedes #228) | ✅ merged 2026-06-30 |
 | This roadmap | 🔵 created + reviewed 2026-06-10 |
 
 ## Bloom EPIC #9 mapping
@@ -213,6 +213,7 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-30** — **A0 batch: training ✅; sleap-roots commands ✅; predict tooling ✅ but GHCR red.** **training** A0 done ([talmolab/sleap-roots-training #2](https://github.com/talmolab/sleap-roots-training/pull/2) merged — scaffolded under talmolab, 18 canonical commands, `{build,ci,version}.yml`; `standardize-dev-commands` audit, 15/16 KEEP + `fix-formatting` drift fix). **sleap-roots** command standardization merged ([#249](https://github.com/talmolab/sleap-roots/pull/249), closes #223 / supersedes #228) — but its `build.yml` is **PyPI-only**, so the **GHCR trait-extractor image is still to add**. **predict** A0 tooling merged ([#4](https://github.com/talmolab/sleap-roots-predict/pull/4): openspec + 18 commands + Dockerfile + `docker-build.yml`) — **but the post-merge `docker-build.yml` run on `main` FAILED**, so predict stays 🔵 until the GHCR build is fixed. **A0 remaining: (1) fix predict's GHCR build on `main`; (2) add a GHCR trait-extractor build to sleap-roots.** Closed the stale/conflicted partial roadmap PR #6 (this entry + table edits supersede it; committed directly to `main`).
 - **2026-06-30** — **A2 changes D + E merged + archived** (`salk-bloom` #371 → `staging`, merge `8010357`; OpenSpec archived via #372). `insert_cyl_result_envelope(jsonb)` — SECURITY DEFINER (owner `postgres`, `rolbypassrls`, pinned `search_path`), single-txn ingest of a `ResultEnvelope`: validates `contract_version` `v0.1.0a2` / non-empty `idempotency_key` / envelope `scan_key` consistency; resolves the scan from `inputs.image_ids → cyl_images.scan_id` (exactly one distinct; **gate-before-resolve**); **first-writer-wins source gate** (`ON CONFLICT (idempotency_key) DO NOTHING`) so re-delivery is a **pure no-op** (immutable provenance); trait rows via the `cyl_traits` registry (auto-register `trait_id`), finite-or-null values (`jsonb_typeof='number'` guard + overflow→NULL); blob rows; intra-envelope duplicates rejected. **E (co-landed, one migration):** dropped legacy `authenticated` INSERT on the two older tables **and** `bloom_writer` INSERT/UPDATE on all three → only the RPC (via its `postgres` owner) + `bloom_admin` write; `bloom_writer` keeps SELECT + EXECUTE on the RPC (Bloom Desktop scan/image writes untouched). Process: two `/review-openspec` rounds + a 5-agent `/review-pr` round (no blockers; hardened gate-before-resolve, value typing, symmetric dup handling, clean error surface). Flipped 3 deferred contract↔DB mappings active in the migration-match CI. **Next: read-path (#298).**
 - **2026-06-30** — **A0 `sleap-roots-pipeline` done** ([PR #4](https://github.com/talmolab/sleap-roots-pipeline/pull/4) merged, squash `f0d0c3a`). `openspec init --tools claude` + `project.md` (Argo/RunAI/per-scan orchestration) + 9 canonical Claude commands (Python/test/build commands SKIPPED — declarative-YAML repo). Two adversarial `/review-pr` rounds fixed: stale cluster identifiers `tye-lab`→**`talmo-lab`** in the manifests/README/launcher (canonical per GAPIT + mosquito-cfd), inverted PV/PVC↔hostPath claim, preemptibility-is-`priorityClassName`-not-annotation, and a fabricated GHCR image registry (real = `registry.gitlab.com/salk-tm/...`). Also ported a **RunAI skill** (`.claude/skills/runai/`) from mosquito-cfd. `openspec validate --all --strict` green. A0 remaining repos: predict, traits-GHCR, training-transfer.
 - **2026-06-30** — **A2 change C merged + archived** (`salk-bloom` #357 → `staging`, squash `1a89bb0`; OpenSpec archived #369). `cyl_scan_intermediates`: per-scan artifact pointers (one `.slp` per root type), dual pointer (`s3_location` MinIO canonical + `box_link`), `checksum`/`file_size`, at-least-one-location CHECK, strict `kind`/`root_type` CHECKs, `UNIQUE(source_id,scan_id,kind,root_type)`, role RLS (writer=ingest), forward-only migration + manual rollback. **Trait↔blob link = shared `(source_id, scan_id)`** — no `cyl_scan_traits` change. **Contract re-pinned `v0.1.0a2`** (talmolab/sleap-roots-contracts #5): `BlobRef.kind`={predictions_slp} (dropped `h5`/`labels`/`qc_image`), **added required `root_type`**={primary,lateral,crown}; `traits_csv` dropped (numbers → `cyl_scan_traits`), `viewer_html` deferred. `.slp` is per-(scan,root-type), NOT per-frame. **Next: change D** (service-role write-back RPC).
