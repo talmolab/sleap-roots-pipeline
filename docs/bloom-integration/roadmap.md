@@ -146,7 +146,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 |---|---|
 | Canonical dev-command set (in `scaffolding-lab-python-repo` skill) | ✅ |
 | Command alignment — contracts #2 / analyze #126 | ✅ closed |
-| Command alignment — sleap-roots #223 (PR #228) | 🔵 |
+| Command alignment — sleap-roots #223 ([PR #249](https://github.com/talmolab/sleap-roots/pull/249), supersedes #228) | 🔵 PR open 2026-06-30 |
 | This roadmap | 🔵 created + reviewed 2026-06-10 |
 
 ## Bloom EPIC #9 mapping
