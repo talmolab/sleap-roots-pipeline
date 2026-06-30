@@ -68,7 +68,7 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 ├── models-downloader-template.yaml              # WorkflowTemplate: downloads models
 ├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
 ├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
-├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-tye-lab)
+├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-talmo-lab)
 ├── local_run_pipeline_first_time.sh             # Local WSL2/Docker Desktop test runner
 ├── local-WSL2-*.yaml                            # Local-only templates and workflow configs
 └── workflow_logs_<timestamp>.txt                # Log output saved per run
@@ -76,7 +76,7 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 
 ---
 
-## 🚀 Running on the GPU Cluster (`runai-tye-lab`)
+## 🚀 Running on the GPU Cluster (`runai-talmo-lab`)
 
 You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed at `gpu-master:8888`.
 
@@ -214,7 +214,7 @@ annotations:
 
 ```yaml
 labels:
-  project: tye-lab
+  project: talmo-lab
 ```
 
 - **`project`**: Used by Run:AI for usage tracking and quota enforcement. Should match a defined project name on the cluster.

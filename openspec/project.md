@@ -46,9 +46,12 @@ are YAML manifests and shell scripts.
   scripts. Keep `WorkflowTemplate`s small, named, and reusable; the top-level `Workflow`
   wires them with `templateRef` + `dependencies`.
 - **Cluster vs. local parity.** Cluster manifests are the canonical set; the
-  `local-WSL2-*.yaml` / `local-*.yaml` variants mirror them for Docker Desktop + WSL2
-  testing. When you change one, check the other for drift.
-- **Pin images by tag/digest**, never `:latest`, so a run is reproducible.
+  `local-WSL2-*.yaml` / `local-*.yaml` variants are **CPU-only counterparts, not byte-mirrors**
+  — they deliberately differ in template names (`predictor` vs `sleap-roots-predictor`),
+  `retryStrategy` limits, and GPU/scheduling (no `nvidia.com/gpu`). Reconcile **mount/path
+  parity**, not template names. When you change one, check the other for *path* drift.
+- **Pin images by tag/digest**, never `:latest` — this is the **target** convention for
+  reproducibility (full provenance/idempotency is A4, not yet implemented).
 - Shell scripts should be safe (`set -euo pipefail`) and must never echo `ARGO_TOKEN` or
   other secrets.
 
@@ -56,12 +59,23 @@ are YAML manifests and shell scripts.
 
 - **Three-stage DAG**: models-downloader → predictor → trait-extractor, with
   `dependencies:` enforcing order and `retryStrategy` handling preemption/transient
-  failures.
+  failures. Data passes between stages **via shared volume mounts, not Argo
+  parameters/artifacts** — one stage's output mount is the next stage's input mount, so
+  inter-stage coupling is mount-path agreement, not parameter wiring.
 - **Templates are versioned, shared building blocks** (`argo template create …`), referenced
   by the workflow rather than inlined.
 - **Storage is mount-based**: model input, image input, and outputs are passed between
-  stages via mounted volumes (`hostPath type: Directory` locally; PV/PVC on cluster). A
-  missing `hostPath` directory fails pod startup — paths must exist first.
+  stages via `hostPath type: Directory` volumes on **both** cluster and local — the cluster
+  mounts the NFS-backed `/hpi/hpi_dev/...` tree, local-WSL2 mounts `/run/desktop/mnt/host/wsl/...`.
+  A missing `hostPath` directory fails pod startup — paths must exist first. (PV/PVC appears
+  only in the `local-workflow-test.yaml` smoke test, not the production pipeline.)
+- **Preemptibility is set by `priorityClassName`, not the `preemptible: "true"` annotation**
+  the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai treats
+  `priorityClassName` ≥ 100 as non-preemptible and < 100 as preemptible; the lab's
+  preemptible GPU class is `interactive-preemptible`. The predictor's GPU jobs typically run
+  *within* quota, so over-quota preemption isn't usually exercised — but if a GPU pod is
+  blocked at quota (`NonPreemptibleOverQuota`), set
+  `priorityClassName: interactive-preemptible` to go over quota.
 
 ### Testing Strategy
 
@@ -93,7 +107,8 @@ git/GitHub/OpenSpec/docs commands.
 - This pipeline is part of the **Salk Harnessing Plants Initiative** phenotyping program.
 - The broader program is tracked in `docs/bloom-integration/roadmap.md` (canonical for
   scope/sequencing) and Bloom EPIC #9 (canonical for Bloom-side implementation detail).
-  This repo owns roadmap tier **A4 — event-driven orchestration**.
+  This repo is the orchestration component slated to **deliver** roadmap tier **A4 —
+  event-driven orchestration**; it is currently at **A0** (this change) and A4 is not started.
 - **Vocabulary:** a *scan* is one imaging run of a plant; the pipeline runs per scan (A4),
   while experiment-level `analyze` is a separate, on-request path (not in this repo).
 

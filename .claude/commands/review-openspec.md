@@ -159,11 +159,13 @@ do not rely on summaries.
 >
 > 1. **Manifest validity**: would `argo lint` pass on every manifest the change touches?
 > 2. **Template wiring**: `templateRef` name/template, `entrypoint`, DAG `dependencies`,
->    parameter/artifact passing between stages.
-> 3. **Scheduling & resources**: `gpu-fraction` / `preemptible` annotations; `nvidia.com/gpu`
->    on the predictor step only; `namespace` (`runai-talmo-lab`); `project` label / quota.
-> 4. **Storage**: `hostPath type: Directory` pre-existence; PV/PVC; inter-stage mount-path
->    agreement; cluster ↔ local-WSL2 parity.
+>    inter-stage data via shared volume mounts (not Argo params/artifacts).
+> 3. **Scheduling & resources**: `gpu-fraction`; `nvidia.com/gpu` on the predictor step only;
+>    `namespace` (`runai-talmo-lab`) / `project` (`talmo-lab`) quota; preemptibility via
+>    `priorityClassName` (`interactive-preemptible`), not the `preemptible` annotation.
+> 4. **Storage**: `hostPath type: Directory` pre-existence (cluster `/hpi/hpi_dev/...`);
+>    inter-stage mount-path agreement; cluster ↔ local-WSL2 *path* parity (PV/PVC is
+>    local-test-only).
 > 5. **Reproducibility**: image tags/digests pinned (no `:latest`); model versions.
 > 6. **Migration risk**: can this break a running pipeline on `main` if partially applied?
 >    Renamed templates / changed mounts need a migration note.

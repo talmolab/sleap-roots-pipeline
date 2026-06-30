@@ -3,7 +3,7 @@ kind: WorkflowTemplate
 metadata:
   name: models-downloader-template
   labels:
-    project: tye-lab
+    project: talmo-lab
   annotations:
     preemptible: "true"
 spec:

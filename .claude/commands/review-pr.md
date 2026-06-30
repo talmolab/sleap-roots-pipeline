@@ -21,14 +21,19 @@ This is a declarative **Argo Workflows / Argo Events / RunAI** orchestration rep
 application code, no test suite — see `openspec/project.md`). Use these 5 domain lenses:
 
 1. **Argo Workflow & Template Correctness** — DAG `dependencies` order; `templateRef`
-   name/template wiring; `entrypoint`; parameter/artifact passing between stages;
-   `retryStrategy` on preemption-prone steps; manifest validity (`argo lint`).
-2. **RunAI / Kubernetes Scheduling & Resources** — `gpu-fraction`, `preemptible`
-   annotations; `resources.limits.nvidia.com/gpu`; `namespace` (`runai-talmo-lab`);
-   `project` label (quota); GPU only on the predictor step.
-3. **Storage & Volume Integrity** — `hostPath type: Directory` paths that must pre-exist;
-   PV/PVC correctness; mount paths matching between stages; **cluster (`*.yaml`) ↔ local
-   (`local-WSL2-*.yaml`) parity** (drift between the two is a common bug).
+   name/template wiring; `entrypoint`; `retryStrategy` on preemption-prone steps; manifest
+   validity (`argo lint`). NB: this pipeline passes data **via shared volume mounts, not
+   Argo parameters/artifacts** — verify output-mount(stage N) == input-mount(stage N+1)
+   rather than hunting for param wiring.
+2. **RunAI / Kubernetes Scheduling & Resources** — `gpu-fraction`, `nvidia.com/gpu` on the
+   predictor only; `namespace` (`runai-talmo-lab`) / `project` (`talmo-lab`) quota. NB:
+   preemptibility is governed by `priorityClassName` (`interactive-preemptible` < 100 =
+   preemptible), **not** the `preemptible: "true"` annotation the templates carry.
+3. **Storage & Volume Integrity** — `hostPath type: Directory` paths that must pre-exist
+   (cluster: `/hpi/hpi_dev/...`); mount-path agreement between stages; **cluster (`*.yaml`)
+   ↔ local (`local-WSL2-*.yaml`) *path* parity**. The locals are CPU-only counterparts with
+   deliberately different template names/retry/no-GPU — reconcile mounts/paths, not template
+   names (PV/PVC is local-test-only).
 4. **Reproducibility & Provenance** — image tags/digests pinned (never `:latest`); model
    versions; per-scan parameter defaults vs. overrides; idempotency / re-delivery behavior
    (ties to roadmap A4 in `docs/bloom-integration/roadmap.md`).
@@ -111,8 +116,9 @@ For each subagent, construct a prompt that includes:
 
 ```
 Subagent 1: Argo Workflow & Template Correctness
-  - DAG dependencies / ordering; templateRef wiring; entrypoint; parameter & artifact
-    passing; retryStrategy; would `argo lint` pass on every changed manifest?
+  - DAG dependencies / ordering; templateRef wiring; entrypoint; inter-stage data via
+    shared volume mounts (NOT Argo params/artifacts) — output-mount(N)==input-mount(N+1);
+    retryStrategy; would `argo lint` pass on every changed manifest?
 
 Subagent 2: RunAI / Kubernetes Scheduling & Resources
   - gpu-fraction / preemptible annotations; nvidia.com/gpu limits on the right step;

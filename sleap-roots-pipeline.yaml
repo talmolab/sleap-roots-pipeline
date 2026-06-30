@@ -7,9 +7,9 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: sleap-roots-pipeline-
-  namespace: runai-tye-lab
+  namespace: runai-talmo-lab
   labels:
-    project: tye-lab
+    project: talmo-lab
 spec:
   entrypoint: pipeline
 

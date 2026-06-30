@@ -6,7 +6,7 @@ metadata:
     gpu-fraction: "0.5"
     preemptible: "true"
   labels:
-    project: tye-lab
+    project: talmo-lab
 spec:
   templates:
     - name: predictor

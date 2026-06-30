@@ -29,7 +29,7 @@ For non-trivial changes, use BOTH. For tiny changes (typo, comment, image-tag bu
 
 1. **Ensure feature branch.** Check the current branch (`git branch --show-current`). If on `main`, ask the user what branch name to create — suggest a kebab-case, verb-led name based on the feature (e.g., `add-event-trigger`, `fix-gpu-fraction`). Create and switch to it before proceeding.
 
-2. **Invoke `superpowers:brainstorming`.** This is mandatory per `CLAUDE.md` — even for changes that seem simple. The brainstorming skill explores user intent, requirements, and design through clarifying questions, then produces a design doc at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`. Do not skip.
+2. **Invoke `superpowers:brainstorming`.** This is mandatory in this workflow — even for changes that seem simple. The brainstorming skill explores user intent, requirements, and design through clarifying questions, then produces a design doc at `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md`. Do not skip.
 
 3. **Explore the repo.** Use subagents (Explore agent type) to understand current state relevant to this change. Investigate:
    - Existing Argo manifests (`sleap-roots-pipeline.yaml`, `*-template.yaml`) and the `local-WSL2-*` variants

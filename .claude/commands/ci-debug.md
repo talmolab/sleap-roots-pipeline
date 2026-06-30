@@ -18,7 +18,7 @@ Diagnose and fix a failing run in `talmolab/sleap-roots-pipeline`.
 ```bash
 argo list -n runai-talmo-lab
 argo get <workflow-name> -n runai-talmo-lab          # node tree + which step failed
-argo logs <workflow-name> -n runai-talmo-lab --log-options tail=100
+argo logs <workflow-name> -n runai-talmo-lab --tail 100   # or --follow to stream
 ```
 
 ### Step 2: Drop to pod/Kubernetes level if needed
@@ -34,11 +34,12 @@ kubectl describe pod <pod-name> -n runai-talmo-lab   # scheduling / volume / GPU
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Manifest rejected on submit | invalid Argo YAML | `argo lint <file>.yaml` locally and fix |
-| Pod stuck `Pending` | GPU/quota unavailable or `preemptible` evicted | check `gpu-fraction` / `project` label / cluster capacity; add `retryStrategy` |
-| Pod fails at startup, volume error | `hostPath type: Directory` does not exist on the node | create the directory first, or fix the path; check cluster↔local parity |
+| Pod stuck `Pending` (any stage) | cluster at capacity, or a CPU stage waiting — `preemptible: "true"` is on **all three** templates, not just the GPU step, so this is not necessarily GPU-related | check `argo get`/`kubectl describe pod` events + cluster capacity; add `retryStrategy` |
+| GPU pod blocked: `NonPreemptibleOverQuota` | the job is non-preemptible and the project is at its GPU quota — the `preemptible: "true"` annotation is **not** the scheduling mechanism | set `priorityClassName: interactive-preemptible` on the template to go over quota (Run:ai treats `priorityClassName` < 100 as preemptible) |
+| Pod fails at startup, volume error | `hostPath type: Directory` does not exist on the node | create the directory first (under `/hpi/hpi_dev/...` on cluster), or fix the path; check cluster↔local *path* parity |
 | `ImagePullBackOff` | wrong/missing image tag or registry auth | verify the pinned image tag/digest exists in GHCR |
 | Stage runs but produces no output | mount-path mismatch between stages | confirm output mount of one stage == input mount of the next |
-| Predictor OOM / no GPU | missing `nvidia.com/gpu` limit or GPU on wrong step | check `resources.limits` is on the predictor step only |
+| Predictor OOM / no GPU | missing `nvidia.com/gpu` limit, GPU on wrong step, or `gpu-fraction` too small | check `resources.limits` is on the predictor step only; raise `gpu-fraction` if the model needs more than half a GPU |
 
 ## B. Debug a GitHub Actions run (once CI is added)
 
