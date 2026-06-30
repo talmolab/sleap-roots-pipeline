@@ -97,7 +97,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 | sleap-roots-predict | openspec init, canonical commands, Dockerfile, GHCR CI | `openspec validate` passes; commands present; GHCR image builds | ⬜ |
 | sleap-roots (traits) | already has openspec/.claude; add GHCR for trait-extractor if missing | GHCR image builds | ⬜ |
 | sleap-roots-training | transfer to talmolab; openspec + commands | repo under talmolab; openspec validates | ⬜ |
-| sleap-roots-pipeline | openspec init + canonical commands | `openspec validate` passes | ⬜ |
+| sleap-roots-pipeline | openspec init + canonical commands | `openspec validate` passes | ✅ **PR #4 merged 2026-06-30** (openspec + 9 canonical commands; + RunAI skill + `talmo-lab` manifest fix) |
 
 ### Track A — per-scan Bloom pipeline
 
@@ -213,6 +213,7 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-06-30** — **A0 `sleap-roots-pipeline` done** ([PR #4](https://github.com/talmolab/sleap-roots-pipeline/pull/4) merged, squash `f0d0c3a`). `openspec init --tools claude` + `project.md` (Argo/RunAI/per-scan orchestration) + 9 canonical Claude commands (Python/test/build commands SKIPPED — declarative-YAML repo). Two adversarial `/review-pr` rounds fixed: stale cluster identifiers `tye-lab`→**`talmo-lab`** in the manifests/README/launcher (canonical per GAPIT + mosquito-cfd), inverted PV/PVC↔hostPath claim, preemptibility-is-`priorityClassName`-not-annotation, and a fabricated GHCR image registry (real = `registry.gitlab.com/salk-tm/...`). Also ported a **RunAI skill** (`.claude/skills/runai/`) from mosquito-cfd. `openspec validate --all --strict` green. A0 remaining repos: predict, traits-GHCR, training-transfer.
 - **2026-06-30** — **A2 change C merged + archived** (`salk-bloom` #357 → `staging`, squash `1a89bb0`; OpenSpec archived #369). `cyl_scan_intermediates`: per-scan artifact pointers (one `.slp` per root type), dual pointer (`s3_location` MinIO canonical + `box_link`), `checksum`/`file_size`, at-least-one-location CHECK, strict `kind`/`root_type` CHECKs, `UNIQUE(source_id,scan_id,kind,root_type)`, role RLS (writer=ingest), forward-only migration + manual rollback. **Trait↔blob link = shared `(source_id, scan_id)`** — no `cyl_scan_traits` change. **Contract re-pinned `v0.1.0a2`** (talmolab/sleap-roots-contracts #5): `BlobRef.kind`={predictions_slp} (dropped `h5`/`labels`/`qc_image`), **added required `root_type`**={primary,lateral,crown}; `traits_csv` dropped (numbers → `cyl_scan_traits`), `viewer_html` deferred. `.slp` is per-(scan,root-type), NOT per-frame. **Next: change D** (service-role write-back RPC).
 - **2026-06-16** — **Change C / blob-storage design settled** (from the real `/run-cylinder-pipeline`
   Box-upload flow; scope on `salk-bloom` #296). **Per-scan** `BlobRef` (moving off the current
