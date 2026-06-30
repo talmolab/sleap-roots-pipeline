@@ -182,7 +182,7 @@ argo submit sleap-roots-pipeline.yaml --watch
 ```bash
 argo list -n runai-talmo-lab
 argo get <workflow-name> -n runai-talmo-lab
-argo logs <workflow-name> -n runai-talmo-lab --log-options tail=100
+argo logs <workflow-name> -n runai-talmo-lab --tail 100
 ```
 
 Check pod logs:

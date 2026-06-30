@@ -29,11 +29,13 @@ commands).
 - **Argo Events** — (planned, A4) scan-ingest → workflow trigger
 - **RunAI** — GPU scheduling on the `runai-talmo-lab` namespace (fractional GPU via
   `gpu-fraction`, `preemptible`, `project` labels for quota)
-- **Kubernetes** — execution substrate; `hostPath` / PV+PVC volumes for model/image/output
-  mounts; `nvidia.com/gpu` resource limits
+- **Kubernetes** — execution substrate; `hostPath` volumes (cluster: NFS-backed
+  `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits
 - **Bash** — launchers (`runai_run_pipeline.sh` for the cluster,
   `local_run_pipeline_first_time.sh` for local Docker Desktop + WSL2 testing)
-- **Docker / GHCR** — stage images are built in their own repos and *consumed* here
+- **Docker** — stage images are built in their own repos and *consumed* here. They currently
+  publish to **GitLab** (`registry.gitlab.com/salk-tm/{models-downloader, sleap-roots-predict,
+  sleap-roots-traits}`); migration to **GHCR** is the roadmap A0 target (not yet done)
 
 No Python package, no Node package, no build step, and (currently) no CI — the artifacts
 are YAML manifests and shell scripts.
@@ -46,10 +48,12 @@ are YAML manifests and shell scripts.
   scripts. Keep `WorkflowTemplate`s small, named, and reusable; the top-level `Workflow`
   wires them with `templateRef` + `dependencies`.
 - **Cluster vs. local parity.** Cluster manifests are the canonical set; the
-  `local-WSL2-*.yaml` / `local-*.yaml` variants are **CPU-only counterparts, not byte-mirrors**
-  — they deliberately differ in template names (`predictor` vs `sleap-roots-predictor`),
-  `retryStrategy` limits, and GPU/scheduling (no `nvidia.com/gpu`). Reconcile **mount/path
-  parity**, not template names. When you change one, check the other for *path* drift.
+  `local-WSL2-*.yaml` / `local-*.yaml` variants are **Docker-Desktop/WSL2 counterparts, not
+  byte-mirrors** — they deliberately differ in template names (`predictor` vs
+  `sleap-roots-predictor`) and `retryStrategy` limits. Reconcile **mount/path parity**, not
+  template names. (Note: the local-WSL2 predictor template still pins `nvidia.com/gpu: 1`
+  despite WSL2 GPU being unavailable — a known stale spot, not a parity rule.) When you change
+  one, check the other for *path* drift.
 - **Pin images by tag/digest**, never `:latest` — this is the **target** convention for
   reproducibility (full provenance/idempotency is A4, not yet implemented).
 - Shell scripts should be safe (`set -euo pipefail`) and must never echo `ARGO_TOKEN` or
@@ -127,8 +131,9 @@ git/GitHub/OpenSpec/docs commands.
 
 - **RunAI GPU cluster** (`gpu-master:8888` Argo server, `runai-talmo-lab` namespace);
   requires `runai login` + an exported `ARGO_TOKEN`.
-- **Stage container images** (GHCR), built/published by sibling repos:
-  `models-downloader`, `sleap-roots-predict`, `sleap-roots` (trait-extractor).
+- **Stage container images** (currently `registry.gitlab.com/salk-tm/...`; GHCR is the A0
+  target), built/published by sibling repos: `models-downloader`, `sleap-roots-predict`,
+  `sleap-roots-traits` (trait-extractor).
 - **`argo` CLI** and **`kubectl`** for template creation, submission, and log retrieval.
 - (Planned, A4) **Bloom** (local server) as the scan-ingest event source and write-back
   target, via the `sleap-roots-contracts` `ResultEnvelope` contract.

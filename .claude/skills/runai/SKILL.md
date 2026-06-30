@@ -20,11 +20,12 @@ RunAI runs in **WSL**, not Windows PowerShell, and needs an explicit KUBECONFIG:
 
 ```bash
 wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml && \
-  /home/elizabeth/.runai/bin/runai <command>"
+  runai <command>"
 ```
 
-- Verify the `KUBECONFIG` path and the `runai` binary path exist in the WSL environment
-  before constructing commands.
+- `runai` is assumed on `PATH`; if your install isn't, use its absolute path (e.g.
+  `"$HOME/.runai/bin/runai"`). **Verify the `KUBECONFIG` path and the `runai` binary location
+  in your own WSL environment** before constructing commands — these are operator-specific.
 - In **Git Bash** (not WSL), prefix cluster-path commands with `MSYS_NO_PATHCONV=1` to stop
   `/hpi/...` from being mangled into a Windows path.
 
@@ -63,39 +64,48 @@ clean up manually) rather than `runai training` (auto-terminates on completion).
 | Need | Flag |
 |---|---|
 | GPU (whole) | `--gpu-devices-request 1` |
-| GPU (fractional) | `--gpu-portion-request 0.5` (the predictor template uses `gpu-fraction: "0.5"`) |
+| GPU (fractional) | `--gpu-portion-request 0.5` (the predictor template annotates `gpu-fraction: "0.5"`) |
 | CPU cores | `--cpu-core-request 12` |
 | Memory | `--cpu-memory-request 32G` |
 | Always re-pull image | `--image-pull-policy Always` |
 
 Only the **predictor** stage needs a GPU; `models-downloader` and `trait-extractor` are
-CPU-only.
+CPU-only. (Note: the predictor template pins both `gpu-fraction: "0.5"` and a hard
+`nvidia.com/gpu: 1` — under fractional scheduling the annotation governs.)
 
-## 5. Stage images (GHCR)
+## 5. Stage images
+
+Current registry is **GitLab** (`registry.gitlab.com/salk-tm/...`); the roadmap A0 target is to
+migrate these to GHCR, not yet done — so use the GitLab refs until then.
 
 | Stage | Image |
 |---|---|
-| models-downloader | `ghcr.io/talmolab/models-downloader:<tag>` |
-| predictor (GPU) | `ghcr.io/talmolab/sleap-roots-predict:<tag>` |
-| trait-extractor | `ghcr.io/talmolab/sleap-roots:<tag>` |
+| models-downloader | `registry.gitlab.com/salk-tm/models-downloader:<tag>` |
+| predictor (GPU) | `registry.gitlab.com/salk-tm/sleap-roots-predict:<tag>` |
+| trait-extractor | `registry.gitlab.com/salk-tm/sleap-roots-traits:<tag>` |
 
-Pin a tag/digest — never `:latest`. Confirm the tag exists in GHCR before submitting.
+Pin a tag/digest — never `:latest`. Confirm the tag exists in the registry before submitting.
 
 ## 6. Example — run the predictor stage interactively
 
+The predictor reads three container dirs — `/workspace/images_input`, `/workspace/models_input`,
+`/workspace/output` — which are also its entrypoint's positional args. **Mount the host dirs
+to those exact container paths.** Note the non-obvious remap: the *models-downloader output*
+dir (`models_downloader_output`) is what feeds the predictor's `models_input`.
+
 ```bash
 wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml && \
-/home/elizabeth/.runai/bin/runai workspace submit srp-predict-test \
+runai workspace submit srp-predict-test \
   -p talmo-lab \
-  --image ghcr.io/talmolab/sleap-roots-predict:<tag> \
+  --image registry.gitlab.com/salk-tm/sleap-roots-predict:<tag> \
   --image-pull-policy Always \
   --gpu-portion-request 0.5 \
   --cpu-core-request 8 \
   --cpu-memory-request 16G \
-  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/models,mount=/models,mount-propagation=HostToContainer \
-  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/images,mount=/images,mount-propagation=HostToContainer \
-  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/predictions,mount=/predictions,mount-propagation=HostToContainer,readwrite \
-  -- bash -c 'cd /workspace && <predict entrypoint>; sleep infinity'"
+  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/images_downloader_output,mount=/workspace/images_input,mount-propagation=HostToContainer \
+  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/models_downloader_output,mount=/workspace/models_input,mount-propagation=HostToContainer \
+  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/predictions,mount=/workspace/output,mount-propagation=HostToContainer,readwrite \
+  -- bash -c '<predict entrypoint> /workspace/images_input /workspace/models_input /workspace/output; sleep infinity'"
 ```
 
 `sleep infinity` keeps the pod alive after the run so you can `runai workspace exec` in to
@@ -109,8 +119,8 @@ the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai
 
 | Class | Preemptible? | Behaviour |
 |---|---|---|
-| `inference` (125), `build` (100) | ❌ | must fit the project's **deserved quota**; never evicted |
-| `interactive-preemptible` (75), `train` (50) | ✅ | may use **over-quota** GPUs; may be evicted → pair with `retryStrategy` |
+| `inference` (125), `build` (100) | no | must fit the project's **deserved quota**; never evicted |
+| `interactive-preemptible` (75), `train` (50) | yes | may use **over-quota** GPUs; may be evicted → pair with `retryStrategy` |
 
 The lab's preemptible GPU class is **`interactive-preemptible`**. The predictor's GPU jobs
 typically run *within* quota, so over-quota preemption isn't usually exercised — but if a GPU
@@ -133,7 +143,7 @@ set the priority class:
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
 | Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7 |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
-| `ImagePullBackOff` | confirm the GHCR tag exists; test `docker pull` of the same tag |
+| `ImagePullBackOff` | confirm the `registry.gitlab.com/salk-tm/...` tag exists; test `docker pull` of the same tag |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
 

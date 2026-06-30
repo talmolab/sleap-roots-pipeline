@@ -121,11 +121,12 @@ Subagent 1: Argo Workflow & Template Correctness
     retryStrategy; would `argo lint` pass on every changed manifest?
 
 Subagent 2: RunAI / Kubernetes Scheduling & Resources
-  - gpu-fraction / preemptible annotations; nvidia.com/gpu limits on the right step;
-    namespace; project label / quota; nothing requesting GPU that shouldn't.
+  - gpu-fraction; nvidia.com/gpu limits on the right step; namespace (runai-talmo-lab) /
+    project (talmo-lab) quota; preemptibility via priorityClassName (interactive-preemptible),
+    NOT the preemptible annotation; nothing requesting GPU that shouldn't.
 
 Subagent 3: Storage & Volume Integrity
-  - hostPath type:Directory pre-existence; PV/PVC; inter-stage mount-path agreement;
+  - hostPath type:Directory pre-existence (cluster /hpi/hpi_dev/...); inter-stage mount-path agreement;
     cluster vs local-WSL2 manifest parity.
 
 Subagent 4: Reproducibility & Provenance
