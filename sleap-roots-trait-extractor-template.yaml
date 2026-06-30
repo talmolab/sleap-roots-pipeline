@@ -3,7 +3,7 @@ kind: WorkflowTemplate
 metadata:
   name: sleap-roots-trait-extractor-template
   labels:
-    project: tye-lab
+    project: talmo-lab
   annotations:
     preemptible: "true"
 spec:

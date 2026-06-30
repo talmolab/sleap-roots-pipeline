@@ -1,0 +1,6 @@
+# Normalize line endings so YAML manifests and shell scripts stay LF across platforms.
+* text=auto eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+*.md text eol=lf

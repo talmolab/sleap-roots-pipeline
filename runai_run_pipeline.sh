@@ -8,7 +8,7 @@ RED='\033[1;31m'
 NC='\033[0m'
 
 # Namespace for the GPU cluster
-NAMESPACE="runai-tye-lab"
+NAMESPACE="runai-talmo-lab"
 
 # Argo Server in HTTP mode
 export ARGO_SERVER=gpu-master:8888
