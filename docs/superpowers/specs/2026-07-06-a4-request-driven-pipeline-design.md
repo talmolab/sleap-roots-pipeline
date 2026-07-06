@@ -135,6 +135,16 @@ A scan is **done for (data, models, params, code)** iff a `cyl_trait_sources` ro
 (verified), so a production-model bump invalidates "done" and forces recompute; identical inputs
 reuse.
 
+**Requirement — bake the traits code sha (`SRT_TRAITS_CODE_SHA`).** The key hashes `traits_code_sha`,
+which the emitter (`build_provenance`) reads from the **`SRT_TRAITS_CODE_SHA`** env, falling back to
+`""` if unset. The **trait-extractor image MUST bake `SRT_TRAITS_CODE_SHA` = its build git sha**
+(workflow build-arg → `ENV`), or `traits_code_sha` stays empty and a **traits-code change would not
+invalidate "done"** (a re-run would collide with the stale result via first-writer-wins). Predict's
+`predict_code_sha` + resolved model versions ride in via its manifest; the **traits side must supply
+its own code sha**. (Not required for the bare PoC, which doesn't exercise dedup; land it with the
+trait-extractor image change `add-trait-extractor-image` or the dedup slice.) `SRT_TRAITS_CONTAINER_DIGEST`
+is only *recorded* in provenance, not hashed, so baking it is optional.
+
 - **Cluster-side per-scan skip (the reliable layer):** the predict loop, per scan, checks Bloom for a
   matching source (exact `idempotency_key`) and skips inference — the same skip-if-done used for
   resume, extended to cross-run dedup. This is always correct because the pipeline *knows* the current
