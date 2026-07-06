@@ -213,12 +213,19 @@ death** (Argo retry + resume-skip).
 
 - **R1 — `bloom_workflows` grants gap:** the role has **no cyl RLS/GRANTs in any migration** (only
   the staging JWT branch). Confirm with Benfica how it gets cyl read access before relying on it to
-  read scans / write `pipeline_runs`.
-- **R2 — main vs staging:** the A2 lockdown (RPC-only writes, intermediates, read-path,
-  `bloom_workflows`) is **staging-only**; production (`main`) is behind. This design targets the
-  staging end-state; prod ship gated on staging→main promotion (EPIC #16 — reconfirm closed).
-- **R3 — Tailscale needs a cluster/internal-side presence** (subnet router or node), possibly
-  cluster-admin help; loop in ITS even for the temporary bypass. It strengthens the firewall ask.
+  read scans / write `pipeline_runs`. **Tracked: salk-bloom #404** (for the Benfica discussion).
+- **R2 — main vs staging — NOT a blocker (per eberrigan):** the A2 lockdown is staging-only and
+  production (`main`) is behind, but staging→main promotion is handled separately; this design
+  targets the staging end-state and does not gate on it.
+- **R3 — Tailscale needs an internal-side presence.** For the **PoC**, the simplest option is a
+  **Tailscale subnet router on an on-campus machine the requester controls** (already on the internal
+  `10.x` net and able to reach the cluster Argo/`:6443`, like the internal workstation in the firewall
+  probe) — advertise the cluster route, run Tailscale on bloom-dev, done; **no cluster-admin needed**.
+  Subnet-router mode keeps the real cluster IP so the Argo/k8s TLS cert still matches. Caveats: that
+  machine must stay up/connected (single point of failure — PoC-grade, not prod), Tailscale gives
+  network reachability only (still need the `bloom-pipeline` SA token for Argo submission), and it's a
+  VPN bypass of a security boundary so loop in ITS even temporarily. (A pure *pipeline-execution* PoC
+  needs no Tailscale at all — submit directly from that internal machine.)
 - **R4 — firewall pending:** if ITS grants the rule, drop Tailscale (no app change).
 
 ## 13. Out of scope (v1)
