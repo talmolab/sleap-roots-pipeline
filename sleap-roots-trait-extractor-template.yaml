@@ -9,15 +9,25 @@ metadata:
 spec:
   templates:
     - name: trait-extractor
+      # Run preemptible for consistency with the predictor + to dodge a CPU-pool
+      # NonPreemptibleOverQuota stall; the `preemptible` annotation above is inert.
+      priorityClassName: interactive-preemptible
       retryStrategy:
+        # ⚠️ sleap-roots#259 (reconcile at wiring time): the driver exits non-zero if ANY scan
+        # fails, so limit:2 retries the WHOLE batch, not a partial run; and an empty /in exits 0
+        # (silent-green node). Resolve via distinct exit codes / continueOn / per-scan fan-out +
+        # an empty-input guard. (Graceful preemption also needs a driver SIGTERM handler — no tini.)
         limit: 2
         retryPolicy: Always
       container:
-        image: registry.gitlab.com/salk-tm/sleap-roots-traits:latest
+        # A4: GHCR trait-extractor (sleap-roots #257, merged main bb2199c). ENTRYPOINT is
+        # ["python","-m","trait_extractor"] (exec form) → args are the two dirs only, no `command:`.
+        # Bakes SRT_TRAITS_CODE_SHA → non-empty traits_code_sha (idempotency-key input).
+        # Pinned to the immutable sha-<gitsha> tag; tighten to @sha256:<digest> (from the build
+        # run summary / `docker buildx imagetools inspect` when public) per run.
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c
         imagePullPolicy: Always
         args:
-          - "python"
-          - "/workspace/src/main.py"
           - "/workspace/input"
           - "/workspace/output"
         volumeMounts:
@@ -26,5 +36,14 @@ spec:
           - name: traits-output-dir
             mountPath: /workspace/output
         securityContext:
+          # TODO: privileged:true is unnecessary for a CPU-only Python process — verify + drop.
           privileged: true
           runAsUser: 0
+        resources:
+          # Initial estimates — tune from a real run.
+          requests:
+            cpu: "1"
+            memory: 2Gi
+          limits:
+            cpu: "4"
+            memory: 8Gi

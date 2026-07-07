@@ -2,6 +2,11 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: sleap-roots-predictor-template
+  # NOTE: these live on the WorkflowTemplate OBJECT metadata, so Argo does NOT copy them onto the
+  # pod — both are currently INERT breadcrumbs. Effective behavior comes from
+  # spec.templates[].priorityClassName (preemptibility) + the container resources below.
+  #   gpu-fraction "0.5" has no effect today → each predict pod takes a WHOLE GPU. Proper RunAI
+  #   fractional wiring (pod-level annotation + drop nvidia.com/gpu) is tracked in #25.
   annotations:
     gpu-fraction: "0.5"
     preemptible: "true"
@@ -10,28 +15,59 @@ metadata:
 spec:
   templates:
     - name: predictor
+      # RunAI: preemptibility is governed by priorityClassName, NOT the preemptible
+      # annotation (a UI breadcrumb). interactive-preemptible (75) lets the GPU pod use
+      # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.
+      priorityClassName: interactive-preemptible
       retryStrategy:
-        limit: 1
+        # Preemptible GPU stage — can be evicted mid-run when over-quota, so allow several
+        # retries with backoff (don't slam straight back into a still-full cluster).
+        # ⚠️ Resume caveat (predict #26 / sleap-roots #259): predict's existence-only skip + a
+        # non-atomic manifest write means a mid-write eviction can leave a truncated
+        # {scan}.predictions.json that a retry trusts as "done". More retries widen that window —
+        # gate this limit on atomic-write + checksum-verified skip before wiring in write-back.
+        limit: 3
         retryPolicy: Always
+        backoff:
+          duration: "2m"
+          factor: 2
       container:
-        image: registry.gitlab.com/salk-tm/sleap-roots-predict:latest
+        # A4: warm-batch GHCR predict (predict #27, merged main 4a70e599 — closes predict #24).
+        # Models load in-process from the wandb registry — no models-input mount. Contract:
+        # `<image> <in_dir> <out_dir>` + WANDB_API_KEY. Bakes SRP_PREDICT_CODE_SHA → non-empty
+        # predict_code_sha (idempotency-key input).
+        # Pinned to the immutable sha-<gitsha> tag; tighten to
+        # @sha256:68a0ba123eacabc606ae0a38cae8bdab2dcb8f142abefb099b5bde9fe3ca8be0 when public.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f
         imagePullPolicy: Always
         args:
-          - "python"
-          - "/workspace/src/main.py"
           - "/workspace/images_input"
-          - "/workspace/models_input"
           - "/workspace/output"
+        env:
+          - name: WANDB_API_KEY
+            valueFrom:
+              secretKeyRef:
+                # RunAI UI "Generic secret" credentials materialize the k8s secret with a
+                # `genericsecret-` prefix on the asset name (asset `wandb-api-key` ->
+                # secret `genericsecret-wandb-api-key`), Project-scoped into this namespace.
+                name: genericsecret-wandb-api-key
+                key: WANDB_API_KEY
         volumeMounts:
           - name: images-input-dir
             mountPath: /workspace/images_input
-          - name: models-output-dir
-            mountPath: /workspace/models_input
           - name: predictions-output-dir
             mountPath: /workspace/output
         securityContext:
+          # TODO: privileged:true is likely unnecessary (GPU via device-plugin + hostPath NFS
+          # don't require it); verify + drop. runAsUser:0 root-owns the NFS outputs — reconsider.
           privileged: true
           runAsUser: 0
-        resources: 
+        resources:
+          # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).
+          # A memory request/limit prevents an unaccounted OOM-kill under node pressure.
+          requests:
+            cpu: "2"
+            memory: 8Gi
           limits:
+            memory: 24Gi
             nvidia.com/gpu: 1
