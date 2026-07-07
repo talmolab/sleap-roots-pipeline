@@ -143,7 +143,7 @@
 ---
 
 ## Deferred to later slices (not this plan)
-- **Write-back step** (bloomcli ingest → `insert_cyl_result_envelope`) — gated on bloom #393 (RPC accepts `0.1.0a3`) + ingest CLI bloom #397.
+- **Write-back step** (bloomcli ingest → `insert_cyl_result_envelope`) — RPC **now accepts `0.1.0a3`** (bloom #393 ✅ / PR #399, prefix-tolerant `contract_version` match); gated only on the ingest CLI bloom #397.
 - **Automated stage-in** (bloomctl `--scan-id` container + the ScanMetadata sidecar producer) — replaces the manual Task 7.
 - **Batching + fan-out + Argo semaphore + RunAI-quota concurrency**, **cluster-side dedup skip**, **resume hardening** (atomic writes, checksum-verified skip, attempt cap), **notify** — the A4 hardening slice.
 - **The Bloom trigger + `pipeline_runs`** (bloom repo, gated on #404) and **push transport (Tailscale)** — separate plans.

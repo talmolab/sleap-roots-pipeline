@@ -23,7 +23,7 @@ declarative repo; everything else in that design is a later, separately-tracked 
 
 ## Out of scope (later changes)
 
-write-back (gated bloom #393/#397), automated stage-in (bloomctl), batching/fan-out, Argo
+write-back (bloom #393 ✅ RPC accepts a3 / PR #399; ingest CLI bloom #397 remains), automated stage-in (bloomctl), batching/fan-out, Argo
 semaphore + RunAI-quota concurrency, cluster-side dedup, resume hardening (atomic writes /
 checksum-verified skip / attempt cap), notification, the Bloom request trigger + `pipeline_runs`,
 and the Tailscale/push transport.
