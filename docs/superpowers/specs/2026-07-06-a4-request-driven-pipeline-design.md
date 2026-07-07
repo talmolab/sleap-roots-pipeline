@@ -51,10 +51,16 @@ control-plane direction is the *only* thing Tailscale/firewall affects; the data
    into batches** (≤ `BATCH_SIZE`) → **submit one Argo workflow per batch** (push) → return
    `pipeline_run_id`.
 3. Each Argo workflow (one per batch), **staged**:
-   - `download-all` — stage-in one batch's scans via bloomcli over 443.
+   - `download-all` — stage-in one batch's scans via bloomcli over 443, as a **nested tree** on the
+     shared mount: `{scan_key}/<frames>` + `{scan_key}.scan_metadata.json` (the `ScanMetadata` sidecar
+     — `image_ids` / `images_checksum` / normalized `{species,mode,age}` params — is **authored here**,
+     not by predict).
    - `predict-all` — **one warm GPU pod**: load models once, loop the batch's scans (skip any with a
-     valid prediction on the shared mount *or* an existing Bloom source), write predictions to the
-     **shared mount**, exit → **GPU released**.
+     valid prediction on the shared mount *or* an existing Bloom source), write predictions **and copy
+     each scan's sidecar verbatim forward** into `out/{scan_key}/` (**D1** — makes predict's output a
+     self-contained trait-extractor input tree; predict never authors the sidecar), then exit → **GPU
+     released**. *(Closes the sidecar-bridge gap: the sidecar is authored into predict's input mount but
+     traits reads from predict's output mount — predict bridges the two by copy-through.)*
    - `traits+writeback` — per scan (loop/fan-out, CPU): compute traits → `insert_cyl_result_envelope`
      RPC over 443 (idempotent), update the scan's child row `written` + `source_id`.
    - `notify`.
@@ -185,6 +191,17 @@ identical key and recognizes done work); Argo `retryStrategy` (crash/OOM/preempt
 pod), mark that scan `failed` and continue the batch → run ends `partial` (e.g. 39/40 + 1 failed)
 rather than blocking. Distinguish **scan-level error** (mark failed, continue) from **pod-level
 death** (Argo retry + resume-skip).
+
+**Producer Argo-readiness — reconcile *both* producers uniformly.** The predict batch runner and the
+traits driver share the same three behaviours that need one A4-wiring decision: (a) **empty input →
+exit 0** (a silent-green node if stage-in produced nothing), (b) **exit non-zero if *any* scan fails →
+`retryStrategy` retries the whole batch** (not a partial run), and (c) **no init / SIGTERM handler** for
+graceful preemption. Tracked for traits as [sleap-roots #259](https://github.com/talmolab/sleap-roots/issues/259);
+**predict has the identical behaviour** (`run_batch` returns `ok=True` on empty input, exits non-zero on
+any failed scan). Resolve the exit-code / empty-input / SIGTERM policy the *same way for both* at wiring
+time — else you fix traits and leave predict silently green on an empty stage-in. (Also: the PoC's
+**existence-only** skip is only safe once writes are **atomic** (temp→rename) — land those two together,
+or a truncated manifest is skipped as done.)
 
 ## 9. Concurrency & resource control (no custom queue)
 

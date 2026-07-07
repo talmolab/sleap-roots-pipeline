@@ -15,8 +15,8 @@
 - Pin producer images by immutable `sha-<sha>`/digest tag (not `latest`) — per the A4 design's per-run pin requirement.
 
 ## Container interface contracts (consumed — defined here, satisfied by the producer slices)
-- **Predict** (predict #24, GHCR image TBD): `docker run <predict-image> <in_scan_dir> <out_dir>`, env `WANDB_API_KEY`; loads models once, writes `{scan_key}.predictions.json` + named per-root `.slp` to `<out_dir>`; GPU.
-- **Traits** (sleap-roots #256, `ghcr.io/talmolab/sleap-roots-trait-extractor`): `docker run <traits-image> <in_dir> <out_dir>` (ENTRYPOINT `["python","-m","trait_extractor"]` baked → args are the two dirs only); reads `{scan}.predictions.json` + `{scan}.scan_metadata.json` + `.slp`, writes `{scan_key}.result.json`; CPU.
+- **Predict** (predict #24, `ghcr.io/talmolab/sleap-roots-predict:sha-<sha>`): `docker run <predict-image> <in_scan_dir> <out_dir>`, env `WANDB_API_KEY`; loads models once. **Input = a nested tree** `{scan_key}/<frames>` + `{scan_key}.scan_metadata.json` (sidecar authored by stage-in, not predict). Per scan writes `<out_dir>/{scan_key}/{scan_key}.predictions.json` + named per-root `.slp` **and copies the sidecar verbatim forward** into `out/{scan_key}/` (**D1** — makes predict's output a self-contained trait-extractor input tree); GPU. Bakes `SRP_PREDICT_CODE_SHA` → `predict_code_sha`.
+- **Traits** (sleap-roots #257, `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c`): `docker run <traits-image> <in_dir> <out_dir>` (ENTRYPOINT `["python","-m","trait_extractor"]` baked → args are the two dirs only); reads predict's `out/{scan_key}/` tree (`{scan}.predictions.json` + `{scan}.scan_metadata.json` + `.slp`), writes `{scan_key}.result.json`; CPU. Bakes `SRT_TRAITS_CODE_SHA` → `traits_code_sha`.
 
 ## External prerequisites (block the end-to-end run, not the manifest authoring)
 - predict #24 — warm-batch predict container CLI + image (does not exist yet).
@@ -123,7 +123,7 @@
 
 ### Task 7: Pre-stage a reference scan (infra, PoC input)
 
-- [ ] **Step 1:** Copy one reference scan's frames to the `images-input-dir` hostPath on `/hpi/hpi_dev`, and hand-author `{scan_key}.scan_metadata.json` (`image_ids`, `images_checksum`, `params={species,mode,age}`) alongside — the traits container requires the sidecar. Verify the files exist on the mount from a cluster pod or the internal machine.
+- [ ] **Step 1:** Stage one reference scan in the **nested** `discover_scans` layout under the `images-input-dir` hostPath on `/hpi/hpi_dev`: `{scan_key}/<frames>` + `{scan_key}.scan_metadata.json` (hand-author the sidecar: `image_ids`, `images_checksum`, `params={species,mode,age}` — cylinder scan, so `mode=cylinder`). The sidecar goes in **predict's input** dir; predict copies it forward into its output (D1), so the traits container sees it — you do **not** stage it into the predictions dir. Verify from a cluster pod or the internal machine.
 
 ### Task 8: Pin real image digests + end-to-end cluster submit (primary acceptance gate)
 
@@ -146,4 +146,5 @@
 - **Write-back step** (bloomcli ingest → `insert_cyl_result_envelope`) — RPC **now accepts `0.1.0a3`** (bloom #393 ✅ / PR #399, prefix-tolerant `contract_version` match); gated only on the ingest CLI bloom #397.
 - **Automated stage-in** (bloomctl `--scan-id` container + the ScanMetadata sidecar producer) — replaces the manual Task 7.
 - **Batching + fan-out + Argo semaphore + RunAI-quota concurrency**, **cluster-side dedup skip**, **resume hardening** (atomic writes, checksum-verified skip, attempt cap), **notify** — the A4 hardening slice.
+- **Producer Argo-readiness (both producers, reconcile uniformly):** empty-input → exit 0 (silent-green), exit-non-zero-on-any-scan-fail → whole-batch retry, and SIGTERM/graceful-preempt. Tracked for traits as [sleap-roots #259](https://github.com/talmolab/sleap-roots/issues/259); **predict has the identical behaviour** (`run_batch` `ok=True` on empty, non-zero on any fail) — resolve the exit-code/empty-input/SIGTERM policy the same way for both. See design §8.
 - **The Bloom trigger + `pipeline_runs`** (bloom repo, gated on #404) and **push transport (Tailscale)** — separate plans.
