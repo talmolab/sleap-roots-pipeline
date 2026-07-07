@@ -22,6 +22,10 @@ spec:
       retryStrategy:
         # Preemptible GPU stage — can be evicted mid-run when over-quota, so allow several
         # retries with backoff (don't slam straight back into a still-full cluster).
+        # ⚠️ Resume caveat (predict #26 / sleap-roots #259): predict's existence-only skip + a
+        # non-atomic manifest write means a mid-write eviction can leave a truncated
+        # {scan}.predictions.json that a retry trusts as "done". More retries widen that window —
+        # gate this limit on atomic-write + checksum-verified skip before wiring in write-back.
         limit: 3
         retryPolicy: Always
         backoff:

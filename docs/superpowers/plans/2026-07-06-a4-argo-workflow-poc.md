@@ -47,7 +47,7 @@
 
 **Files:** Modify `sleap-roots-predictor-template.yaml`
 
-- [ ] **Step 1:** Replace the container: image `→` the predict #24 GHCR image pinned by `sha-<sha>` (placeholder `ghcr.io/talmolab/sleap-roots-predict:sha-PENDING` until #24 publishes — Task 8 pins the real digest); `args: ["<mountPath in>", "<mountPath out>"]` (drop the legacy `python /workspace/src/main.py` + `models_input` arg); add `env: [{name: WANDB_API_KEY, valueFrom: {secretKeyRef: {name: wandb-api-key, key: WANDB_API_KEY}}}]`; **remove** the `models-output-dir`→`/workspace/models_input` volumeMount. Keep `resources.limits.nvidia.com/gpu: 1`, `retryStrategy`, `securityContext`, and the `gpu-fraction`/`preemptible` annotations.
+- [ ] **Step 1:** Replace the container: image `→` the predict #24 GHCR image pinned by `sha-<sha>` (placeholder `ghcr.io/talmolab/sleap-roots-predict:sha-PENDING` until #24 publishes — Task 8 pins the real digest); `args: ["<mountPath in>", "<mountPath out>"]` (drop the legacy `python /workspace/src/main.py` + `models_input` arg); add `env: [{name: WANDB_API_KEY, valueFrom: {secretKeyRef: {name: genericsecret-wandb-api-key, key: WANDB_API_KEY}}}]`; **remove** the `models-output-dir`→`/workspace/models_input` volumeMount. Keep `resources.limits.nvidia.com/gpu: 1`, `retryStrategy`, `securityContext`, and the `gpu-fraction`/`preemptible` annotations.
 
 ```yaml
       container:
@@ -56,7 +56,7 @@
         args: ["/workspace/images_input", "/workspace/output"]
         env:
           - name: WANDB_API_KEY
-            valueFrom: { secretKeyRef: { name: wandb-api-key, key: WANDB_API_KEY } }
+            valueFrom: { secretKeyRef: { name: genericsecret-wandb-api-key, key: WANDB_API_KEY } }  # RunAI-console generic secret gets a genericsecret- prefix
         volumeMounts:
           - { name: images-input-dir, mountPath: /workspace/images_input }
           - { name: predictions-output-dir, mountPath: /workspace/output }
@@ -119,7 +119,7 @@
 
 ### Task 6: WANDB secret (infra, one-time)
 
-- [ ] **Step 1:** Create the secret the predict step reads: `kubectl -n runai-talmo-lab create secret generic wandb-api-key --from-literal=WANDB_API_KEY=$WANDB_API_KEY` (run once on the internal machine; do NOT commit the key). Verify: `kubectl -n runai-talmo-lab get secret wandb-api-key`.
+- [x] **Step 1:** Create the secret the predict step reads — **the k8s secret name MUST match the template's `secretKeyRef.name`**. The PoC used the **RunAI console** (Credentials → Generic secret, Project scope `talmo-lab`, key `WANDB_API_KEY`), which materializes the secret as **`genericsecret-wandb-api-key`**. Plain-`kubectl` alternative (name it to match): `kubectl -n runai-talmo-lab create secret generic genericsecret-wandb-api-key --from-literal=WANDB_API_KEY=$WANDB_API_KEY` (do NOT commit the key). Verify: `kubectl -n runai-talmo-lab get secret genericsecret-wandb-api-key`.
 
 ### Task 7: Pre-stage a reference scan (infra, PoC input)
 
