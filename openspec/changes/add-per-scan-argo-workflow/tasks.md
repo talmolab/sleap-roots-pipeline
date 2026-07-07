@@ -44,21 +44,33 @@ pytest). Detailed steps + target YAML live in
 
 ## 5. Infra prerequisites (one-time, external)
 
-- [ ] 5.1 Create the `wandb-api-key` secret in `runai-talmo-lab` (do not commit the key).
-- [ ] 5.2 Pre-stage a reference scan (+ `{scan}.scan_metadata.json` sidecar) on `/hpi/hpi_dev`.
+- [x] 5.1 Created the wandb secret via the **RunAI console** (Credentials → Generic secret, **Project
+  scope** `talmo-lab`, key `WANDB_API_KEY`). ⚠️ RunAI prefixes the k8s secret name: asset
+  `wandb-api-key` → secret **`genericsecret-wandb-api-key`**, so the predictor template's
+  `secretKeyRef.name` must reference the prefixed name (not the bare asset name).
+- [x] 5.2 Staged reference scan `scan_6791737` (rice / cylinder / age 3; 72 `.jpg` frames + an authored
+  `scan_6791737.scan_metadata.json` sidecar) under `…/pipeline_orchestration_tests/a4_poc/input/`; the
+  workflow hostPaths point at `a4_poc/{input,predictions,traits}`.
 
 ## 6. End-to-end run (primary acceptance gate — blocked on producer images)
 
-- [ ] 6.1 **Digest pin ✅ applied** — predict `sha-4a70e599…` (predict #27) + traits `sha-bb2199c`
-  (sleap-roots #257) now pinned in both templates. Remaining: ensure both GHCR packages are pullable
-  by the cluster SA (private on first push → make public or add an `imagePullSecret` on the SA).
-- [ ] 6.2 `bash runai_run_pipeline.sh` → predictor writes `{scan}.predictions.json` + `.slp`;
-  trait-extractor writes `{scan}.result.json`; both DAG nodes succeed.
-- [ ] 6.3 Verify each `{scan}.result.json` on the mount parses as a `ResultEnvelope` with
-  `provenance.contract_version == "0.1.0a3"` and a matching `scan_key`.
+- [x] 6.1 **Digest pin ✅ applied** — predict `sha-4a70e599…` (predict #27) + traits `sha-bb2199c`
+  (sleap-roots #257) pinned in both templates. Both GHCR packages verified **PUBLIC / pullable**
+  (anonymous manifest `HTTP 200`) → no `imagePullSecret` needed. Predict image is **8.9 GB** (~7 min
+  cold pull on a fresh node; cached thereafter — re-runs start instantly).
+- [x] 6.2 **Ran end-to-end** via `argo submit` in **Kubernetes mode** through the `argo-user`
+  kubeconfig (the `runai_run_pipeline.sh` launcher needs `ARGO_TOKEN`/the in-cluster Argo Server,
+  unavailable from here). Workflows `sleap-roots-pipeline-4m2zg` + `b7x7t` **Succeeded** in ~2m34s:
+  predictor on a GPU (`gpu-node3`), trait-extractor on CPU, both DAG nodes green. Required
+  `priorityClassName: interactive-preemptible` on the predictor — the 20-GPU deserved quota was full
+  (`NonPreemptibleOverQuota`); the `preemptible: "true"` annotation alone does **not** set this.
+- [x] 6.3 **Acceptance gate PASSED.** `scan_6791737.result.json` (135 KB) parses as a `ResultEnvelope`:
+  `contract_version 0.1.0a3`, `scan_key scan_6791737`, **918 traits**, 72 `image_ids`; provenance
+  `predict_code_sha 4a70e599` + `traits_code_sha bb2199c` **both match the pinned images** — the
+  provenance chain is intact end-to-end (the input to idempotent write-back).
 
 ## 7. Validate + close out
 
-- [ ] 7.1 `openspec validate add-per-scan-argo-workflow --strict` passes.
+- [x] 7.1 `openspec validate add-per-scan-argo-workflow --strict` → valid.
 - [ ] 7.2 Re-lint all changed manifests; `/pr-description`; open the PR referencing A4 EPIC
   (talmolab/sleap-roots-pipeline#10); note the run result; leave the deferred slices tracked.

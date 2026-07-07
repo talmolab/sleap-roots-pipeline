@@ -10,6 +10,10 @@ metadata:
 spec:
   templates:
     - name: predictor
+      # RunAI: preemptibility is governed by priorityClassName, NOT the preemptible
+      # annotation (a UI breadcrumb). interactive-preemptible (75) lets the GPU pod use
+      # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.
+      priorityClassName: interactive-preemptible
       retryStrategy:
         limit: 1
         retryPolicy: Always
@@ -29,7 +33,10 @@ spec:
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
-                name: wandb-api-key
+                # RunAI UI "Generic secret" credentials materialize the k8s secret with a
+                # `genericsecret-` prefix on the asset name (asset `wandb-api-key` ->
+                # secret `genericsecret-wandb-api-key`), Project-scoped into this namespace.
+                name: genericsecret-wandb-api-key
                 key: WANDB_API_KEY
         volumeMounts:
           - name: images-input-dir

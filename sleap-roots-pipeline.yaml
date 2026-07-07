@@ -18,15 +18,15 @@ spec:
     # wandb registry, so no models-input/models-output volumes.
     - name: images-input-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/input
         type: Directory
     - name: predictions-output-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_input
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/predictions
         type: Directory
     - name: traits-output-dir
       hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/sleap_roots_traits_output
+        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
         type: Directory
   templates:
     - name: pipeline
