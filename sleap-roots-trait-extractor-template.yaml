@@ -10,13 +10,19 @@ spec:
   templates:
     - name: trait-extractor
       retryStrategy:
+        # ⚠️ sleap-roots#259 (reconcile at wiring time): the driver exits non-zero if ANY scan
+        # fails, so limit:2 retries the WHOLE batch, not a partial run; and an empty /in exits 0
+        # (silent-green node). Resolve via distinct exit codes / continueOn / per-scan fan-out +
+        # an empty-input guard. (Graceful preemption also needs a driver SIGTERM handler — no tini.)
         limit: 2
         retryPolicy: Always
       container:
-        # A4: GHCR trait-extractor (sleap-roots #256). Image ENTRYPOINT is
-        # ["python","-m","trait_extractor"] so args are the two dirs only.
-        # Pin to the real sha-<sha>/digest once #256 publishes.
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-PENDING
+        # A4: GHCR trait-extractor (sleap-roots #257, merged main bb2199c). ENTRYPOINT is
+        # ["python","-m","trait_extractor"] (exec form) → args are the two dirs only, no `command:`.
+        # Bakes SRT_TRAITS_CODE_SHA → non-empty traits_code_sha (idempotency-key input).
+        # Pinned to the immutable sha-<gitsha> tag; tighten to @sha256:<digest> (from the build
+        # run summary / `docker buildx imagetools inspect` when public) per run.
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c
         imagePullPolicy: Always
         args:
           - "/workspace/input"

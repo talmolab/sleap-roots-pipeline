@@ -15,10 +15,15 @@ pytest). Detailed steps + target YAML live in
 ## 2. Trait-extractor template → GHCR image
 
 - [x] 2.1 Edit `sleap-roots-trait-extractor-template.yaml`: image
-  `ghcr.io/talmolab/sleap-roots-trait-extractor` pinned by `sha-<sha>` (placeholder until #256
-  publishes); `args: ["<in>", "<out>"]` (dropped the `python /workspace/src/main.py` prefix); kept
-  the two mounts + `retryStrategy`.
+  `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c` (sleap-roots #257, **shipped** — real
+  immutable tag; tighten to `@sha256:<digest>` at run time when the package is public); `args:
+  ["<in>", "<out>"]` (dropped the `python /workspace/src/main.py` prefix); kept the two mounts +
+  `retryStrategy`. Image bakes `SRT_TRAITS_CODE_SHA` → non-empty `traits_code_sha`.
 - [x] 2.2 `argo lint --offline sleap-roots-trait-extractor-template.yaml` → ✔ no errors.
+- [ ] 2.3 **Wiring reconciliation (sleap-roots #259):** exit-code vs `retryStrategy` (any-scan-fail
+  retries the whole batch), empty-`/in` silent-green, and driver SIGTERM. Decide at write-back/
+  hardening time (distinct exit codes / `continueOn` / per-scan fan-out + empty-input guard).
+  Noted in the template.
 
 ## 3. DAG → two-stage predict→traits
 
