@@ -9,6 +9,9 @@ metadata:
 spec:
   templates:
     - name: trait-extractor
+      # Run preemptible for consistency with the predictor + to dodge a CPU-pool
+      # NonPreemptibleOverQuota stall; the `preemptible` annotation above is inert.
+      priorityClassName: interactive-preemptible
       retryStrategy:
         # ⚠️ sleap-roots#259 (reconcile at wiring time): the driver exits non-zero if ANY scan
         # fails, so limit:2 retries the WHOLE batch, not a partial run; and an empty /in exits 0
@@ -33,5 +36,14 @@ spec:
           - name: traits-output-dir
             mountPath: /workspace/output
         securityContext:
+          # TODO: privileged:true is unnecessary for a CPU-only Python process — verify + drop.
           privileged: true
           runAsUser: 0
+        resources:
+          # Initial estimates — tune from a real run.
+          requests:
+            cpu: "1"
+            memory: 2Gi
+          limits:
+            cpu: "4"
+            memory: 8Gi

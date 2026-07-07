@@ -2,6 +2,11 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: sleap-roots-predictor-template
+  # NOTE: these live on the WorkflowTemplate OBJECT metadata, so Argo does NOT copy them onto the
+  # pod — both are currently INERT breadcrumbs. Effective behavior comes from
+  # spec.templates[].priorityClassName (preemptibility) + the container resources below.
+  #   gpu-fraction "0.5" has no effect today → each predict pod takes a WHOLE GPU. Proper RunAI
+  #   fractional wiring (pod-level annotation + drop nvidia.com/gpu) is tracked in #25.
   annotations:
     gpu-fraction: "0.5"
     preemptible: "true"
@@ -15,8 +20,13 @@ spec:
       # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.
       priorityClassName: interactive-preemptible
       retryStrategy:
-        limit: 1
+        # Preemptible GPU stage — can be evicted mid-run when over-quota, so allow several
+        # retries with backoff (don't slam straight back into a still-full cluster).
+        limit: 3
         retryPolicy: Always
+        backoff:
+          duration: "2m"
+          factor: 2
       container:
         # A4: warm-batch GHCR predict (predict #27, merged main 4a70e599 — closes predict #24).
         # Models load in-process from the wandb registry — no models-input mount. Contract:
@@ -44,8 +54,16 @@ spec:
           - name: predictions-output-dir
             mountPath: /workspace/output
         securityContext:
+          # TODO: privileged:true is likely unnecessary (GPU via device-plugin + hostPath NFS
+          # don't require it); verify + drop. runAsUser:0 root-owns the NFS outputs — reconsider.
           privileged: true
           runAsUser: 0
         resources:
+          # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).
+          # A memory request/limit prevents an unaccounted OOM-kill under node pressure.
+          requests:
+            cpu: "2"
+            memory: 8Gi
           limits:
+            memory: 24Gi
             nvidia.com/gpu: 1

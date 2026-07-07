@@ -9,7 +9,7 @@
 **Tech Stack:** Argo Workflows YAML, RunAI (`runai-talmo-lab`), GHCR images, `argo` CLI, WSL2 local dry-run.
 
 ## Global Constraints
-- Namespace `runai-talmo-lab`; label `project: talmo-lab`; submit via the Argo Server `gpu-master:8888` from an internal machine (per `runai_run_pipeline.sh`).
+- Namespace `runai-talmo-lab`; label `project: talmo-lab`. **Submit path (corrected at run time):** the `runai_run_pipeline.sh` launcher needs the in-cluster Argo Server `gpu-master:8888` + `ARGO_TOKEN` (unreachable from operator boxes), so the PoC submitted in **Kubernetes mode** via the argo-user kubeconfig (`argo submit … -n runai-talmo-lab`).
 - Shared storage is hostPath onto `/hpi/hpi_dev/...` (node-independent NFS). Keep cluster (`*.yaml`) and local (`local-WSL2-*.yaml`) variants in sync.
 - Producers are **filesystem-only**. Predict needs `WANDB_API_KEY`. Keep `securityContext {privileged: true, runAsUser: 0}` and RunAI annotations (`gpu-fraction`, `preemptible`) as in the current templates.
 - Pin producer images by immutable `sha-<sha>`/digest tag (not `latest`) — per the A4 design's per-run pin requirement.

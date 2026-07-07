@@ -24,15 +24,16 @@ manually from an internal machine over a pre-staged scan.
   `models-input-dir` / `models-output-dir` volumes.
 - **Predictor** (`sleap-roots-predictor-template.yaml`): pull the warm-batch GHCR predict image
   (`sleap-roots-predict` #24), pinned by digest/`sha-<sha>`; args `["<in_dir>", "<out_dir>"]`;
-  add a `WANDB_API_KEY` env from a `wandb-api-key` secret; **remove the `models_input` mount**;
+  add a `WANDB_API_KEY` env from the k8s secret (RunAI-console generic secrets carry a
+  `genericsecret-` prefix → `genericsecret-wandb-api-key`); **remove the `models_input` mount**;
   keep the GPU limit, `retryStrategy`, `securityContext`, and RunAI annotations.
 - **Trait-extractor** (`sleap-roots-trait-extractor-template.yaml`): pull
   `ghcr.io/talmolab/sleap-roots-trait-extractor` (`sleap-roots` #256), pinned by digest/`sha-<sha>`;
   args = the two dirs only (the image `ENTRYPOINT` is `["python","-m","trait_extractor"]`).
 - **Launcher** (`runai_run_pipeline.sh`): drop `models-downloader-template.yaml` from the
   registered `TEMPLATES`.
-- **Local parity**: reconcile mount/path drift in the `local-WSL2-*` variants (template names +
-  `retryStrategy` deliberately differ — do not mirror those).
+- **Local parity**: the `local-WSL2-*` variants stay on the old 3-stage flow — **deferred to #21**
+  (local dev needs a local k8s cluster; WSL2 has no GPU). Not reconciled in this change.
 
 ## Impact
 

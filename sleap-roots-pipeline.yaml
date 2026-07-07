@@ -16,6 +16,10 @@ spec:
   volumes:
     # A4: models-downloader dropped — the warm predictor loads models in-process from the
     # wandb registry, so no models-input/models-output volumes.
+    # NOTE: hostPath onto the /hpi/hpi_dev NFS — cross-node reschedule/resume only works because
+    # that mount exists at the SAME path on every GPU node. Input is type:Directory (the staged
+    # scan MUST pre-exist); outputs are DirectoryOrCreate so a fresh run/node doesn't FailedMount.
+    # These a4_poc paths are the PoC reference scan — a real per-scan trigger parameterizes them (#10).
     - name: images-input-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/input
@@ -23,11 +27,11 @@ spec:
     - name: predictions-output-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/predictions
-        type: Directory
+        type: DirectoryOrCreate
     - name: traits-output-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
-        type: Directory
+        type: DirectoryOrCreate
   templates:
     - name: pipeline
       dag:
