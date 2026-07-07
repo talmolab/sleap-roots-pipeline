@@ -21,7 +21,7 @@ pytest). Detailed steps + target YAML live in
   ["<in>", "<out>"]` (dropped the `python /workspace/src/main.py` prefix); kept the two mounts +
   `retryStrategy`. Image bakes `SRT_TRAITS_CODE_SHA` → non-empty `traits_code_sha`.
 - [x] 2.2 `argo lint --offline sleap-roots-trait-extractor-template.yaml` → ✔ no errors.
-- [ ] 2.3 **Wiring reconciliation (sleap-roots #259):** exit-code vs `retryStrategy` (any-scan-fail
+- [x] 2.3 **DEFERRED → sleap-roots #259** (reconcile at write-back/hardening time): exit-code vs `retryStrategy` (any-scan-fail
   retries the whole batch), empty-`/in` silent-green, and driver SIGTERM. Decide at write-back/
   hardening time (distinct exit codes / `continueOn` / per-scan fan-out + empty-input guard).
   Noted in the template.
@@ -37,7 +37,7 @@ pytest). Detailed steps + target YAML live in
 ## 4. Launcher + local parity
 
 - [x] 4.1 Edit `runai_run_pipeline.sh`: dropped `models-downloader-template.yaml` from `TEMPLATES`.
-- [ ] 4.2 **Deferred → #21** (local dev testing needs a local k8s cluster). The `local-WSL2-*`
+- [x] 4.2 **Deferred → #21** (local dev testing needs a local k8s cluster). The `local-WSL2-*`
   variants stay on the old 3-stage flow until then; not required for this change (the PoC runs on
   the cluster). WSL2 has no GPU, so what local testing exercises for the predict stage is an open
   question tracked in #21.
@@ -72,5 +72,5 @@ pytest). Detailed steps + target YAML live in
 ## 7. Validate + close out
 
 - [x] 7.1 `openspec validate add-per-scan-argo-workflow --strict` → valid.
-- [ ] 7.2 Re-lint all changed manifests; `/pr-description`; open the PR referencing A4 EPIC
+- [x] 7.2 Re-lint (argo lint --offline clean); `/pr-description`; PR **#23 opened + merged** 2026-07-07, referencing A4 EPIC
   (talmolab/sleap-roots-pipeline#10); note the run result; leave the deferred slices tracked.
