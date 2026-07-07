@@ -31,8 +31,10 @@ pytest). Detailed steps + target YAML live in
 ## 4. Launcher + local parity
 
 - [x] 4.1 Edit `runai_run_pipeline.sh`: dropped `models-downloader-template.yaml` from `TEMPLATES`.
-- [ ] 4.2 Reconcile mount/path drift in the `local-WSL2-*` variants (do not mirror template names /
-  retryStrategy — those deliberately differ); `argo lint` each changed local manifest.
+- [ ] 4.2 **Deferred → #21** (local dev testing needs a local k8s cluster). The `local-WSL2-*`
+  variants stay on the old 3-stage flow until then; not required for this change (the PoC runs on
+  the cluster). WSL2 has no GPU, so what local testing exercises for the predict stage is an open
+  question tracked in #21.
 
 ## 5. Infra prerequisites (one-time, external)
 
