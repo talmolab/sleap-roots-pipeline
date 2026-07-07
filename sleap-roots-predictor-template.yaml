@@ -14,11 +14,13 @@ spec:
         limit: 1
         retryPolicy: Always
       container:
-        # A4: warm-batch GHCR predict (predict #24). Models load in-process from the wandb
-        # registry — no models-input mount. Contract: `<image> <in_dir> <out_dir>` + WANDB_API_KEY.
-        # Pin to the real `sha-<sha>`/digest once predict #24 publishes; reconcile if #24 refines
-        # the invocation.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-PENDING
+        # A4: warm-batch GHCR predict (predict #27, merged main 4a70e599 — closes predict #24).
+        # Models load in-process from the wandb registry — no models-input mount. Contract:
+        # `<image> <in_dir> <out_dir>` + WANDB_API_KEY. Bakes SRP_PREDICT_CODE_SHA → non-empty
+        # predict_code_sha (idempotency-key input).
+        # Pinned to the immutable sha-<gitsha> tag; tighten to
+        # @sha256:68a0ba123eacabc606ae0a38cae8bdab2dcb8f142abefb099b5bde9fe3ca8be0 when public.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"

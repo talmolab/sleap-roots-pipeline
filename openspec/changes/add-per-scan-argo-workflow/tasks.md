@@ -6,8 +6,9 @@ pytest). Detailed steps + target YAML live in
 
 ## 1. Predictor template → warm GHCR predict
 
-- [x] 1.1 Edit `sleap-roots-predictor-template.yaml`: GHCR predict image pinned by `sha-<sha>`
-  (placeholder `:sha-PENDING` until predict #24 publishes); `args: ["<in>", "<out>"]`; add
+- [x] 1.1 Edit `sleap-roots-predictor-template.yaml`: GHCR predict image
+  `ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f` (predict #27,
+  **shipped** — real immutable tag; tighten to `@sha256:68a0ba12…be0` when public); `args: ["<in>", "<out>"]`; add
   `WANDB_API_KEY` from `secretKeyRef` (`wandb-api-key`); remove the `models_input` volumeMount; keep
   GPU limit, `retryStrategy`, `securityContext`, annotations.
 - [x] 1.2 `argo lint --offline sleap-roots-predictor-template.yaml` → ✔ no errors.
@@ -48,8 +49,9 @@ pytest). Detailed steps + target YAML live in
 
 ## 6. End-to-end run (primary acceptance gate — blocked on producer images)
 
-- [ ] 6.1 Pin the real published digests (predict #24, sleap-roots #256) in both templates; ensure
-  the GHCR packages are pullable by the cluster SA.
+- [ ] 6.1 **Digest pin ✅ applied** — predict `sha-4a70e599…` (predict #27) + traits `sha-bb2199c`
+  (sleap-roots #257) now pinned in both templates. Remaining: ensure both GHCR packages are pullable
+  by the cluster SA (private on first push → make public or add an `imagePullSecret` on the SA).
 - [ ] 6.2 `bash runai_run_pipeline.sh` → predictor writes `{scan}.predictions.json` + `.slp`;
   trait-extractor writes `{scan}.result.json`; both DAG nodes succeed.
 - [ ] 6.3 Verify each `{scan}.result.json` on the mount parses as a `ResultEnvelope` with

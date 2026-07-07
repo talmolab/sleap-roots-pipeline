@@ -15,7 +15,7 @@
 - Pin producer images by immutable `sha-<sha>`/digest tag (not `latest`) — per the A4 design's per-run pin requirement.
 
 ## Container interface contracts (consumed — defined here, satisfied by the producer slices)
-- **Predict** (predict #24, `ghcr.io/talmolab/sleap-roots-predict:sha-<sha>`): `docker run <predict-image> <in_scan_dir> <out_dir>`, env `WANDB_API_KEY`; loads models once. **Input = a nested tree** `{scan_key}/<frames>` + `{scan_key}.scan_metadata.json` (sidecar authored by stage-in, not predict). Per scan writes `<out_dir>/{scan_key}/{scan_key}.predictions.json` + named per-root `.slp` **and copies the sidecar verbatim forward** into `out/{scan_key}/` (**D1** — makes predict's output a self-contained trait-extractor input tree); GPU. Bakes `SRP_PREDICT_CODE_SHA` → `predict_code_sha`.
+- **Predict** (predict #27, `ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f`): `docker run <predict-image> <in_scan_dir> <out_dir>`, env `WANDB_API_KEY`; loads models once. **Input = a nested tree** `{scan_key}/<frames>` + `{scan_key}.scan_metadata.json` (sidecar authored by stage-in, not predict). Per scan writes `<out_dir>/{scan_key}/{scan_key}.predictions.json` + named per-root `.slp` **and copies the sidecar verbatim forward** into `out/{scan_key}/` (**D1** — makes predict's output a self-contained trait-extractor input tree); GPU. Bakes `SRP_PREDICT_CODE_SHA` → `predict_code_sha`.
 - **Traits** (sleap-roots #257, `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c`): `docker run <traits-image> <in_dir> <out_dir>` (ENTRYPOINT `["python","-m","trait_extractor"]` baked → args are the two dirs only); reads predict's `out/{scan_key}/` tree (`{scan}.predictions.json` + `{scan}.scan_metadata.json` + `.slp`), writes `{scan_key}.result.json`; CPU. Bakes `SRT_TRAITS_CODE_SHA` → `traits_code_sha`.
 
 ## External prerequisites (block the end-to-end run, not the manifest authoring)
@@ -51,7 +51,7 @@
 
 ```yaml
       container:
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-PENDING
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f
         imagePullPolicy: Always
         args: ["/workspace/images_input", "/workspace/output"]
         env:
@@ -71,11 +71,11 @@
 
 **Files:** Modify `sleap-roots-trait-extractor-template.yaml`
 
-- [ ] **Step 1:** Set image `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-PENDING` (pinned in Task 8); set `args: ["/workspace/input", "/workspace/output"]` (drop the `python /workspace/src/main.py` prefix — the image's `ENTRYPOINT` is `["python","-m","trait_extractor"]`). Keep the two volumeMounts, `retryStrategy`, `securityContext`, `preemptible`.
+- [ ] **Step 1:** Set image `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c` (sleap-roots #257, **shipped** — real immutable tag); set `args: ["/workspace/input", "/workspace/output"]` (drop the `python /workspace/src/main.py` prefix — the image's `ENTRYPOINT` is `["python","-m","trait_extractor"]`). Keep the two volumeMounts, `retryStrategy`, `securityContext`, `preemptible`.
 
 ```yaml
       container:
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-PENDING
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c
         imagePullPolicy: Always
         args: ["/workspace/input", "/workspace/output"]
         volumeMounts:
@@ -127,9 +127,9 @@
 
 ### Task 8: Pin real image digests + end-to-end cluster submit (primary acceptance gate)
 
-**Blocked on:** predict #24 image published, sleap-roots #256 image published, Tasks 6–7 done.
+**Blocked on:** ~~predict #24 image published~~ ✅ (predict #27), ~~sleap-roots #256 image published~~ ✅ (sleap-roots #257) — both shipped. Remaining blocker = Tasks 6–7 (wandb secret + staged scan) + both GHCR packages pullable by the cluster SA.
 
-- [ ] **Step 1:** Replace both `:sha-PENDING` tags with the real published `sha-<sha>` (or `@sha256:…`) from #24 and #256. `git commit -am "chore: pin predict/traits image digests for the PoC run"`.
+- [x] **Step 1:** Both `:sha-PENDING` tags replaced with the real published immutable tags — predict `sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f` (predict #27, digest `@sha256:68a0ba12…be0` in the template comment) and traits `sha-bb2199c` (sleap-roots #257).
 - [ ] **Step 2:** Ensure both GHCR packages are **pullable** by the cluster (public or an `imagePullSecret` on the SA) — the traits package is private on first push (#256 flags this).
 - [ ] **Step 3:** Submit. Run: `bash runai_run_pipeline.sh` → **Expected:** templates register; the Workflow submits; `predictor` acquires a GPU and writes `{scan}.predictions.json` + `.slp` to the predictions dir; `trait-extractor` runs and writes `{scan}.result.json` to the traits dir; both nodes succeed.
 - [ ] **Step 4:** Verify the output on `/hpi/hpi_dev`: each `{scan_key}.result.json` parses as a `sleap-roots-contracts` `ResultEnvelope` with `provenance.contract_version == "0.1.0a3"` and a matching `scan_key`. This is the PoC acceptance gate.
