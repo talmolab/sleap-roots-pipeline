@@ -13,11 +13,12 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: registry.gitlab.com/salk-tm/sleap-roots-traits:latest
+        # A4: GHCR trait-extractor (sleap-roots #256). Image ENTRYPOINT is
+        # ["python","-m","trait_extractor"] so args are the two dirs only.
+        # Pin to the real sha-<sha>/digest once #256 publishes.
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-PENDING
         imagePullPolicy: Always
         args:
-          - "python"
-          - "/workspace/src/main.py"
           - "/workspace/input"
           - "/workspace/output"
         volumeMounts:

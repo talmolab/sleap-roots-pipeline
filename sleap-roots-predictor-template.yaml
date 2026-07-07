@@ -14,24 +14,29 @@ spec:
         limit: 1
         retryPolicy: Always
       container:
-        image: registry.gitlab.com/salk-tm/sleap-roots-predict:latest
+        # A4: warm-batch GHCR predict (predict #24). Models load in-process from the wandb
+        # registry — no models-input mount. Contract: `<image> <in_dir> <out_dir>` + WANDB_API_KEY.
+        # Pin to the real `sha-<sha>`/digest once predict #24 publishes; reconcile if #24 refines
+        # the invocation.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-PENDING
         imagePullPolicy: Always
         args:
-          - "python"
-          - "/workspace/src/main.py"
           - "/workspace/images_input"
-          - "/workspace/models_input"
           - "/workspace/output"
+        env:
+          - name: WANDB_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: wandb-api-key
+                key: WANDB_API_KEY
         volumeMounts:
           - name: images-input-dir
             mountPath: /workspace/images_input
-          - name: models-output-dir
-            mountPath: /workspace/models_input
           - name: predictions-output-dir
             mountPath: /workspace/output
         securityContext:
           privileged: true
           runAsUser: 0
-        resources: 
+        resources:
           limits:
             nvidia.com/gpu: 1

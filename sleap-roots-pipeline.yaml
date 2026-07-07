@@ -14,14 +14,8 @@ spec:
   entrypoint: pipeline
 
   volumes:
-    - name: models-input-dir
-      hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_input
-        type: Directory # Check: directory MUST exist on the host 
-    - name: models-output-dir
-      hostPath:
-        path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/models_downloader_output
-        type: Directory
+    # A4: models-downloader dropped — the warm predictor loads models in-process from the
+    # wandb registry, so no models-input/models-output volumes.
     - name: images-input-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/20250226_test_data/images_downloader_output
@@ -38,16 +32,10 @@ spec:
     - name: pipeline
       dag:
         tasks:
-          - name: models-downloader
-            templateRef:
-              name: models-downloader-template
-              template: models-downloader
           - name: predictor
             templateRef:
               name: sleap-roots-predictor-template
               template: predictor
-            dependencies:
-              - models-downloader
           - name: trait-extractor
             templateRef:
               name: sleap-roots-trait-extractor-template

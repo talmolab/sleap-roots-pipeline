@@ -23,8 +23,8 @@ echo "NOTE: Confirm that volume paths in your workflow YAML are cluster-accessib
 
 # Workflow and template files
 WORKFLOW_FILE="sleap-roots-pipeline.yaml"
+# A4: models-downloader dropped — the warm predictor loads models in-process.
 TEMPLATES=(
-  "models-downloader-template.yaml"
   "sleap-roots-predictor-template.yaml"
   "sleap-roots-trait-extractor-template.yaml"
 )

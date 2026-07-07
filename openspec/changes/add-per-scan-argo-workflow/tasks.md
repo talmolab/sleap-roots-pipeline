@@ -6,27 +6,31 @@ pytest). Detailed steps + target YAML live in
 
 ## 1. Predictor template → warm GHCR predict
 
-- [ ] 1.1 Edit `sleap-roots-predictor-template.yaml`: GHCR predict image pinned by `sha-<sha>`;
-  `args: ["<in>", "<out>"]`; add `WANDB_API_KEY` from `secretKeyRef` (`wandb-api-key`); remove the
-  `models_input` volumeMount; keep GPU limit, `retryStrategy`, `securityContext`, annotations.
-- [ ] 1.2 `argo lint sleap-roots-predictor-template.yaml` passes.
+- [x] 1.1 Edit `sleap-roots-predictor-template.yaml`: GHCR predict image pinned by `sha-<sha>`
+  (placeholder `:sha-PENDING` until predict #24 publishes); `args: ["<in>", "<out>"]`; add
+  `WANDB_API_KEY` from `secretKeyRef` (`wandb-api-key`); remove the `models_input` volumeMount; keep
+  GPU limit, `retryStrategy`, `securityContext`, annotations.
+- [x] 1.2 `argo lint --offline sleap-roots-predictor-template.yaml` → ✔ no errors.
 
 ## 2. Trait-extractor template → GHCR image
 
-- [ ] 2.1 Edit `sleap-roots-trait-extractor-template.yaml`: image
-  `ghcr.io/talmolab/sleap-roots-trait-extractor` pinned by `sha-<sha>`; `args: ["<in>", "<out>"]`
-  (drop the `python /workspace/src/main.py` prefix); keep the two mounts + `retryStrategy`.
-- [ ] 2.2 `argo lint sleap-roots-trait-extractor-template.yaml` passes.
+- [x] 2.1 Edit `sleap-roots-trait-extractor-template.yaml`: image
+  `ghcr.io/talmolab/sleap-roots-trait-extractor` pinned by `sha-<sha>` (placeholder until #256
+  publishes); `args: ["<in>", "<out>"]` (dropped the `python /workspace/src/main.py` prefix); kept
+  the two mounts + `retryStrategy`.
+- [x] 2.2 `argo lint --offline sleap-roots-trait-extractor-template.yaml` → ✔ no errors.
 
 ## 3. DAG → two-stage predict→traits
 
-- [ ] 3.1 Edit `sleap-roots-pipeline.yaml`: remove the `models-downloader` task and its two model
-  volumes; make `predictor` the root and `trait-extractor` depend on it.
-- [ ] 3.2 `argo lint sleap-roots-pipeline.yaml` passes.
+- [x] 3.1 Edit `sleap-roots-pipeline.yaml`: removed the `models-downloader` task + its two model
+  volumes; `predictor` is the root; `trait-extractor` depends on `predictor`.
+- [x] 3.2 Templates lint clean offline; the Workflow's `templateRef` resolves only against a cluster
+  with the templates registered (offline `argo lint` cannot cross-resolve local `WorkflowTemplate`
+  files) — full lint happens after `argo template create` in the launcher, before submit.
 
 ## 4. Launcher + local parity
 
-- [ ] 4.1 Edit `runai_run_pipeline.sh`: drop `models-downloader-template.yaml` from `TEMPLATES`.
+- [x] 4.1 Edit `runai_run_pipeline.sh`: dropped `models-downloader-template.yaml` from `TEMPLATES`.
 - [ ] 4.2 Reconcile mount/path drift in the `local-WSL2-*` variants (do not mirror template names /
   retryStrategy — those deliberately differ); `argo lint` each changed local manifest.
 
