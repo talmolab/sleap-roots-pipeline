@@ -1,9 +1,7 @@
 # A4 — Request-driven per-scan phenotyping pipeline (design)
 
 **Date:** 2026-07-06 · **Owner:** eberrigan · **Tier:** A4 (roadmap `docs/bloom-integration/roadmap.md`)
-**Status:** design (brainstormed 2026-07-06). ⚠️ **§5/§6/§10 (the `cyl_pipeline_runs` runs-table + Supabase-Realtime approach) are SUPERSEDED for v1** — see the banner below.
-
-> **⚠️ Superseded for v1 (decision reaffirmed 2026-07-08).** The **`cyl_pipeline_runs` / `cyl_pipeline_run_scans` runs-table + Supabase-Realtime subscription + queue** approach in **§5 (Data model)**, **§6 (Execution topology, status side)**, and **§10 (Bloom UI)** was **decided against for v1**. v1 is Bloom's `workflows` service submitting Workflow CRDs **directly**, with **Argo/RunAI owning run status + the GPU admission queue** (the write-back RPC already persists `pipeline_run_id` + provenance on `cyl_trait_sources`). Any Bloom-native runs/status/cancel UX — and any runs table — stays **out of scope → EPIC #15**. Reaffirms the 2026-07-01 roadmap decision ("No `cyl_pipeline_runs` table for v1"; the SKIP-LOCKED / pgmq queue options raised on bloom #404 were considered and declined for v1). **The rest of this doc stands:** stage-in (§3/§4), predict/traits compute, dedup/write-back (§7), resumability (§8), and RunAI-quota concurrency (§9, "no custom queue").
+**Status:** design (brainstormed 2026-07-06); pending review → implementation planning.
 
 ## 1. Goal
 
@@ -96,8 +94,6 @@ template. Add the per-scan **skip-if-done** check (mount + Bloom source) to the 
 
 ## 5. Data model
 
-> **⚠️ SUPERSEDED for v1** — the `cyl_pipeline_runs` / `cyl_pipeline_run_scans` tables below were **decided against**; run status lives on Argo/RunAI + `cyl_trait_sources.pipeline_run_id`. See the top banner (→ EPIC #15).
-
 **`cyl_pipeline_runs`** (one per request; the Realtime subscription target):
 
 | column | notes |
@@ -128,8 +124,6 @@ matching RLS policy are required (PostgREST two-layer gate). Parent (and optiona
 published to Supabase Realtime; Realtime honors RLS.
 
 ## 6. Execution topology
-
-> **⚠️ Status-tracking via the runs table is SUPERSEDED for v1** (see top banner); the `download → predict → traits → write-back` topology itself stands.
 
 - **One Argo workflow per *batch*** (not per scan). Scan run = 1 batch; experiment = ⌈N/BATCH_SIZE⌉
   batches, all sharing `pipeline_run_id`. Batches parallelize across GPUs via RunAI.
@@ -221,8 +215,6 @@ or a truncated manifest is skipped as done.)
 - Optional: workflow `parallelism` (CPU fan-out per run), workflow **priorities** (manual > backfill).
 
 ## 10. Bloom UI integration (mirrors the video-jobs pattern)
-
-> **⚠️ SUPERSEDED for v1** — no `cyl_pipeline_runs` runs-table / Realtime UI in v1 (see top banner). → EPIC #15.
 
 - **Trigger:** "Run pipeline" button on scan/experiment pages + a params panel (species/mode/age
   prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
