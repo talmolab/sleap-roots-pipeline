@@ -42,10 +42,14 @@ control-plane direction is the *only* thing Tailscale/firewall affects; the data
 
 **End-to-end flow:**
 
-1. User clicks **Run** (scan|experiment) in Bloom web → `POST bloom.salk.edu/workflows/pipeline`
-   with the user's Supabase JWT + `{target_level, target_id, params}`.
+1. User clicks **Run** (scan|wave|experiment, or selects an explicit set of scans) in Bloom web →
+   `POST bloom.salk.edu/workflows/pipeline` with the user's Supabase JWT + `{target_level, target_id,
+   params}` (or `{target_level: "scan_ids", scan_ids: [...], params}` for an explicit selection —
+   **[⚠️ added 2026-07-24 — `wave` + `scan_ids` were missing from v1; see §5/§10]**).
 2. `workflows` service: authenticate (JWT) + rate-limit → resolve params (defaults from Bloom
-   metadata via A3-params, user overrides win) → **enumerate scans** (experiment → its scan list) →
+   metadata via A3-params, user overrides win) → **enumerate scans** (`scan` → itself; `wave` → every
+   scan in that wave via `cyl_scans_extended.wave_id`; `experiment` → its full scan list via
+   `cyl_scans_extended.experiment_id`; `scan_ids` → the given list, access-checked) →
    **dedup pre-check** (skip scans already computed for these models+params — §7) → write
    `cyl_pipeline_runs` parent + per-scan children (`queued`/`reused`) → **chunk the to-run scans
    into batches** (≤ `BATCH_SIZE`) → **submit one Argo workflow per batch** (push) → return
@@ -99,7 +103,7 @@ template. Add the per-scan **skip-if-done** check (mount + Bloom source) to the 
 | column | notes |
 |---|---|
 | `pipeline_run_id` uuid PK | batch key; rides into provenance via the write-back RPC |
-| `target_level` ('scan'|'experiment'), `target_id` bigint | request target |
+| `target_level` ('scan'\|'wave'\|'experiment'\|'scan_ids'), `target_id` bigint (null for `scan_ids`) | request target. **[⚠️ added 2026-07-24 — `wave` (`cyl_waves.id`, a real schema level: `cyl_experiments → cyl_waves → cyl_plants → cyl_scans`, joined in `cyl_scans_extended`) and `scan_ids` (an explicit list, for ad hoc multi-select or reprocessing a failed subset — doesn't fit any hierarchy) were missing from v1, which only had `scan`\|`experiment`. For `scan_ids`, `target_id` is null; the given list is inserted directly into `cyl_pipeline_run_scans` at enumerate time (no target_id needed since the list *is* the scan set). Neither `bloomctl` nor the Argo template need to know about any of this — enumeration always resolves to a flat scan_id list before chunking, so this is purely a `workflows`-route + data-model concern.]** |
 | `params` jsonb | resolved `{species, mode, age}` + which were overrides |
 | `requested_by` uuid | **attribution only** (not a visibility filter) |
 | `status` | `queued → submitted → running → complete | partial | failed` |
@@ -186,6 +190,8 @@ never the batch.
 existence-only); shared mount; **pinned container digest** per run (so a retry recomputes an
 identical key and recognizes done work); Argo `retryStrategy` (crash/OOM/preempt).
 
+> **Known gap (2026-07-27):** [bloom #533](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/533) — `bloomctl cyl batch-download-for-predict`'s skip-if-done check has no lock/lease, so two concurrent invocations against the same `out_dir` (e.g. a stale retry pod + a fresh one) can both pass the skip check and clobber each other's writes. Skip-if-done alone doesn't prevent concurrent writers; only atomicity does. Deferred to the not-yet-built dispatch worker (bloom #404) + Argo's own `retryStrategy`, not a bolted-on bloomctl-side lock.
+
 **Scan-level failure — retry-then-isolate:** retry a failing scan up to `MAX_SCAN_ATTEMPTS`
 (attempt count next to the checkpoint / on the child row); if it still fails (or repeatedly kills the
 pod), mark that scan `failed` and continue the batch → run ends `partial` (e.g. 39/40 + 1 failed)
@@ -216,8 +222,10 @@ or a truncated manifest is skipped as done.)
 
 ## 10. Bloom UI integration (mirrors the video-jobs pattern)
 
-- **Trigger:** "Run pipeline" button on scan/experiment pages + a params panel (species/mode/age
-  prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
+- **Trigger:** "Run pipeline" button on scan/wave/experiment pages, plus a multi-select action for an
+  explicit set of scans (table/gallery checkboxes — e.g. reprocessing a QC'd subset or a prior run's
+  failed scans) **[⚠️ wave + multi-select added 2026-07-24, see §5]** + a params panel
+  (species/mode/age prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
 - **Pre-check preview:** "38/40 already have results for these params — 2 will run" (from §7).
 - **Live status:** a shared "Pipeline runs" panel (all members; `requested_by` shows who launched)
   reading `cyl_pipeline_runs` via **Realtime** (status + "N/M", no polling); per-scan drill-down from
@@ -241,6 +249,9 @@ or a truncated manifest is skipped as done.)
 - **R1 — `bloom_workflows` grants gap:** the role has **no cyl RLS/GRANTs in any migration** (only
   the staging JWT branch). Confirm with Benfica how it gets cyl read access before relying on it to
   read scans / write `pipeline_runs`. **Tracked: salk-bloom #404** (for the Benfica discussion).
+  **[⚠️ SUPERSEDED 2026-07-24 — resolved: bloom #470 (2026-07-20) granted `bloom_workflows` EXECUTE
+  on `insert_cyl_result_envelope`; #391 landed the read-half grants (`cyl_images`/`cyl_scans_extended`)
+  earlier. See roadmap `docs/bloom-integration/roadmap.md` status log, 2026-07-20/2026-07-24 entries.]**
 - **R2 — main vs staging — NOT a blocker (per eberrigan):** the A2 lockdown is staging-only and
   production (`main`) is behind, but staging→main promotion is handled separately; this design
   targets the staging end-state and does not gate on it.
@@ -254,6 +265,10 @@ or a truncated manifest is skipped as done.)
   VPN bypass of a security boundary so loop in ITS even temporarily. (A pure *pipeline-execution* PoC
   needs no Tailscale at all — submit directly from that internal machine.)
 - **R4 — firewall pending:** if ITS grants the rule, drop Tailscale (no app change).
+  **[⚠️ MOOT 2026-07-24 (R3+R4) — the firewall/connectivity blocker (sleap-roots-pipeline #16)
+  resolved 2026-07-21 via an internal route/interface added to `bloom-dev`, not Tailscale or this
+  drafted firewall rule. Cluster reachability from bloom-dev now works directly; R3/R4 are
+  historical. See roadmap status log, 2026-07-21 entry.]**
 
 ## 13. Out of scope (v1)
 
