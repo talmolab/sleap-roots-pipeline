@@ -1,0 +1,53 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# A4: batch stage-in via bloomctl (bloom #532). Image is a commit-sha tag auto-built on bloomcli's
+# push to `staging` — no versioned bloomcli release exists yet, so this is the only correct
+# reference for now; expect to bump it once a real version tag exists.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-images-downloader-template
+  labels:
+    project: talmo-lab
+spec:
+  templates:
+    - name: images-downloader
+      # CPU-only, I/O-bound (HTTPS calls) — trait-extractor's retry pattern, not predictor's GPU one.
+      priorityClassName: interactive-preemptible
+      retryStrategy:
+        limit: 2
+      container:
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-61959bd
+        imagePullPolicy: Always
+        args:
+          - "cyl"
+          - "batch-download-for-predict"
+          - "/workspace/images_input"
+          - "--scan-ids"
+          - "{{workflow.parameters.scan-ids}}"
+        env:
+          # bloomcli's Dockerfile creates its runtime user via `adduser --system` with no explicit
+          # home directory, so Python's Path.home() (which bloomctl's credential lookup uses) is
+          # ambiguous without this. Setting HOME here makes ~/.bloom/credentials.txt resolve
+          # deterministically to the path the bloom-credentials volume below is mounted at.
+          - name: HOME
+            value: /home/bloom
+        volumeMounts:
+          - name: images-input-dir
+            mountPath: /workspace/images_input
+          # Placeholder reference — the Secret itself is provisioned by a separate, in-progress
+          # workstream (sleap-roots-pipeline#17). Until it exists with real values, this task fails
+          # at volume-mount (Secret absent) or at bloomctl auth (Secret exists but incomplete) —
+          # both expected, not a sign of broken wiring.
+          - name: bloom-credentials
+            mountPath: /home/bloom/.bloom/credentials.txt
+            subPath: credentials.txt
+            readOnly: true
+        # No privileged/runAsUser:0 — unlike predictor/trait-extractor, this genuinely doesn't need
+        # it (non-root image, no GPU, no device access).
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi

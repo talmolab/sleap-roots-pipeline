@@ -1,0 +1,48 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# A4: batch write-back via bloomctl (bloom #532). Same image-pin rationale as
+# sleap-roots-images-downloader-template.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-write-back-template
+  labels:
+    project: talmo-lab
+spec:
+  templates:
+    - name: write-back
+      # CPU-only, I/O-bound (HTTPS calls) — trait-extractor's retry pattern, not predictor's GPU one.
+      priorityClassName: interactive-preemptible
+      retryStrategy:
+        limit: 2
+      container:
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-61959bd
+        imagePullPolicy: Always
+        args:
+          - "cyl"
+          - "batch-ingest-result"
+          - "/workspace/input"
+          - "--predictions-dir"
+          - "/workspace/predictions"
+        env:
+          # See sleap-roots-images-downloader-template.yaml for why HOME is set explicitly.
+          - name: HOME
+            value: /home/bloom
+        volumeMounts:
+          - name: traits-output-dir
+            mountPath: /workspace/input
+          - name: predictions-output-dir
+            mountPath: /workspace/predictions
+          # Placeholder reference — see sleap-roots-images-downloader-template.yaml; provisioned by
+          # sleap-roots-pipeline#17, in progress.
+          - name: bloom-credentials
+            mountPath: /home/bloom/.bloom/credentials.txt
+            subPath: credentials.txt
+            readOnly: true
+        # No privileged/runAsUser:0 — see sleap-roots-images-downloader-template.yaml.
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi

@@ -6,7 +6,7 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
 
 ## 1. Images-downloader template (new)
 
-- [ ] 1.1 Create `sleap-roots-images-downloader-template.yaml`: image
+- [x] 1.1 Create `sleap-roots-images-downloader-template.yaml`: image
   `ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-61959bd`; `args: ["cyl",
   "batch-download-for-predict", "/workspace/images_input", "--scan-ids",
   "{{workflow.parameters.scan-ids}}"]`; `env: [{name: HOME, value: /home/bloom}]`; mounts
@@ -15,51 +15,54 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
   `labels: {project: talmo-lab}` (matches `predictor`/`trait-extractor`'s RunAI quota
   attribution); `priorityClassName: interactive-preemptible`; `retryStrategy` (limit 2); no
   `privileged`/`runAsUser: 0`.
-- [ ] 1.2 `argo lint --offline sleap-roots-images-downloader-template.yaml` → no errors.
-- [ ] 1.3 Inspect the template: confirm the image tag is `sha-61959bd` (not `:latest`), `HOME` is
-  set, the Secret is mounted at exactly `$HOME/.bloom/credentials.txt`, and `labels.project` is
-  `talmo-lab` — matching `per-batch-pipeline`'s "Images-downloader stages a batch via bloomctl" and
-  "bloomctl-based tasks pin their image and mount credentials deterministically" scenarios.
+- [x] 1.2 `argo lint --offline sleap-roots-images-downloader-template.yaml` → **not run**: the
+  `argo` CLI isn't installed in this environment. Substituted a YAML well-formedness check
+  (`python -c "import yaml; yaml.safe_load_all(...)"`) → passed. **Real `argo lint` still needs to
+  run wherever the CLI is available**, alongside task 5's cluster submit.
+- [x] 1.3 Inspected the template (`grep`): image tag is `sha-61959bd`, `HOME` is set, the Secret is
+  mounted at exactly `/home/bloom/.bloom/credentials.txt`, `labels.project` is `talmo-lab` —
+  matches `per-batch-pipeline`'s "Images-downloader stages a batch via bloomctl" and "bloomctl-based
+  tasks pin their image and mount credentials deterministically" scenarios.
 
 ## 2. Write-back template (new)
 
-- [ ] 2.1 Create `sleap-roots-write-back-template.yaml`: same image/env/credential-mount/label
+- [x] 2.1 Create `sleap-roots-write-back-template.yaml`: same image/env/credential-mount/label
   pattern as 1.1; `args: ["cyl", "batch-ingest-result", "/workspace/input", "--predictions-dir",
   "/workspace/predictions"]`; mounts `traits-output-dir` at `/workspace/input` and
   `predictions-output-dir` at `/workspace/predictions`.
-- [ ] 2.2 `argo lint --offline sleap-roots-write-back-template.yaml` → no errors.
-- [ ] 2.3 Inspect the template: same checks as 1.3, plus confirm both `traits-output-dir` and
-  `predictions-output-dir` are mounted — matching `per-batch-pipeline`'s "Write-back ingests a
+- [x] 2.2 `argo lint --offline sleap-roots-write-back-template.yaml` → **not run** (no `argo` CLI
+  here, same as 1.2); YAML well-formedness check passed. Real `argo lint` still needed.
+- [x] 2.3 Inspected the template: same checks as 1.3, plus confirmed both `traits-output-dir` and
+  `predictions-output-dir` are mounted — matches `per-batch-pipeline`'s "Write-back ingests a
   batch via bloomctl" scenario.
 
 ## 3. DAG rewrite
 
-- [ ] 3.1 Edit `sleap-roots-pipeline.yaml`: add `arguments.parameters: [{name: scan-ids, value:
-  ""}]`; add a `bloom-credentials` Secret volume (`secretName: bloom-pipeline-credentials`); add
-  `images-downloader` as the DAG root and `write-back` as the final task; `predictor` depends on
-  `images-downloader`; `write-back` depends on `trait-extractor`.
-- [ ] 3.2 In the same edit, change `images-input-dir`'s `hostPath.type` from `Directory` to
-  `DirectoryOrCreate`, and update its comment: it no longer requires manual pre-staging —
-  `images-downloader` now writes there automatically, and `type: Directory` would `FailedMount` on
-  a path nothing has staged into yet. `predictions-output-dir`/`traits-output-dir` are otherwise
+- [x] 3.1 Edited `sleap-roots-pipeline.yaml`: added `arguments.parameters: [{name: scan-ids, value:
+  ""}]`; added a `bloom-credentials` Secret volume (`secretName: bloom-pipeline-credentials`);
+  added `images-downloader` as the DAG root and `write-back` as the final task; `predictor` depends
+  on `images-downloader`; `write-back` depends on `trait-extractor`.
+- [x] 3.2 In the same edit, changed `images-input-dir`'s `hostPath.type` from `Directory` to
+  `DirectoryOrCreate`, and updated its comment: it no longer requires manual pre-staging —
+  `images-downloader` now writes there automatically. `predictions-output-dir`/`traits-output-dir`
   unchanged (already `DirectoryOrCreate`).
-- [ ] 3.3 Inspect the DAG's `tasks` list: confirm exactly four tasks and the dependency chain
-  matches `images-downloader → predictor → trait-extractor → write-back` (manifest-field check,
-  matching `per-batch-pipeline`'s "Four-stage per-batch DAG" scenario).
-- [ ] 3.4 Cross-check `templateRef` resolution by hand (offline `argo lint` cannot catch a
-  name/field mismatch here — it only validates each file's own schema): diff the two new tasks'
-  `templateRef.name`/`template` values in `sleap-roots-pipeline.yaml` against the `metadata.name`/
-  `spec.templates[].name` actually set in `sleap-roots-images-downloader-template.yaml` and
-  `sleap-roots-write-back-template.yaml`. Confirm exact string matches.
-- [ ] 3.5 `argo lint --offline sleap-roots-pipeline.yaml` → no errors (note: doesn't cross-resolve
-  `templateRef`s — that's what 3.4 and task 6 are for).
+- [x] 3.3 Inspected the DAG's `tasks` list (`grep`): exactly four tasks, dependency chain matches
+  `images-downloader → predictor → trait-extractor → write-back` — matches `per-batch-pipeline`'s
+  "Four-stage per-batch DAG" scenario.
+- [x] 3.4 Cross-checked `templateRef` resolution by hand: both new tasks'
+  `templateRef.name`/`template` values in `sleap-roots-pipeline.yaml` exactly match the
+  `metadata.name`/`spec.templates[].name` set in `sleap-roots-images-downloader-template.yaml` and
+  `sleap-roots-write-back-template.yaml` — confirmed via `grep`, no mismatch.
+- [x] 3.5 `argo lint --offline sleap-roots-pipeline.yaml` → **not run** (no `argo` CLI here); YAML
+  well-formedness check passed. Real `argo lint` still needed (doesn't cross-resolve `templateRef`s
+  anyway — 3.4 covers that).
 
 ## 4. Launcher
 
-- [ ] 4.1 Edit `runai_run_pipeline.sh`: add `sleap-roots-images-downloader-template.yaml` and
+- [x] 4.1 Edited `runai_run_pipeline.sh`: added `sleap-roots-images-downloader-template.yaml` and
   `sleap-roots-write-back-template.yaml` to the registered `TEMPLATES` list.
-- [ ] 4.2 Inspect `TEMPLATES`: confirm it lists all four template files (matching
-  `per-batch-pipeline`'s "Launcher registers all four templates" scenario).
+- [x] 4.2 Inspected `TEMPLATES` (`grep`): lists all four template files, `bash -n` syntax-clean —
+  matches `per-batch-pipeline`'s "Launcher registers all four templates" scenario.
 
 ## 5. Real cluster submit (primary acceptance gate — no local dry-run, see below)
 
@@ -88,8 +91,11 @@ directly against the real RunAI cluster instead.
 
 ## 6. Validate + close out
 
-- [ ] 6.1 `openspec validate add-per-batch-argo-workflow --strict` → valid.
-- [ ] 6.2 Re-lint all touched/new cluster manifests offline, clean.
+- [x] 6.1 `openspec validate add-per-batch-argo-workflow --strict` → valid.
+- [x] 6.2 Re-lint all touched/new cluster manifests: real `argo lint` unavailable in this
+  environment (no `argo` CLI installed) — substituted a YAML well-formedness check on all 3
+  touched/new files + `bash -n` on the launcher; all clean. **Real `argo lint` still needs to run**
+  wherever the CLI is available, ideally alongside task 5's cluster submit.
 - [ ] 6.3 `/pr-description`; open PR referencing A4 EPIC (talmolab/sleap-roots-pipeline#10) and this
   change-id. Note: this change replaces the working manual `argo submit` flow's DAG shape —
   **BREAKING** in the sense that a full run won't succeed past `images-downloader` until #17's
