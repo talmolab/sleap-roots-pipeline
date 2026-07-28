@@ -15,10 +15,9 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
   `labels: {project: talmo-lab}` (matches `predictor`/`trait-extractor`'s RunAI quota
   attribution); `priorityClassName: interactive-preemptible`; `retryStrategy` (limit 2); no
   `privileged`/`runAsUser: 0`.
-- [x] 1.2 `argo lint --offline sleap-roots-images-downloader-template.yaml` → **not run**: the
-  `argo` CLI isn't installed in this environment. Substituted a YAML well-formedness check
-  (`python -c "import yaml; yaml.safe_load_all(...)"`) → passed. **Real `argo lint` still needs to
-  run wherever the CLI is available**, alongside task 5's cluster submit.
+- [x] 1.2 `argo lint --offline sleap-roots-images-downloader-template.yaml` (run via WSL, where the
+  `argo` CLI actually lives per the `runai` skill — not on Windows Git Bash PATH) → ✔ no linting
+  errors found.
 - [x] 1.3 Inspected the template (`grep`): image tag is `sha-61959bd`, `HOME` is set, the Secret is
   mounted at exactly `/home/bloom/.bloom/credentials.txt`, `labels.project` is `talmo-lab` —
   matches `per-batch-pipeline`'s "Images-downloader stages a batch via bloomctl" and "bloomctl-based
@@ -30,8 +29,8 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
   pattern as 1.1; `args: ["cyl", "batch-ingest-result", "/workspace/input", "--predictions-dir",
   "/workspace/predictions"]`; mounts `traits-output-dir` at `/workspace/input` and
   `predictions-output-dir` at `/workspace/predictions`.
-- [x] 2.2 `argo lint --offline sleap-roots-write-back-template.yaml` → **not run** (no `argo` CLI
-  here, same as 1.2); YAML well-formedness check passed. Real `argo lint` still needed.
+- [x] 2.2 `argo lint --offline sleap-roots-write-back-template.yaml` (via WSL) → ✔ no linting
+  errors found.
 - [x] 2.3 Inspected the template: same checks as 1.3, plus confirmed both `traits-output-dir` and
   `predictions-output-dir` are mounted — matches `per-batch-pipeline`'s "Write-back ingests a
   batch via bloomctl" scenario.
@@ -53,9 +52,13 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
   `templateRef.name`/`template` values in `sleap-roots-pipeline.yaml` exactly match the
   `metadata.name`/`spec.templates[].name` set in `sleap-roots-images-downloader-template.yaml` and
   `sleap-roots-write-back-template.yaml` — confirmed via `grep`, no mismatch.
-- [x] 3.5 `argo lint --offline sleap-roots-pipeline.yaml` → **not run** (no `argo` CLI here); YAML
-  well-formedness check passed. Real `argo lint` still needed (doesn't cross-resolve `templateRef`s
-  anyway — 3.4 covers that).
+- [x] 3.5 `argo lint --offline sleap-roots-pipeline.yaml` (via WSL) → 1 error:
+  `templates.pipeline.tasks.images-downloader couldn't find workflow template
+  "sleap-roots-images-downloader-template" in namespace "runai-talmo-lab"`. This is the same known
+  limitation the archived `add-per-scan-argo-workflow` change documented (offline lint can't
+  cross-resolve `templateRef`s against a namespace where the templates aren't registered) — not a
+  new bug; 3.4's manual name cross-check already confirmed the reference is correct. Full
+  cross-resolution happens after `argo template create`/`update`, in task 5.
 
 ## 4. Launcher
 
@@ -92,10 +95,9 @@ directly against the real RunAI cluster instead.
 ## 6. Validate + close out
 
 - [x] 6.1 `openspec validate add-per-batch-argo-workflow --strict` → valid.
-- [x] 6.2 Re-lint all touched/new cluster manifests: real `argo lint` unavailable in this
-  environment (no `argo` CLI installed) — substituted a YAML well-formedness check on all 3
-  touched/new files + `bash -n` on the launcher; all clean. **Real `argo lint` still needs to run**
-  wherever the CLI is available, ideally alongside task 5's cluster submit.
+- [x] 6.2 Re-linted all touched/new cluster manifests via WSL's `argo` CLI (v3.6.5) + `bash -n` on
+  the launcher: both new templates lint clean; `sleap-roots-pipeline.yaml` hits the expected
+  unregistered-`templateRef` error only (see 3.5) — no other issues.
 - [ ] 6.3 `/pr-description`; open PR referencing A4 EPIC (talmolab/sleap-roots-pipeline#10) and this
   change-id. Note: this change replaces the working manual `argo submit` flow's DAG shape —
   **BREAKING** in the sense that a full run won't succeed past `images-downloader` until #17's
