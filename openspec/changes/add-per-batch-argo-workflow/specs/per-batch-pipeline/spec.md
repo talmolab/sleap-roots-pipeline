@@ -79,9 +79,11 @@ sourced from predict's manifest.
 ### Requirement: bloomctl-based tasks pin their image and mount credentials deterministically
 
 Both the `images-downloader` and `write-back` templates SHALL pin the `bloomctl` container image by
-immutable tag or digest (never `:latest`), SHALL set a `HOME` environment variable explicitly, and
-SHALL mount a Secret at `$HOME/.bloom/credentials.txt` so `bloomctl`'s credential lookup resolves
-deterministically regardless of the image's runtime user configuration.
+immutable tag or digest (never `:latest`), SHALL set a `HOME` environment variable explicitly, SHALL
+mount a Secret at `$HOME/.bloom/credentials.txt` so `bloomctl`'s credential lookup resolves
+deterministically regardless of the image's runtime user configuration, and SHALL carry the same
+`project: talmo-lab` label the `predictor`/`trait-extractor` templates use for RunAI quota
+attribution.
 
 #### Scenario: Both bloomctl templates pin the image and mount credentials at a fixed HOME path
 
@@ -91,6 +93,7 @@ deterministically regardless of the image's runtime user configuration.
 - **AND** both set a `HOME` environment variable
 - **AND** both mount a Secret volume at `$HOME/.bloom/credentials.txt` (matching the `HOME` value
   they set)
+- **AND** both carry a `project: talmo-lab` label
 
 ### Requirement: Launcher registers all four templates
 

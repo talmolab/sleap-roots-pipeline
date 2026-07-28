@@ -36,15 +36,34 @@ separately-tracked change.
 The Argo semaphore for concurrent-batch concurrency (design §9 of the 2026-07-06 doc), per-run path
 isolation, moving off the interim image tag, the dev-personal hostPath convention, the Bloom-side
 trigger route + `cyl_pipeline_runs`/`cyl_pipeline_run_scans` tables + dispatch worker
-(bloom #11/#404), producer Argo-readiness reconciliation (predict #26 / sleap-roots #259), and
-notification (sleap-roots-pipeline#18).
+(bloom #11/#404), producer Argo-readiness reconciliation (predict #26 / sleap-roots #259),
+notification (sleap-roots-pipeline#18), and local-WSL2 dev testing for this DAG shape
+(sleap-roots-pipeline#21, updated with this change's specifics but not implemented here).
+
+## Testing strategy — real cluster submit, not a local WSL2 dry-run
+
+Checked live: this machine's Docker Desktop Kubernetes node (`desktop-control-plane`) reports no
+`nvidia.com/gpu` in its `allocatable`/`capacity` at all — `predictor` cannot schedule locally
+regardless of anything this change does. The `local-WSL2-*` variants are also already known-stale
+relative to the cluster's GHCR contract (issue #21, filed before this change existed — updated with
+these specifics, not touched here). So this change's acceptance gate is a real submit against the
+RunAI cluster (`tasks.md` §5), not a local dry-run. Local dev testing for this DAG shape stays
+tracked in #21.
 
 ## Risks
 
 - **Credential not yet provisioned.** The Secret reference is correct-by-construction but
-  non-functional until sleap-roots-pipeline#17 lands. Mitigated by not making live-cluster
-  execution a validation target for this change (see `tasks.md`) — `argo lint` + a real local WSL2
-  dry-run (bind-mounting a personal `~/.bloom/credentials.txt`) are the bar to merge.
-- **`--scan-ids ""` (the parameter's empty default) behavior is unverified.** Whether it exits 0 as
-  "empty input" or errors as a CLI parse failure determines whether an unparameterized dry-submit is
-  a safe sanity check — confirmed during the WSL2 dry-run task, not assumed here.
+  non-functional until sleap-roots-pipeline#17 lands. Two distinct failure modes are both expected
+  and both fine for this change's acceptance gate: if the `bloom-pipeline-credentials` Secret
+  object doesn't exist at all, the pod fails at volume-mount/admission time (never reaching
+  `bloomctl`); if it exists with placeholder/incomplete values, `bloomctl` itself raises a clean
+  auth error. Either is evidence the wiring is correct, not that it's broken — a real success is
+  possible only once #17 actually lands.
+- **`--scan-ids ""` (the parameter's empty default) behavior.** The source implies a clean exit 0
+  (`parse_scan_ids_flag("")` → `[]`, "nothing to stage") rather than a CLI parse error, but this is
+  confirmed on the real cluster submit (`tasks.md` 5.4), not assumed here.
+- **Write-back can also go silently green on an empty batch.** Like `trait-extractor`'s known gap
+  (sleap-roots#259), `batch-ingest-result` also exits 0 on an empty envelopes directory — so all
+  four DAG nodes can succeed with zero real work done. This is the same class of issue as the
+  already-deferred "producer Argo-readiness reconciliation" item above; not solved by this change,
+  called out here so it isn't mistaken for new behavior introduced later.
