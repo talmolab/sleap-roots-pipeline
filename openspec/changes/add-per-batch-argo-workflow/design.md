@@ -1,0 +1,50 @@
+## Context
+
+Full architecture, rationale, and deferred items live in
+`docs/superpowers/specs/2026-07-28-a4-batch-stage-write-back-design.md` (approved 2026-07-28), which
+itself grounds in `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`. This
+change implements only the four-task DAG wiring in this declarative repo; everything else in the
+design (semaphore, Bloom trigger route, producer Argo-readiness, notification) is a later,
+separately-tracked change.
+
+## Key decisions (scoped to this change)
+
+- **`predictor`/`trait-extractor` are unchanged.** Both are already batch-capable
+  (`run_batch`/`extract_batch`); the gap was purely the two `bloomctl`-based stages.
+- **Image pin: `sha-61959bd`, not `0.1.0a2`/`sha-1bb03f6`.** The latter (referenced elsewhere in
+  the roadmap) predates bloom #532 and lacks the batch commands. No versioned `bloomcli` release
+  has been cut yet, so the commit-sha tag is the only correct reference for now — expect to bump
+  it again once a real version tag exists.
+- **Credential mount is a reference, not a live dependency.** `bloomctl`'s auth
+  (`bloomcli/src/bloomctl/credentials.py`) reads a dotenv file at `~/.bloom/credentials.txt`
+  directly — no interactive login needs to have run in-process, so a Secret volume mount works with
+  zero `bloomctl` code changes. The actual credential (sleap-roots-pipeline#17) is being provisioned
+  in a parallel session; this change wires the reference and does not block on it.
+- **`HOME=/home/bloom` set explicitly** in both new containers — `bloomcli`'s Dockerfile creates its
+  runtime user via `adduser --system` with no explicit home directory, so `Path.home()` (which
+  `load_credentials()` uses) is ambiguous without it.
+- **Batch input is a Workflow parameter (`scan-ids`), not a per-run isolated path.** Volumes stay
+  the existing fixed `a4_poc` hostPath paths — safe because nothing can submit concurrent batches
+  yet (no trigger route exists to do so). Revisit alongside the Bloom-side dispatch worker.
+- **Capability rename: `per-scan-pipeline` → `per-batch-pipeline`.** Single-scan support isn't
+  removed — it's a batch of size 1 — but keeping the old id would mislead readers into thinking a
+  separate scan-only pathway still exists. The `predictor`/`trait-extractor` requirements carry
+  forward unchanged in substance under the new capability id.
+
+## Out of scope (later changes)
+
+The Argo semaphore for concurrent-batch concurrency (design §9 of the 2026-07-06 doc), per-run path
+isolation, moving off the interim image tag, the dev-personal hostPath convention, the Bloom-side
+trigger route + `cyl_pipeline_runs`/`cyl_pipeline_run_scans` tables + dispatch worker
+(bloom #11/#404), producer Argo-readiness reconciliation (predict #26 / sleap-roots #259), and
+notification (sleap-roots-pipeline#18).
+
+## Risks
+
+- **Credential not yet provisioned.** The Secret reference is correct-by-construction but
+  non-functional until sleap-roots-pipeline#17 lands. Mitigated by not making live-cluster
+  execution a validation target for this change (see `tasks.md`) — `argo lint` + a real local WSL2
+  dry-run (bind-mounting a personal `~/.bloom/credentials.txt`) are the bar to merge.
+- **`--scan-ids ""` (the parameter's empty default) behavior is unverified.** Whether it exits 0 as
+  "empty input" or errors as a CLI parse failure determines whether an unparameterized dry-submit is
+  a safe sanity check — confirmed during the WSL2 dry-run task, not assumed here.
