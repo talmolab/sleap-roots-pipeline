@@ -80,23 +80,39 @@ variants are also already known-stale relative to the cluster's GHCR contract (t
 issue #21 — updated with this change's specifics, not touched here). This change validates
 directly against the real RunAI cluster instead.
 
-- [ ] 5.1 Register all four templates on the cluster via `runai_run_pipeline.sh` (or `argo
-  template create`/`update` directly, per the script's own documented Kubernetes-mode fallback).
-- [ ] 5.2 Submit with **two or more** real `scan-ids` (comma-separated) — not a single scan — to
-  actually exercise batch behavior, since that's the point of this change. `argo submit
-  sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-talmo-lab`.
-- [ ] 5.3 Confirm the DAG structure resolves correctly at submit time (proves 3.4's cross-check was
-  right) and `images-downloader` schedules and starts. The `genericsecret-
-  bloom-staging-pipeline-credentials` Secret now exists with real values (sleap-roots-pipeline#17
-  resolved for staging), so a **full successful run is the expected outcome** — confirm
-  `images-downloader` actually authenticates and stages real frames. If it instead fails at the
-  `bloomctl` auth step, that's a real bug to investigate (e.g. the RunAI console's multi-line value
-  got mangled, or the `secretName`/key don't actually match what the console produced), not an
-  expected gap. Record the actual result either way.
-- [ ] 5.4 Confirm `batch-download-for-predict --scan-ids ""` (the parameter's empty default)
-  behavior matches what the source implies (`parse_scan_ids_flag("")` → `[]` → exit 0, "nothing to
-  stage," not a CLI parse error) — submit once with no `scan-ids` override and record the actual
-  result. This determines whether an unparameterized submit is a safe no-op going forward.
+- [x] 5.1 Registered all four templates on the cluster via `argo template create`/`update`
+  (Kubernetes-mode, `argo-user` WSL kubeconfig — confirmed via `kubectl auth can-i` that this
+  identity can create/update Workflows and WorkflowTemplates, same as the archived PoC's task 6.1).
+- [x] 5.2 Submitted with real `scan-ids` — first `1,289,577,1009` (4 real staged scans, ages
+  0/2/7/9 days), then `289,577,1009` after excluding `scan_1` (see 5.3). Real batch behavior
+  exercised, not a single scan.
+- [x] 5.3 **DAG structure and `templateRef` resolution confirmed correct** — non-offline `argo
+  lint` against the live cluster passed clean once templates were registered; `images-downloader`
+  scheduled and started immediately. **The `genericsecret-bloom-staging-pipeline-credentials`
+  Secret works end-to-end**: `images-downloader` authenticated for real and staged all requested
+  scans (`Staged 4/4 scans`, then `Staged 0/3 scans (3 skipped)` — correct skip-if-done on the
+  second submit). `predictor` also succeeded cleanly on the real 3-scan batch (21s, all inference
+  completed). Two real findings surfaced, both external to this change's own scope:
+  - `scan_1` (age=0 days) hit `ValueError: no models resolved for params {'species': 'canola',
+    'mode': 'cylinder', 'age': 0}` — no production model covers age 0. A genuine data/model-
+    coverage gap, not a wiring defect; excluded from the second submit.
+  - The shared, non-isolated `a4_poc` input path (a known, already-documented deferred limitation
+    of this change — see `design.md`) had leftover scans (`scan_1` from the first submit, plus the
+    old `scan_6791737` PoC reference) that `predictor`'s `run_batch` re-discovered and re-processed
+    on the second submit even though they weren't in `--parameter scan-ids`, since predict scans
+    the whole directory rather than the requested list. Cleaned manually via the `Z:` network
+    drive before the final submit. Confirms the deferred per-run-isolation gap is real, not just
+    theoretical.
+  - `trait-extractor` then failed identically on all 3 real scans — a confirmed, reproducible bug
+    in `bloomctl`'s shared `build_sidecar()` (writes `image_ids` as int; `ScanMetadata` requires
+    str), present since bloom #458, not a #532/this-change regression. Filed as
+    [bloom #555](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/555) with full
+    root-cause analysis. **This change's own scope (the Argo DAG wiring) is fully validated up
+    through `predictor`** — `write-back` can't be exercised with real data until #555 is fixed
+    upstream; that's an external blocker, not a defect here.
+- [ ] 5.4 Not run — descoped once #555 blocked reaching `write-back` for real. `--scan-ids ""`
+  behavior is already known from source (`parse_scan_ids_flag("")` → `[]` → exit 0) per the
+  design doc's Risks section; worth a real confirmation once #555 unblocks a full-batch test.
 
 ## 6. Validate + close out
 
