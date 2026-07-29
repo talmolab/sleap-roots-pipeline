@@ -57,9 +57,7 @@ and behave identically once reached).
 - **Affected code:** `sleap-roots-pipeline.yaml`, two new cluster template files,
   `runai_run_pipeline.sh`. `sleap-roots-predictor-template.yaml`/
   `sleap-roots-trait-extractor-template.yaml` and all `local-WSL2-*` files are untouched.
-- **External prerequisites (block a fully successful live run, not the manifest change or its
-  validation):** the `bloom-pipeline-credentials` Secret must exist with real values (tracked
-  separately, sleap-roots-pipeline#17, in progress). This change's validation target is `argo lint`
-  + a real submit against the RunAI cluster — see `tasks.md` §5. A clean failure at
-  `images-downloader`'s `bloomctl` auth step is an expected, acceptable outcome for this change;
-  full success requires #17.
+- **External prerequisites:** the `genericsecret-bloom-staging-pipeline-credentials` Secret has
+  been created via the RunAI console (sleap-roots-pipeline#17 resolved for staging), so task 5's
+  cluster submit can now attempt a real, fully successful run rather than just an expected auth
+  failure — see `tasks.md` §5.

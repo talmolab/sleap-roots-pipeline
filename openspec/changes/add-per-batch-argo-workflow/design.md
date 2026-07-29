@@ -52,13 +52,13 @@ tracked in #21.
 
 ## Risks
 
-- **Credential not yet provisioned.** The Secret reference is correct-by-construction but
-  non-functional until sleap-roots-pipeline#17 lands. Two distinct failure modes are both expected
-  and both fine for this change's acceptance gate: if the `bloom-pipeline-credentials` Secret
-  object doesn't exist at all, the pod fails at volume-mount/admission time (never reaching
-  `bloomctl`); if it exists with placeholder/incomplete values, `bloomctl` itself raises a clean
-  auth error. Either is evidence the wiring is correct, not that it's broken — a real success is
-  possible only once #17 actually lands.
+- **Credential provisioning status.** The `genericsecret-bloom-staging-pipeline-credentials`
+  Secret has since been created via the RunAI console (Credentials → Generic secret, Project
+  scope `talmo-lab`), populated from a `bloomctl login --profile pipeline-staging` against
+  `staging.bloom.salk.edu` — sleap-roots-pipeline#17 is effectively resolved for the staging
+  environment. Not yet verified live: whether the console's value field preserved the full
+  multi-line dotenv content byte-for-byte (only visually confirmed, not diffed against the
+  source file) — task 5's cluster submit is the first real test of that.
 - **`--scan-ids ""` (the parameter's empty default) behavior.** The source implies a clean exit 0
   (`parse_scan_ids_flag("")` → `[]`, "nothing to stage") rather than a CLI parse error, but this is
   confirmed on the real cluster submit (`tasks.md` 5.4), not assumed here.

@@ -38,9 +38,13 @@ submit (no pytest, no local WSL2 dry-run — see task 6 for why). Full rationale
 ## 3. DAG rewrite
 
 - [x] 3.1 Edited `sleap-roots-pipeline.yaml`: added `arguments.parameters: [{name: scan-ids, value:
-  ""}]`; added a `bloom-credentials` Secret volume (`secretName: bloom-pipeline-credentials`);
-  added `images-downloader` as the DAG root and `write-back` as the final task; `predictor` depends
-  on `images-downloader`; `write-back` depends on `trait-extractor`.
+  ""}]`; added a `bloom-credentials` Secret volume (`secretName:
+  genericsecret-bloom-staging-pipeline-credentials` — updated after the credential was actually
+  provisioned via the RunAI console, following the same `genericsecret-` prefix convention as
+  `WANDB_API_KEY`, with an explicit `-staging` suffix so a later production credential can't
+  collide with/overwrite this one); added `images-downloader` as the DAG root and `write-back` as
+  the final task; `predictor` depends on `images-downloader`; `write-back` depends on
+  `trait-extractor`.
 - [x] 3.2 In the same edit, changed `images-input-dir`'s `hostPath.type` from `Directory` to
   `DirectoryOrCreate`, and updated its comment: it no longer requires manual pre-staging —
   `images-downloader` now writes there automatically. `predictions-output-dir`/`traits-output-dir`
@@ -82,11 +86,13 @@ directly against the real RunAI cluster instead.
   actually exercise batch behavior, since that's the point of this change. `argo submit
   sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-talmo-lab`.
 - [ ] 5.3 Confirm the DAG structure resolves correctly at submit time (proves 3.4's cross-check was
-  right) and `images-downloader` schedules and starts. Its `bloomctl` auth is **expected to fail**
-  until the credential from sleap-roots-pipeline#17 lands (tracked separately, in progress) — a
-  clean `bloomctl` auth error here means the wiring is correct, not broken. If the credential
-  happens to be ready by test time, confirm a full successful run instead. Record which outcome
-  actually happened.
+  right) and `images-downloader` schedules and starts. The `genericsecret-
+  bloom-staging-pipeline-credentials` Secret now exists with real values (sleap-roots-pipeline#17
+  resolved for staging), so a **full successful run is the expected outcome** — confirm
+  `images-downloader` actually authenticates and stages real frames. If it instead fails at the
+  `bloomctl` auth step, that's a real bug to investigate (e.g. the RunAI console's multi-line value
+  got mangled, or the `secretName`/key don't actually match what the console produced), not an
+  expected gap. Record the actual result either way.
 - [ ] 5.4 Confirm `batch-download-for-predict --scan-ids ""` (the parameter's empty default)
   behavior matches what the source implies (`parse_scan_ids_flag("")` → `[]` → exit 0, "nothing to
   stage," not a CLI parse error) — submit once with no `scan-ids` override and record the actual

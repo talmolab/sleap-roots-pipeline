@@ -41,6 +41,13 @@ This is the next unblocked A4 deliverable per the roadmap's A4 change-breakdown 
   itself. This change wires the *reference* to a Secret (name TBD, e.g.
   `bloom-pipeline-credentials`); it will not be live/functional until that other session's work
   lands, and that's expected — not a blocker for merging this change.
+  **[⚠️ RESOLVED 2026-07-29 — the account was created (`bloom-pipeline-workflows@salk.edu` against
+  `staging.bloom.salk.edu`) and the credential provisioned via the RunAI console as a Generic
+  secret, following the `WANDB_API_KEY` precedent (asset name gets a `genericsecret-` prefix in
+  the resulting k8s Secret). Final name: `genericsecret-bloom-staging-pipeline-credentials` — the
+  `-staging` suffix (not just `bloom-pipeline-credentials` as sketched here) is deliberate, so a
+  later production credential can't collide with/overwrite this one in the same namespace. See
+  `openspec/changes/add-per-batch-argo-workflow/design.md` for the current state.]**
 
 ## 3. Architecture
 
@@ -130,6 +137,8 @@ deterministic.
   secret:
     secretName: bloom-pipeline-credentials   # provisioned by the parallel #17 session
 ```
+**[⚠️ RESOLVED 2026-07-29 — final name is `genericsecret-bloom-staging-pipeline-credentials`, see
+the note above.]**
 
 ## 5. Error handling
 

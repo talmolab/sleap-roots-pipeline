@@ -41,11 +41,13 @@ spec:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
         type: DirectoryOrCreate
     - name: bloom-credentials
-      # Provisioned by a separate, in-progress workstream (sleap-roots-pipeline#17). Until it
-      # exists with real values, images-downloader/write-back fail at volume-mount (Secret absent)
-      # or bloomctl auth (Secret exists but incomplete) — both expected, not broken wiring.
+      # Provisioned via the RunAI console (Credentials → Generic secret, Project scope
+      # talmo-lab), same as WANDB_API_KEY — RunAI prefixes the asset name with `genericsecret-`
+      # in the resulting k8s Secret. Named with an explicit -staging suffix (not just
+      # bloom-pipeline-credentials) so a later production credential gets its own distinct name
+      # instead of colliding with/overwriting this one in the same namespace.
       secret:
-        secretName: bloom-pipeline-credentials
+        secretName: genericsecret-bloom-staging-pipeline-credentials
   templates:
     - name: pipeline
       dag:
