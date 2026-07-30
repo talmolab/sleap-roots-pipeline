@@ -13,17 +13,30 @@ metadata:
 spec:
   entrypoint: pipeline
 
+  arguments:
+    parameters:
+      # Comma-separated scan_ids, passed straight through to images-downloader's --scan-ids.
+      # Submit with e.g. `argo submit sleap-roots-pipeline.yaml --parameter scan-ids=1,2,3`.
+      - name: scan-ids
+        value: ""
+
   volumes:
     # A4: models-downloader dropped — the warm predictor loads models in-process from the
     # wandb registry, so no models-input/models-output volumes.
     # NOTE: hostPath onto the /hpi/hpi_dev NFS — cross-node reschedule/resume only works because
-    # that mount exists at the SAME path on every GPU node. Input is type:Directory (the staged
-    # scan MUST pre-exist); outputs are DirectoryOrCreate so a fresh run/node doesn't FailedMount.
+    # that mount exists at the SAME path on every GPU node. images-input-dir is now staged
+    # automatically by images-downloader (DirectoryOrCreate — no human needs to have pre-staged a
+    # scan here first); the other two are DirectoryOrCreate so a fresh run/node doesn't FailedMount.
+    # ⚠️ Unverified on a truly cold path: kubelet creates a DirectoryOrCreate hostPath as root with a
+    # restrictive mode, and images-downloader's container deliberately runs non-root (see its
+    # template) — a fresh node/path with no prior ownership could hit a permission-denied write
+    # rather than a clean stage-in. The real cluster run that validated this reused an
+    # already-existing, already-writable path, so this specific edge case wasn't exercised.
     # These a4_poc paths are the PoC reference scan — a real per-scan trigger parameterizes them (#10).
     - name: images-input-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/input
-        type: Directory
+        type: DirectoryOrCreate
     - name: predictions-output-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/predictions
@@ -32,17 +45,37 @@ spec:
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
         type: DirectoryOrCreate
+    - name: bloom-credentials
+      # Provisioned via the RunAI console (Credentials → Generic secret, Project scope
+      # talmo-lab), same as WANDB_API_KEY — RunAI prefixes the asset name with `genericsecret-`
+      # in the resulting k8s Secret. Named with an explicit -staging suffix (not just
+      # bloom-pipeline-credentials) so a later production credential gets its own distinct name
+      # instead of colliding with/overwriting this one in the same namespace.
+      secret:
+        secretName: genericsecret-bloom-staging-pipeline-credentials
   templates:
     - name: pipeline
       dag:
         tasks:
+          - name: images-downloader
+            templateRef:
+              name: sleap-roots-images-downloader-template
+              template: images-downloader
           - name: predictor
             templateRef:
               name: sleap-roots-predictor-template
               template: predictor
+            dependencies:
+              - images-downloader
           - name: trait-extractor
             templateRef:
               name: sleap-roots-trait-extractor-template
               template: trait-extractor
             dependencies:
               - predictor
+          - name: write-back
+            templateRef:
+              name: sleap-roots-write-back-template
+              template: write-back
+            dependencies:
+              - trait-extractor

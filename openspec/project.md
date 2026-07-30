@@ -3,24 +3,28 @@
 ## Purpose
 
 `sleap-roots-pipeline` is the **orchestration layer** for the sleap-roots plant-root
-phenotyping pipeline. It declares how three containerized stages are wired together and
+phenotyping pipeline. It declares how four containerized stages are wired together and
 scheduled on a GPU cluster:
 
-1. **models-downloader** — prepares SLEAP model files for inference
-2. **predictor** — runs SLEAP predictions on input image sets (GPU)
+1. **images-downloader** — stages a batch of scans in from Bloom via `bloomctl` (batch-capable, A4)
+2. **predictor** — runs SLEAP predictions on the staged image sets (GPU)
 3. **trait-extractor** — extracts phenotypic traits from the predictions
+4. **write-back** — writes the resulting traits back into Bloom via `bloomctl` (batch-capable, A4)
 
 This repo holds **no application/library code of its own** — it is the declarative glue
 (Argo `Workflow` + `WorkflowTemplate` manifests and shell launchers) that runs images
-built and published by the sibling service repos (`models-downloader`,
-`sleap-roots-predict`, `sleap-roots` trait-extractor).
+built and published by the sibling service repos (`sleap-roots-predict`, `sleap-roots`
+trait-extractor, `salk-bloom`'s `bloomctl`).
 
-The roadmap target (see `docs/bloom-integration/roadmap.md`, tier **A4**) is to evolve
-this from a manually-launched batch pipeline into **event-driven, per-scan orchestration**:
-a scan ingested into Bloom triggers a per-scan Argo workflow (predict → traits →
-write-back with provenance) via Argo Events. That A4 design is **out of scope here** —
-this repo is currently at the **A0 tooling-baseline** stage (OpenSpec + canonical Claude
-commands).
+The roadmap target (see `docs/bloom-integration/roadmap.md`, tier **A4**) is
+**event-driven, per-batch orchestration**: a scan ingested into Bloom eventually triggers
+this per-batch Argo workflow (stage-in → predict → traits → write-back with provenance).
+**A4 is in progress, not out of scope** — the four-stage batch DAG above landed via
+`add-per-batch-argo-workflow` and was validated end-to-end on the real RunAI cluster
+(2026-07-30). Still open: the Bloom-side trigger route/dispatch worker (so a UI click
+submits this workflow instead of a manual `argo submit`), the Argo semaphore for
+concurrent-batch concurrency, and per-run path isolation — see the roadmap's A4
+change-breakdown table for the full remaining list.
 
 ## Tech Stack
 
@@ -61,11 +65,13 @@ are YAML manifests and shell scripts.
 
 ### Architecture Patterns
 
-- **Three-stage DAG**: models-downloader → predictor → trait-extractor, with
-  `dependencies:` enforcing order and `retryStrategy` handling preemption/transient
-  failures. Data passes between stages **via shared volume mounts, not Argo
-  parameters/artifacts** — one stage's output mount is the next stage's input mount, so
-  inter-stage coupling is mount-path agreement, not parameter wiring.
+- **Four-stage per-batch DAG**: images-downloader → predictor → trait-extractor →
+  write-back, with `dependencies:` enforcing order and `retryStrategy` handling
+  preemption/transient failures. Data passes between stages **via shared volume mounts,
+  not Argo parameters/artifacts** — one stage's output mount is the next stage's input
+  mount, so inter-stage coupling is mount-path agreement, not parameter wiring. (The one
+  exception is the `scan-ids` Workflow parameter, which `images-downloader` consumes to
+  know which batch to stage.)
 - **Templates are versioned, shared building blocks** (`argo template create …`), referenced
   by the workflow rather than inlined.
 - **Storage is mount-based**: model input, image input, and outputs are passed between
@@ -112,7 +118,9 @@ git/GitHub/OpenSpec/docs commands.
 - The broader program is tracked in `docs/bloom-integration/roadmap.md` (canonical for
   scope/sequencing) and Bloom EPIC #9 (canonical for Bloom-side implementation detail).
   This repo is the orchestration component slated to **deliver** roadmap tier **A4 —
-  event-driven orchestration**; it is currently at **A0** (this change) and A4 is not started.
+  event-driven orchestration**; A4 is **in progress** — the four-stage batch DAG is built
+  and cluster-validated, but the Bloom-side trigger route (so a UI click submits it,
+  rather than a manual `argo submit`) is not yet built.
 - **Vocabulary:** a *scan* is one imaging run of a plant; the pipeline runs per scan (A4),
   while experiment-level `analyze` is a separate, on-request path (not in this repo).
 

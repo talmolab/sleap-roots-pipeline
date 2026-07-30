@@ -3,11 +3,14 @@ set -euo pipefail
 
 # NOTE: this launcher targets the in-cluster Argo Server (gpu-master:8888) and requires ARGO_TOKEN
 # exported — it only works from a machine on the internal cluster LAN. The A4 PoC was NOT run this
-# way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig:
+# way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig, which is
+# also how the real four-stage end-to-end run (2026-07-30) was submitted:
 #   export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml
-#   argo template update sleap-roots-predictor-template.yaml     -n runai-talmo-lab
-#   argo template update sleap-roots-trait-extractor-template.yaml -n runai-talmo-lab
-#   argo submit sleap-roots-pipeline.yaml -n runai-talmo-lab
+#   argo template update sleap-roots-images-downloader-template.yaml -n runai-talmo-lab
+#   argo template update sleap-roots-predictor-template.yaml         -n runai-talmo-lab
+#   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-talmo-lab
+#   argo template update sleap-roots-write-back-template.yaml        -n runai-talmo-lab
+#   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-talmo-lab
 # Use that path if gpu-master:8888 is unreachable from your box.
 
 # Color output
@@ -34,8 +37,10 @@ echo "NOTE: Confirm that volume paths in your workflow YAML are cluster-accessib
 WORKFLOW_FILE="sleap-roots-pipeline.yaml"
 # A4: models-downloader dropped — the warm predictor loads models in-process.
 TEMPLATES=(
+  "sleap-roots-images-downloader-template.yaml"
   "sleap-roots-predictor-template.yaml"
   "sleap-roots-trait-extractor-template.yaml"
+  "sleap-roots-write-back-template.yaml"
 )
 
 # Log setup

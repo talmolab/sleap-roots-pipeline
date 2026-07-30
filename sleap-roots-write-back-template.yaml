@@ -1,0 +1,52 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# A4: batch write-back via bloomctl (bloom #532). Same image-pin rationale (including the
+# tag-mutability caveat) as sleap-roots-images-downloader-template.yaml.
+# Bumped 2026-07-30: sha-61959bd (#532) -> sha-c21d11b (bloom #556, fixes #555 — see
+# sleap-roots-images-downloader-template.yaml for details).
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-write-back-template
+  labels:
+    project: talmo-lab
+spec:
+  templates:
+    - name: write-back
+      # CPU-only, I/O-bound (HTTPS calls) — trait-extractor's retry pattern, not predictor's GPU one.
+      priorityClassName: interactive-preemptible
+      retryStrategy:
+        # See sleap-roots-images-downloader-template.yaml for why retryPolicy is explicit here.
+        limit: 2
+        retryPolicy: Always
+      container:
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-c21d11b
+        imagePullPolicy: Always
+        args:
+          - "cyl"
+          - "batch-ingest-result"
+          - "/workspace/input"
+          - "--predictions-dir"
+          - "/workspace/predictions"
+        env:
+          # See sleap-roots-images-downloader-template.yaml for why HOME is set explicitly.
+          - name: HOME
+            value: /home/bloom
+        volumeMounts:
+          - name: traits-output-dir
+            mountPath: /workspace/input
+          - name: predictions-output-dir
+            mountPath: /workspace/predictions
+          # Provisioned — see sleap-roots-images-downloader-template.yaml (sleap-roots-pipeline#17,
+          # resolved for staging, confirmed working end-to-end on the real cluster).
+          - name: bloom-credentials
+            mountPath: /home/bloom/.bloom/credentials.txt
+            subPath: credentials.txt
+            readOnly: true
+        # No privileged/runAsUser:0 — see sleap-roots-images-downloader-template.yaml.
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 512Mi
+          limits:
+            cpu: "2"
+            memory: 2Gi
