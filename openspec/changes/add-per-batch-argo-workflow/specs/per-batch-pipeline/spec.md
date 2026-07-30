@@ -82,8 +82,11 @@ Both the `images-downloader` and `write-back` templates SHALL pin the `bloomctl`
 immutable tag or digest (never `:latest`), SHALL set a `HOME` environment variable explicitly, SHALL
 mount a Secret at `$HOME/.bloom/credentials.txt` so `bloomctl`'s credential lookup resolves
 deterministically regardless of the image's runtime user configuration, and SHALL carry the same
-`project: talmo-lab` label the `predictor`/`trait-extractor` templates use for RunAI quota
-attribution.
+`project: talmo-lab` label the `predictor`/`trait-extractor` templates carry, for consistency with
+those templates (note: `sleap-roots-predictor-template.yaml`'s own comment states this exact
+label placement — top-level `WorkflowTemplate.metadata.labels` — is "currently INERT" and is not
+copied onto the pod by Argo; this requirement follows the existing convention rather than
+asserting the label is functionally load-bearing for RunAI quota attribution).
 
 #### Scenario: Both bloomctl templates pin the image and mount credentials at a fixed HOME path
 

@@ -168,6 +168,14 @@ No app code, no pytest — this repo's validation is manifest-level:
    regardless of how well this is built. `argo lint` clean + a successful local WSL2 run are the
    bar to merge; cluster testing happens once the credential lands.
 
+**[⚠️ SUPERSEDED 2026-07-29 — items 2 and 3 above didn't happen as written.** The credential
+resolved faster than expected (via the RunAI console, not this session's assumption of a longer
+wait), and this machine's Docker Desktop Kubernetes was confirmed live to have no GPU resource at
+all — so a local WSL2 dry-run could never have exercised `predictor` regardless. The actual
+acceptance gate became a real submit against the RunAI cluster instead (no local dry-run at all);
+see `openspec/changes/add-per-batch-argo-workflow/design.md`'s "Testing strategy" section and
+`tasks.md` §5 for what was actually run and its real results.]**
+
 ## 7. OpenSpec capability delta
 
 The existing `per-scan-pipeline` capability asserts a two-task DAG against one hardcoded scan. This

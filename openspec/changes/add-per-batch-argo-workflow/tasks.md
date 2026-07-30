@@ -129,9 +129,13 @@ directly against the real RunAI cluster instead.
   **Result: `sleap-roots-pipeline-v4lg7` — `Status: Succeeded`, `Progress: 4/4`, all four stages
   green** (images-downloader 6s, predictor 2m, trait-extractor 12s, write-back 8s). Confirmed the
   write-back was real (not just exit 0) by manually re-`ingest-result`-ing all 3 result envelopes
-  via `bloomctl` — each returned `"was_noop": true"` with real `source_id`s (6, 7, 8), Bloom's
+  via `bloomctl` — each returned `"was_noop": true` with real `source_id`s (6, 7, 8), Bloom's
   actual idempotent first-writer-wins response, proving the original write-back created real
-  `cyl_trait_sources` rows in the staging database. **This is the first fully-real end-to-end A4
+  `cyl_trait_sources` rows in the staging database. (Note: this re-verification used the singular
+  `cyl ingest-result` command as a proxy — both it and the actually-wired-in `cyl
+  batch-ingest-result` share the same underlying RPC `was_noop` signal, but `batch-ingest-result`'s
+  own per-item JSON response — `{scan_key, status, error}`, not a bare `was_noop` boolean — was
+  never directly observed in this test.) **This is the first fully-real end-to-end A4
   run.** `--scan-ids ""` behavior (the original point of this task) still not separately confirmed
   — low priority now that the real batch path is proven; can be checked opportunistically.
 

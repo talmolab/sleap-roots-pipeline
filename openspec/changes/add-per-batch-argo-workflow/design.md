@@ -68,9 +68,12 @@ tracked in #21.
   specifically affects sidecar *content* changes, not just prediction validity — worth folding into
   whatever eventually hardens skip-if-done (checksum-verified skip, not just existence), rather than
   fixed here.
-- **`--scan-ids ""` (the parameter's empty default) behavior.** The source implies a clean exit 0
-  (`parse_scan_ids_flag("")` → `[]`, "nothing to stage") rather than a CLI parse error, but this is
-  confirmed on the real cluster submit (`tasks.md` 5.4), not assumed here.
+- **`--scan-ids ""` (the parameter's empty default) behavior — still not separately confirmed.**
+  The source implies a clean exit 0 (`parse_scan_ids_flag("")` → `[]`, "nothing to stage") rather
+  than a CLI parse error, but task 5.4's real cluster run tested real `scan-ids` values, not the
+  empty default — this specific path remains unverified. (An earlier draft of this note claimed
+  it was confirmed; it wasn't — corrected here to match `tasks.md`.) Low priority now that the
+  real batch path is proven end-to-end; worth confirming opportunistically.
 - **Write-back can also go silently green on an empty batch.** Like `trait-extractor`'s known gap
   (sleap-roots#259), `batch-ingest-result` also exits 0 on an empty envelopes directory — so all
   four DAG nodes can succeed with zero real work done. This is the same class of issue as the

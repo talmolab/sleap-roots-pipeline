@@ -27,6 +27,11 @@ spec:
     # that mount exists at the SAME path on every GPU node. images-input-dir is now staged
     # automatically by images-downloader (DirectoryOrCreate — no human needs to have pre-staged a
     # scan here first); the other two are DirectoryOrCreate so a fresh run/node doesn't FailedMount.
+    # ⚠️ Unverified on a truly cold path: kubelet creates a DirectoryOrCreate hostPath as root with a
+    # restrictive mode, and images-downloader's container deliberately runs non-root (see its
+    # template) — a fresh node/path with no prior ownership could hit a permission-denied write
+    # rather than a clean stage-in. The real cluster run that validated this reused an
+    # already-existing, already-writable path, so this specific edge case wasn't exercised.
     # These a4_poc paths are the PoC reference scan — a real per-scan trigger parameterizes them (#10).
     - name: images-input-dir
       hostPath:

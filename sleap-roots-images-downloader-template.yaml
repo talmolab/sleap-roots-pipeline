@@ -1,7 +1,10 @@
 # https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
 # A4: batch stage-in via bloomctl (bloom #532). Image is a commit-sha tag auto-built on bloomcli's
 # push to `staging` — no versioned bloomcli release exists yet, so this is the only correct
-# reference for now; expect to bump it once a real version tag exists.
+# reference for now; expect to bump it once a real version tag exists. Tighten to `@sha256:<digest>`
+# once bloomcli publishes one (a `sha-<gitsha>` tag is immutable in *name* only — a re-run of the
+# build workflow against the same commit would silently overwrite it in GHCR unless immutable tags
+# are enabled on that package; unverified from this repo).
 # Bumped 2026-07-30: sha-61959bd (#532) -> sha-c21d11b (bloom #556, fixes #555 — build_sidecar()
 # now writes image_ids as str via sleap_roots_contracts.InputRef; scan_is_already_staged() now
 # rejects pre-fix int-typed sidecars so already-staged scans re-stage cleanly).
@@ -17,7 +20,12 @@ spec:
       # CPU-only, I/O-bound (HTTPS calls) — trait-extractor's retry pattern, not predictor's GPU one.
       priorityClassName: interactive-preemptible
       retryStrategy:
+        # retryPolicy Always (not just the default OnFailure) matters here: this shares
+        # trait-extractor's preemptible priority class, and RunAI eviction under CPU-pool
+        # over-quota contention typically surfaces as an Error-phase node, which OnFailure does
+        # not retry.
         limit: 2
+        retryPolicy: Always
       container:
         image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-c21d11b
         imagePullPolicy: Always
@@ -37,10 +45,9 @@ spec:
         volumeMounts:
           - name: images-input-dir
             mountPath: /workspace/images_input
-          # Placeholder reference — the Secret itself is provisioned by a separate, in-progress
-          # workstream (sleap-roots-pipeline#17). Until it exists with real values, this task fails
-          # at volume-mount (Secret absent) or at bloomctl auth (Secret exists but incomplete) —
-          # both expected, not a sign of broken wiring.
+          # Provisioned (2026-07-29) via the RunAI console as a Generic secret — resolves
+          # sleap-roots-pipeline#17 for staging. Confirmed working end-to-end on the real cluster
+          # (real auth, real staging) — see the OpenSpec change's design.md/tasks.md.
           - name: bloom-credentials
             mountPath: /home/bloom/.bloom/credentials.txt
             subPath: credentials.txt

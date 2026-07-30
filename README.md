@@ -3,10 +3,12 @@ Container orchestration for sleap-roots inference pipeline.
 
 This repository defines a modular, GPU-accelerated image processing pipeline for plant root phenotyping using [SLEAP](https://sleap.ai), orchestrated via [Argo Workflows](https://argo-workflows.readthedocs.io).
 
-The pipeline consists of three main steps:
-1. **models-downloader** – Prepares model files for inference
-2. **predictor** – Runs SLEAP predictions on input image sets
+The pipeline consists of four stages (A4, updated 2026-07-30 — `models-downloader` was dropped
+earlier; models load in-process from the wandb registry):
+1. **images-downloader** – Stages a batch of scans in from Bloom via `bloomctl`
+2. **predictor** – Runs SLEAP predictions on the staged image sets (GPU)
 3. **trait-extractor** – Extracts phenotypic traits from predictions
+4. **write-back** – Writes the resulting traits back into Bloom via `bloomctl`
 
 It is designed for reproducible, containerized execution using Kubernetes.
 
@@ -65,9 +67,10 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 ```text
 .
 ├── sleap-roots-pipeline.yaml                    # Main Argo Workflow definition
-├── models-downloader-template.yaml              # WorkflowTemplate: downloads models
+├── sleap-roots-images-downloader-template.yaml  # WorkflowTemplate: stages scans in via bloomctl
 ├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
 ├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
+├── sleap-roots-write-back-template.yaml         # WorkflowTemplate: writes traits back via bloomctl
 ├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-talmo-lab)
 ├── local_run_pipeline_first_time.sh             # Local WSL2/Docker Desktop test runner
 ├── local-WSL2-*.yaml                            # Local-only templates and workflow configs
@@ -155,9 +158,10 @@ kubectl describe node docker-desktop | grep -A 5 "Capacity"
 ## 📋 Creating WorkflowTemplates (One-Time per Namespace)
 
 ```bash
-argo template create models-downloader-template.yaml -n runai-talmo-lab
+argo template create sleap-roots-images-downloader-template.yaml -n runai-talmo-lab
 argo template create sleap-roots-predictor-template.yaml -n runai-talmo-lab
 argo template create sleap-roots-trait-extractor-template.yaml -n runai-talmo-lab
+argo template create sleap-roots-write-back-template.yaml -n runai-talmo-lab
 ```
 
 Check with:
@@ -172,7 +176,7 @@ argo template list -n runai-talmo-lab
 
 ```bash
 argo list
-argo submit sleap-roots-pipeline.yaml --watch
+argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 ```
 
 ---
