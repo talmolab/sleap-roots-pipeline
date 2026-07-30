@@ -56,9 +56,18 @@ tracked in #21.
   Secret has since been created via the RunAI console (Credentials → Generic secret, Project
   scope `talmo-lab`), populated from a `bloomctl login --profile pipeline-staging` against
   `staging.bloom.salk.edu` — sleap-roots-pipeline#17 is effectively resolved for the staging
-  environment. Not yet verified live: whether the console's value field preserved the full
-  multi-line dotenv content byte-for-byte (only visually confirmed, not diffed against the
-  source file) — task 5's cluster submit is the first real test of that.
+  environment. **Confirmed live**: the multi-line value survived intact — `images-downloader`
+  authenticated and staged real frames on the first real cluster submit.
+- **Skip-if-done can serve stale copied-through data after an upstream data fix, not just after
+  a code fix.** Found during this change's own cluster testing (bloom #555/#556): when
+  `images-downloader` re-staged scans with a corrected sidecar, `predictor` still skipped
+  re-running (its own prediction outputs were already valid), so it never re-copied the corrected
+  sidecar forward into its output directory — `trait-extractor` kept reading the stale copy until
+  `predictor`'s outputs were manually cleared to force a real re-run. This is a variant of the
+  already-known "existence-only skip" resumability gap (design doc §8 of the 2026-07-06 doc) that
+  specifically affects sidecar *content* changes, not just prediction validity — worth folding into
+  whatever eventually hardens skip-if-done (checksum-verified skip, not just existence), rather than
+  fixed here.
 - **`--scan-ids ""` (the parameter's empty default) behavior.** The source implies a clean exit 0
   (`parse_scan_ids_flag("")` → `[]`, "nothing to stage") rather than a CLI parse error, but this is
   confirmed on the real cluster submit (`tasks.md` 5.4), not assumed here.

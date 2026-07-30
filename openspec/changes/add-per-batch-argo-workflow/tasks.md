@@ -110,9 +110,30 @@ directly against the real RunAI cluster instead.
     root-cause analysis. **This change's own scope (the Argo DAG wiring) is fully validated up
     through `predictor`** — `write-back` can't be exercised with real data until #555 is fixed
     upstream; that's an external blocker, not a defect here.
-- [ ] 5.4 Not run — descoped once #555 blocked reaching `write-back` for real. `--scan-ids ""`
-  behavior is already known from source (`parse_scan_ids_flag("")` → `[]` → exit 0) per the
-  design doc's Risks section; worth a real confirmation once #555 unblocks a full-batch test.
+- [x] 5.4 **#555 fixed upstream** ([bloom #556](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/556),
+  merged to staging, commit `c21d11b`) — `build_sidecar()` now constructs a real
+  `sleap_roots_contracts.InputRef` (str-cast `image_ids`), and `scan_is_already_staged()` now
+  rejects pre-fix int-typed sidecars so already-staged scans re-stage cleanly. Bumped the image
+  pin in both new templates from `sha-61959bd` to `sha-c21d11b` (verified via the actual
+  `docker-build-bloomcli` workflow run for that commit, not assumed).
+  **Resubmitted `scan-ids=289,577,1009`**: `images-downloader` re-staged all 3 scans fresh
+  (`Staged 3/3 scans`, correctly detecting the old int-typed sidecars as invalid);
+  `predictor` skipped (valid predictions already existed from the earlier run) — **but this meant
+  it never re-copied the fixed sidecar forward into its own output directory** (predict's
+  copy-through only happens when it actually re-runs), so `trait-extractor` initially failed
+  identically again, reading the stale sidecar copy still sitting in `predictions-output-dir`. A
+  real, previously-undocumented interaction between the skip-if-done design and an upstream data
+  fix — worth flagging in `design.md`'s risks (see below). Fixed by clearing the 3 scans' existing
+  outputs from `predictions-output-dir` (forcing a real re-predict + fresh sidecar copy-through),
+  then resubmitting.
+  **Result: `sleap-roots-pipeline-v4lg7` — `Status: Succeeded`, `Progress: 4/4`, all four stages
+  green** (images-downloader 6s, predictor 2m, trait-extractor 12s, write-back 8s). Confirmed the
+  write-back was real (not just exit 0) by manually re-`ingest-result`-ing all 3 result envelopes
+  via `bloomctl` — each returned `"was_noop": true"` with real `source_id`s (6, 7, 8), Bloom's
+  actual idempotent first-writer-wins response, proving the original write-back created real
+  `cyl_trait_sources` rows in the staging database. **This is the first fully-real end-to-end A4
+  run.** `--scan-ids ""` behavior (the original point of this task) still not separately confirmed
+  — low priority now that the real batch path is proven; can be checked opportunistically.
 
 ## 6. Validate + close out
 
@@ -120,12 +141,13 @@ directly against the real RunAI cluster instead.
 - [x] 6.2 Re-linted all touched/new cluster manifests via WSL's `argo` CLI (v3.6.5) + `bash -n` on
   the launcher: both new templates lint clean; `sleap-roots-pipeline.yaml` hits the expected
   unregistered-`templateRef` error only (see 3.5) — no other issues.
-- [ ] 6.3 `/pr-description`; open PR referencing A4 EPIC (talmolab/sleap-roots-pipeline#10) and this
-  change-id. Note: this change replaces the working manual `argo submit` flow's DAG shape —
-  **BREAKING** in the sense that a full run won't succeed past `images-downloader` until #17's
-  credential lands (expected, not a regression — `predictor`/`trait-extractor` themselves are
-  unchanged and still work identically once reached). Note the task 5 cluster-submit result, the
-  updated issue #21, and leave the other deferred items (semaphore, per-run path isolation,
+- [x] 6.3 `/pr-description`; open PR referencing A4 EPIC (talmolab/sleap-roots-pipeline#10) and this
+  change-id. This change replaces the working manual `argo submit` flow's DAG shape — **BREAKING**
+  in that sense, though by the time task 5 completed, a full run actually succeeds end-to-end
+  (#17's credential resolved, #555/#556 fixed upstream) — `predictor`/`trait-extractor` themselves
+  are unchanged and behave identically to before, now reached by two new real stages. Noted the
+  task 5 cluster-submit result (full success, `source_id`s 6/7/8), the updated issue #21, the new
+  bloom #555/#556 references, and left the other deferred items (semaphore, per-run path isolation,
   image-tag lifecycle, dev-personal hostPath, Bloom trigger route, producer Argo-readiness,
-  notification, empty-batch silent-green risk shared with trait-extractor/sleap-roots#259) tracked,
-  not silently dropped.
+  notification, empty-batch silent-green risk shared with trait-extractor/sleap-roots#259, and the
+  newly-found stale-sidecar-copy-through risk) tracked, not silently dropped.
