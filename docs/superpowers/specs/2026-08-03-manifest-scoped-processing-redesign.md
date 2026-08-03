@@ -78,21 +78,25 @@ path; a new CLI arg is not.
 ## What this repo's PR actually is
 
 Not a feature — a correction + a guardrail, to stop this program from re-discovering the same
-near-mistake later:
+near-mistake later. **All five items below are done:**
 
-1. **Correct the stale comment** in `sleap-roots-pipeline.yaml` (line 35) that says "a real
-   per-scan trigger parameterizes them (#10)" — this implied the fix was per-run-parameterized
-   paths, which is now known to be wrong.
-2. **Add an explicit architectural guardrail** stating the shared-path requirement outright, so a
-   future contributor doesn't "fix" the contamination gap by isolating paths again, unaware it
-   would silently break cluster-side dedup.
-3. **File a cross-repo tracking issue** in this repo (matching the existing EPIC-tracking
-   convention — A3 EPIC #9, A4 EPIC #10 both live here) for the manifest-scoped-processing +
-   idempotency-key-verified-skip initiative, to be decomposed into per-repo sub-issues starting
-   with `sleap-roots-contracts`.
-4. **Update the roadmap** to record this redesign and the new cross-repo initiative.
-5. **Hand off to `sleap-roots-contracts`** as the first repo to actually build something, once
-   Elizabeth's `sleap-roots-predict` parity-gate work is done.
+1. ✅ **Corrected the stale comment** in `sleap-roots-pipeline.yaml` (previously line 35, now an
+   expanded ~10-line block starting at line 35) that said "a real per-scan trigger parameterizes
+   them (#10)" — this implied the fix was per-run-parameterized paths, which is now known to be
+   wrong.
+2. ✅ **Added an explicit architectural guardrail** stating the shared-path requirement outright,
+   so a future contributor doesn't "fix" the contamination gap by isolating paths again, unaware
+   it would silently break cluster-side dedup.
+3. ✅ **Filed a cross-repo tracking issue** — **[#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)**
+   (matching the existing EPIC-tracking convention — A3 EPIC #9, A4 EPIC #10 both live here) — for
+   the manifest-scoped-processing + idempotency-key-verified-skip initiative, to be decomposed
+   into per-repo sub-issues starting with `sleap-roots-contracts`.
+4. ✅ **Updated the roadmap** — new "Cross-repo correctness" subsection + a 2026-08-03 status-log
+   entry, both linking #37 and this doc.
+5. ✅ **Drafted the handoff to `sleap-roots-contracts`** as the first repo to actually build
+   something — delivered as a copy-paste prompt; timing to actually start that session is
+   Elizabeth's call (recommended after her in-progress `sleap-roots-predict` parity-gate work
+   wraps up).
 
 ## Out of scope for this repo's PR
 
