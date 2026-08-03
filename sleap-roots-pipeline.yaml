@@ -32,7 +32,16 @@ spec:
     # template) — a fresh node/path with no prior ownership could hit a permission-denied write
     # rather than a clean stage-in. The real cluster run that validated this reused an
     # already-existing, already-writable path, so this specific edge case wasn't exercised.
-    # These a4_poc paths are the PoC reference scan — a real per-scan trigger parameterizes them (#10).
+    # These a4_poc paths are the PoC reference scan, shared across every run — deliberately, not a
+    # gap to "fix" by parameterizing them per-run/per-pipeline_run_id. Cluster-side skip-if-done
+    # dedup (sleap-roots-predict's batch.py) only works because this path IS shared: it's how a
+    # scan already processed in one run gets skipped in the next. Bloom's own trigger-route dedup
+    # design explicitly defers the real GPU-avoidance decision to this mechanism (bloom PR #570's
+    # pipeline.py docstring), and the A4 "batch oracle" validation target requires re-running an
+    # already-done batch to schedule 0 GPU pods — both assume this path stays shared. The real fix
+    # for cross-run contamination is manifest-scoped processing in the producers (only touch the
+    # scan_ids a run was actually given), not isolated paths — see
+    # docs/superpowers/specs/2026-08-03-manifest-scoped-processing-redesign.md and issue #37.
     - name: images-input-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/input
