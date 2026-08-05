@@ -34,32 +34,61 @@ useful concurrency.
   mechanism rather than requiring busch-lab's own deserved GPUs to be free — the same mechanism
   `talmo-lab` already relies on today (currently at 162% of its 20-GPU quota via preemptible jobs).
 
+## Verified against RunAI's own docs (not just issue #25's description of them)
+
+Fetched directly rather than relied on secondhand: RunAI GPU Fractions docs
+(`run-ai-docs.nvidia.com/saas/platform-management/runai-scheduler/resource-optimization/fractions`).
+Confirms: annotations go in **pod-level** `metadata.annotations` (not the container spec);
+`schedulerName: runai-scheduler` is required (matches what we already expected to be automatic in
+`runai-talmo-lab`/`runai-busch-lab`); no other required fields for a single-GPU-device fractional
+request. Also surfaced something our original plan missed: RunAI supports **two** sizing modes —
+`gpu-fraction` (relative, e.g. `"0.25"`) and `gpu-memory` (absolute MiB, e.g. `"4096"`) — and the
+docs recommend the absolute form for precision. Also flagged: "splitting a GPU into fractions may
+generate some fragmentation... the Scheduler will try to consolidate GPU resources where feasible
+(preemptible workloads)" — relevant since predictor already runs preemptible.
+
 ## The fix
 
-1. Move `gpu-fraction: "<value>"` from the WorkflowTemplate's object-level
-   `metadata.annotations` to `spec.templates[predictor].metadata.annotations` (pod-level), so Argo
-   actually places it on the pod.
-2. Remove `resources.limits.nvidia.com/gpu: 1` from the predictor container — fractional and
-   whole-GPU limits are mutually exclusive in RunAI's model.
+1. Move `gpu-memory: "<value>"` (absolute MiB, not a relative `gpu-fraction`) to
+   `spec.templates[predictor].metadata.annotations` (pod-level), so Argo actually places it on the
+   pod.
+2. Remove `resources.limits.nvidia.com/gpu: 1` from the predictor container — fractional/absolute
+   GPU-memory requests and whole-GPU limits are mutually exclusive in RunAI's model (this is also
+   the literal root cause of issue #25: the pod inspection showed `runai-total-requested-gpus: "1"`
+   with the old `nvidia.com/gpu: 1` limit present, i.e. RunAI honored the whole-GPU resource and
+   ignored the annotation).
 3. Remove `privileged: true` and `runAsUser: 0` from the predictor's `securityContext` — no longer
    just a TODO, now confirmed unnecessary (cluster policy blocks `privileged` anyway; the pod ran
    and wrote to the NFS hostPath output normally without either).
-4. Confirm `schedulerName: runai-scheduler` lands on the resulting pod (expected to be automatic
-   in `runai-talmo-lab`/`runai-busch-lab`, per the `runai` skill).
+4. Confirm `schedulerName: runai-scheduler` lands on the resulting pod (confirmed required per
+   RunAI's docs above; expected to already be automatic in `runai-talmo-lab`/`runai-busch-lab`,
+   per the `runai` skill, since existing whole-GPU predictor pods already schedule via RunAI today
+   — this task verifies that continues to hold, not that we need to add it ourselves).
 
-## Sizing the fraction: `0.25`
+## Sizing: `gpu-memory: "8192"` (8GB), not a flat fraction
 
-~10.2% observed peak leaves roughly 2.4x headroom for larger production batches
-(`BATCH_SIZE` up to ~25–50 vs. the 3-scan test measured here), memory fragmentation, and
-multi-tenant safety, while still allowing 4 predictor pods to co-schedule per physical GPU
-(`1 ÷ 0.25 = 4`).
+Originally sized as a `0.25` fraction (~2.4x headroom over the measured ~4,676 MiB peak, 4 pods
+per GPU). Switched to an absolute `gpu-memory` value per RunAI's own precision guidance, because a
+flat fraction means something different on every card: `0.25` reserves ~11.5GB on talmo-lab's
+46,068 MiB card but ~12.1GB on busch-lab's ~48.3GB card, despite the workload only ever using
+~4.7GB either way — wasted headroom that directly costs concurrency on the smaller busch-lab
+quota.
+
+`8192` MiB gives ~1.75x margin over the measured peak (for larger production batches —
+`BATCH_SIZE` up to ~25–50 vs. the 3-scan test measured here — and fragmentation/multi-tenant
+safety), while allowing **more** concurrency than the flat-fraction approach:
+`46068 ÷ 8192 ≈ 5` predictor pods per GPU on talmo-lab, `48300 ÷ 8192 ≈ 5` on busch-lab — versus
+4 under the rejected `0.25`-fraction approach.
 
 **Alternatives considered:**
-- **Dynamic GPU Fractions** (request/limit split, e.g. 0.25 request / 0.5 limit) — issue #25 floats
-  this for "bursty" memory. Rejected for now: the measured trace was a stable plateau, not bursty,
-  so the added complexity isn't earned yet. Revisit if a real large-batch production run shows
-  memory growth the 3-scan test didn't.
-- **Larger fraction (0.5), fewer concurrent (2)** — more margin, but discards most of the
+- **Relative `gpu-fraction: "0.25"`** (original plan) — rejected in favor of absolute `gpu-memory`
+  once RunAI's docs confirmed the memory-based form exists and is the precision-recommended
+  option; sizing to measured VRAM directly is both more accurate and yields more concurrency here.
+- **Dynamic GPU Fractions** (request/limit split) — issue #25 floats this for "bursty" memory.
+  Rejected for now: the measured trace was a stable plateau, not bursty, so the added complexity
+  isn't earned yet. Revisit if a real large-batch production run shows memory growth the 3-scan
+  test didn't.
+- **Larger reservation (e.g. 16GB), fewer concurrent (~3)** — more margin, but discards most of the
   concurrency this change exists to unlock. Rejected.
 
 ## Scope boundary
@@ -75,11 +104,11 @@ multi-tenant safety, while still allowing 4 predictor pods to co-schedule per ph
 The existing `per-batch-pipeline` OpenSpec capability's "Predictor runs the warm GHCR predict
 container" requirement currently asserts the predictor "SHALL request a GPU (`nvidia.com/gpu`)"
 and its scenario asserts "it requests `nvidia.com/gpu`" — both need a MODIFIED delta changing the
-assertion to the pod-level `gpu-fraction` annotation shape with no `nvidia.com/gpu` limit.
+assertion to the pod-level `gpu-memory` annotation shape with no `nvidia.com/gpu` limit.
 
 ## Validation plan (implementation-time, not yet run)
 
-- Submit the updated template; confirm the resulting pod's annotations show `gpu-fraction` and no
+- Submit the updated template; confirm the resulting pod's annotations show `gpu-memory` and no
   `nvidia.com/gpu` limit (closes issue #25's first acceptance criterion).
 - Submit 2 fractional predictor pods concurrently on the same physical GPU; confirm neither OOMs
   (closes the second acceptance criterion).

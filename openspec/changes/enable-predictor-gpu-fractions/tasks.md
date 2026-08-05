@@ -7,16 +7,20 @@ rationale in `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`.
 
 ## 1. Predictor template edit
 
-- [ ] 1.1 Edit `sleap-roots-predictor-template.yaml`: move `gpu-fraction: "0.25"` from the
-  WorkflowTemplate's object-level `metadata.annotations` (currently lines 10-12, alongside
-  `preemptible: "true"`) to `spec.templates[predictor].metadata.annotations` (new, pod-level).
-  Remove `resources.limits.nvidia.com/gpu: 1`. Remove `privileged: true` and `runAsUser: 0` from
+- [ ] 1.1 Edit `sleap-roots-predictor-template.yaml`: remove the object-level `gpu-fraction: "0.5"`
+  annotation (currently lines 10-12, alongside `preemptible: "true"`) and add
+  `gpu-memory: "8192"` under `spec.templates[predictor].metadata.annotations` (new, pod-level) —
+  an absolute MiB value, not a relative `gpu-fraction` (per RunAI's own docs, verified directly:
+  the absolute form is the precision-recommended sizing mode, and a flat fraction reserves a
+  different absolute amount on every card despite the workload's fixed real footprint). Remove
+  `resources.limits.nvidia.com/gpu: 1`. Remove `privileged: true` and `runAsUser: 0` from
   `securityContext` (delete the whole `securityContext` block if nothing else populates it).
   Replace the stale `# gpu-fraction "0.5" has no effect today...` object-metadata comment with a
-  note that the pod-level annotation is now what's authoritative, referencing issue #25.
-- [ ] 1.2 Inspect the edited file (`grep`/manual read): confirm `gpu-fraction` appears under
-  `spec.templates[0].metadata.annotations`, confirm no `nvidia.com/gpu` string appears anywhere in
-  the file, confirm no `privileged` or `runAsUser` keys remain.
+  note that the pod-level `gpu-memory` annotation is now what's authoritative, referencing issue
+  #25.
+- [ ] 1.2 Inspect the edited file (`grep`/manual read): confirm `gpu-memory: "8192"` appears under
+  `spec.templates[0].metadata.annotations`, confirm no `gpu-fraction` or `nvidia.com/gpu` string
+  appears anywhere in the file, confirm no `privileged` or `runAsUser` keys remain.
 
 ## 2. Static validation
 
@@ -30,7 +34,7 @@ rationale in `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`.
   `runai-talmo-lab`, via the `argo-user`/available WSL kubeconfig).
 - [ ] 3.2 Submit a real predictor run (`argo submit --from workflowtemplate/sleap-roots-predictor-template`
   or via the full pipeline with a small `scan-ids` set) and inspect the resulting pod's manifest
-  (`kubectl get pod <name> -o yaml`): confirm `annotations` contains `gpu-fraction: "0.25"`, confirm
+  (`kubectl get pod <name> -o yaml`): confirm `annotations` contains `gpu-memory: "8192"`, confirm
   no `nvidia.com/gpu` under `resources.limits` or `resources.requests`, confirm
   `schedulerName: runai-scheduler` is present.
 - [ ] 3.3 Confirm the run still completes successfully (predictor produces valid output for its
@@ -39,7 +43,7 @@ rationale in `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`.
 ## 4. Concurrent co-scheduling validation (closes issue #25's second acceptance criterion)
 
 - [ ] 4.1 Submit 2 fractional predictor pods concurrently (either two real pipeline runs with
-  distinct `scan-ids`, or two ad-hoc `runai workspace submit --gpu-portion-request 0.25` jobs using
+  distinct `scan-ids`, or two ad-hoc `runai workspace submit --gpu-memory-request 8192` jobs using
   the same image/args) targeting the same physical GPU.
 - [ ] 4.2 While both run, poll `nvidia-smi` (via `runai workspace exec` or `kubectl exec`) to
   confirm combined memory usage stays within the card's capacity and neither pod OOMs or gets

@@ -23,11 +23,15 @@ equivalent), and the idempotency/skip-if-done gap (issue #37, separate in-progre
 
 ## What Changes
 
-- Move `gpu-fraction: "0.25"` from the WorkflowTemplate's object-level `metadata.annotations` to
+- Move `gpu-memory: "8192"` (absolute MiB, not a relative `gpu-fraction`) to
   `spec.templates[predictor].metadata.annotations` (pod-level), so Argo actually places it on the
-  pod. Fraction sized from the design doc's measured peak (~4.7GB / ~10.2% of a 46GB card), giving
-  ~2.4x headroom over the 3-scan test batch and allowing 4 predictor pods to co-schedule per
-  physical GPU.
+  pod. Verified directly against RunAI's own docs (not just issue #25's description of them):
+  annotations are pod-level, `schedulerName: runai-scheduler` is required, and RunAI supports both
+  a relative `gpu-fraction` and an absolute `gpu-memory` annotation — the docs recommend the
+  absolute form for precision. Sized from the design doc's measured peak (~4,676 MiB), giving
+  ~1.75x headroom over the 3-scan test batch and allowing ~5 predictor pods to co-schedule per
+  physical GPU (more than the flat-percentage approach originally planned, since a fixed fraction
+  wastes headroom differently on talmo-lab's ~46GB card vs. busch-lab's ~48GB card).
 - Remove `resources.limits.nvidia.com/gpu: 1` from the predictor container — fractional and
   whole-GPU limits are mutually exclusive in RunAI's model.
 - Remove `privileged: true` and `runAsUser: 0` from the predictor's `securityContext` — confirmed
@@ -46,7 +50,7 @@ the GPU it was allocated).
 
 - **Modified capability:** `per-batch-pipeline` — the "Predictor runs the warm GHCR predict
   container" requirement's scenario currently asserts the predictor "requests `nvidia.com/gpu`";
-  this changes to asserting the pod-level `gpu-fraction` annotation with no `nvidia.com/gpu` limit
+  this changes to asserting the pod-level `gpu-memory` annotation with no `nvidia.com/gpu` limit
   and no `privileged`/`runAsUser: 0`.
 - **Affected code:** `sleap-roots-predictor-template.yaml` only.
 - **Untouched:** `sleap-roots-trait-extractor-template.yaml`,
