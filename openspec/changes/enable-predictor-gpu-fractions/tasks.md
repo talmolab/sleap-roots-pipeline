@@ -152,12 +152,19 @@ original "1-2 commits" plan stale (per PR #41 review).
   but whether eviction+retry actually behaves correctly under the new annotation-only scheduling
   remains unverified. Stretch goal, not required to close this change, but left honestly
   unchecked rather than folded into 6.2a's checkmark.
-- [x] 6.3 Note in the PR (not a code fix): if a Workflow is retrying (per `retryStrategy limit: 3`)
-  at the moment the template is updated on the cluster, the retry could resolve to the new
-  non-root template while a root-owned partial file from a prior (old-template) attempt still sits
-  in the shared output path — a non-root process may lack permission to overwrite it. Low
-  probability for a controlled first rollout; not fixed by this change, just flagged so it isn't
-  rediscovered as a surprise later (see `design.md`'s Risks section).
+- [x] 6.3 Note in the PR (not a code fix) — **mechanism corrected, this entry previously stated
+  the wrong one (caught by a targeted post-review verification pass, not the original 5-agent
+  review).** If a Workflow is retrying (per `retryStrategy limit: 3`) at the moment the template
+  is updated on the cluster, the retry does NOT hit a permission-denied-on-overwrite error — the
+  predictor's own `retryStrategy` comment states skip-if-done is existence-only, so a retry that
+  finds a file already exists (even truncated/corrupt, root- or non-root-authored) just *skips*
+  it, never attempting to overwrite it. The real risk is the pre-existing one this repo already
+  tracks separately (predict #26 / sleap-roots #259: existence-only skip + non-atomic write can
+  trust a truncated file as "done") — this change doesn't introduce a new failure mode, it just
+  means that pre-existing risk's next occurrence could involve a mix of root- and
+  non-root-authored files. Low probability for a controlled first rollout; not fixed by this
+  change, just flagged so it isn't rediscovered as a surprise later (see `design.md`'s Risks
+  section, which has the same correction).
 
 ## 7. Documentation follow-through
 
