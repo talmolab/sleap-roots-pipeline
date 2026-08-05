@@ -13,7 +13,7 @@ validation (branch is unpushed, no PR yet).
 
 ## 1. Predictor template edit
 
-- [ ] 1.1 Edit `sleap-roots-predictor-template.yaml`: remove **only** the `gpu-fraction: "0.5"`
+- [x] 1.1 Edit `sleap-roots-predictor-template.yaml`: remove **only** the `gpu-fraction: "0.5"`
   line from the object-level `metadata.annotations` block (leave the sibling `preemptible: "true"`
   annotation in that same block untouched — it's out of scope). Add `gpu-memory: "8192"` under a
   new `spec.templates[predictor].metadata.annotations` block (pod-level). Remove
@@ -22,7 +22,7 @@ validation (branch is unpushed, no PR yet).
   Replace the stale `# gpu-fraction "0.5" has no effect today...` comment with a note that the
   pod-level `gpu-memory` annotation is now authoritative, referencing issue #25. See `design.md`
   for the full rationale — don't re-derive it in the file comment, just reference it.
-- [ ] 1.2 Inspect the edited file (`grep`/manual read): confirm `gpu-memory: "8192"` appears under
+- [x] 1.2 Inspect the edited file (`grep`/manual read): confirm `gpu-memory: "8192"` appears under
   `spec.templates[0].metadata.annotations`, confirm no `gpu-fraction` or `nvidia.com/gpu` string
   appears anywhere in the file, confirm no `privileged`/`runAsUser` keys remain, confirm
   `preemptible: "true"` is still present in the object-level annotations. Also spot-check the
@@ -33,7 +33,7 @@ validation (branch is unpushed, no PR yet).
 
 ## 2. Static validation
 
-- [ ] 2.1 `argo lint --offline sleap-roots-predictor-template.yaml` (via WSL, per the `runai`
+- [x] 2.1 `argo lint --offline sleap-roots-predictor-template.yaml` (via WSL, per the `runai`
   skill) → expect no errors (standalone `WorkflowTemplate`, no `templateRef` cross-resolution to
   worry about).
 

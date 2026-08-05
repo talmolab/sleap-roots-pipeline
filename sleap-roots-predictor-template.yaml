@@ -3,18 +3,24 @@ kind: WorkflowTemplate
 metadata:
   name: sleap-roots-predictor-template
   # NOTE: these live on the WorkflowTemplate OBJECT metadata, so Argo does NOT copy them onto the
-  # pod — both are currently INERT breadcrumbs. Effective behavior comes from
-  # spec.templates[].priorityClassName (preemptibility) + the container resources below.
-  #   gpu-fraction "0.5" has no effect today → each predict pod takes a WHOLE GPU. Proper RunAI
-  #   fractional wiring (pod-level annotation + drop nvidia.com/gpu) is tracked in #25.
+  # pod — this `preemptible` annotation is an INERT breadcrumb (effective behavior comes from
+  # spec.templates[].priorityClassName below). The `gpu-fraction` annotation that used to live
+  # here was equally inert and has moved to spec.templates[predictor].metadata.annotations below
+  # as `gpu-memory` (pod-level, where Argo actually copies it) — closes #25. See
+  # openspec/changes/enable-predictor-gpu-fractions/design.md for the full rationale.
   annotations:
-    gpu-fraction: "0.5"
     preemptible: "true"
   labels:
     project: talmo-lab
 spec:
   templates:
     - name: predictor
+      metadata:
+        # Pod-level annotation — Argo copies spec.templates[].metadata onto the pod, unlike the
+        # WorkflowTemplate object-level metadata above. This is what RunAI's scheduler actually
+        # reads. Sized from a measured peak VRAM trace (~4,676 MiB); see design.md.
+        annotations:
+          gpu-memory: "8192"
       # RunAI: preemptibility is governed by priorityClassName, NOT the preemptible
       # annotation (a UI breadcrumb). interactive-preemptible (75) lets the GPU pod use
       # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.
@@ -57,17 +63,19 @@ spec:
             mountPath: /workspace/images_input
           - name: predictions-output-dir
             mountPath: /workspace/output
-        securityContext:
-          # TODO: privileged:true is likely unnecessary (GPU via device-plugin + hostPath NFS
-          # don't require it); verify + drop. runAsUser:0 root-owns the NFS outputs — reconsider.
-          privileged: true
-          runAsUser: 0
+        # securityContext removed (#25): privileged:true/runAsUser:0 confirmed unnecessary via a
+        # live test run — GPU is visible via device-plugin without privileged, and NFS writes
+        # succeeded as the default non-root user. Cluster admission policy also now rejects
+        # `privileged` outright. See design.md's Risks section for the one caveat (that test
+        # reused an already-writable path, not a fresh one — task 3.4 covers the fresh-path case).
         resources:
           # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).
-          # A memory request/limit prevents an unaccounted OOM-kill under node pressure.
+          # A memory request/limit prevents an unaccounted OOM-kill under node pressure. No
+          # nvidia.com/gpu here (#25) — GPU comes from the gpu-memory annotation above; RunAI's
+          # own docs example for annotation-driven GPU requests carries no nvidia.com/gpu resource
+          # at all, and coexistence with it is what caused #25 in the first place.
           requests:
             cpu: "2"
             memory: 8Gi
           limits:
             memory: 24Gi
-            nvidia.com/gpu: 1
