@@ -21,6 +21,12 @@ spec:
         # reads. Sized from a measured peak VRAM trace (~4,676 MiB); see design.md.
         annotations:
           gpu-memory: "8192"
+      # Explicit per PR #41 review: annotation-only GPU requests have no nvidia.com/gpu fallback,
+      # so scheduling depends entirely on RunAI's scheduler seeing this pod. Already automatic in
+      # runai-talmo-lab/runai-busch-lab today (live-verified) — set explicitly anyway so a future
+      # cluster/namespace config change can't silently regress to the default k8s scheduler with
+      # no GPU reservation and no obvious failure signal.
+      schedulerName: runai-scheduler
       # RunAI: preemptibility is governed by priorityClassName, NOT the preemptible
       # annotation (a UI breadcrumb). interactive-preemptible (75) lets the GPU pod use
       # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.

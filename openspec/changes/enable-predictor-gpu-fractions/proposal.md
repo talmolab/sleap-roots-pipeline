@@ -18,20 +18,20 @@ folder) and `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`.
 - Remove `resources.limits.nvidia.com/gpu: 1` from the predictor container — fractional/absolute
   GPU-memory requests and whole-GPU limits are mutually exclusive in RunAI's model.
 - Remove `privileged: true` and `runAsUser: 0` from the predictor's `securityContext` — confirmed
-  unnecessary via a live test run, though see `design.md`'s Risks section: that test reused an
-  already-writable shared path, not a fresh one, so the cold-path permission risk this repo
-  already documents for `images-downloader` isn't yet exercised for predictor either. This
-  proposal adds that test (tasks.md §3).
-- Confirm `schedulerName: runai-scheduler` lands on the resulting pod (expected automatic in
-  `runai-talmo-lab`/`runai-busch-lab`).
+  unnecessary via two live tests (tasks.md §3.4, §3.5): a non-root write against a brand-new
+  `DirectoryOrCreate` path, and against a pre-existing directory tree originally populated by the
+  old root-owned predictor. Both passed — the cold-path permission risk this repo documents for
+  `images-downloader` does not materialize for predictor on this cluster's actual NFS config.
+- Explicitly set `spec.templates[predictor].schedulerName: runai-scheduler` (added per PR #41
+  review) — live-verified as automatic in `runai-talmo-lab` already, set explicitly anyway as
+  defense-in-depth against future cluster/namespace config drift, since the annotation-only GPU
+  request has no `nvidia.com/gpu` fallback if that wiring ever changes.
 
-**BREAKING**: expected none, but not yet fully proven — see `design.md`'s first Risk.
-`predictor`'s inputs/outputs/image/args are unchanged, and the workload never used more than ~10%
-of the GPU it previously claimed, so a regression is unlikely. However, annotation-only GPU
-scheduling (no `nvidia.com/gpu` resource at all) is not verifiable by static review — it depends
-on RunAI's scheduler intercepting the annotation, which only a live pod (tasks.md §3.2) can
-confirm. Treat this as "expected non-breaking, confirmed by task 3" rather than a settled fact
-until that task runs.
+**BREAKING**: none, live-cluster confirmed. `predictor`'s inputs/outputs/image/args are unchanged,
+and the workload never used more than ~10% of the GPU it previously claimed. Annotation-only GPU
+scheduling (no `nvidia.com/gpu` resource at all) isn't verifiable by static review alone, but
+tasks.md §3.2 confirms it on a real pod (`gpu-memory`/`schedulerName`/resources all correct), §3.4
+and §3.5 confirm both permission-risk classes, and §4 confirms real concurrent co-scheduling.
 
 ## Impact
 
@@ -49,6 +49,9 @@ until that task runs.
   twice there already as filed/open). See tasks.md §7.
 - **Untouched code:** `sleap-roots-trait-extractor-template.yaml`,
   `sleap-roots-images-downloader-template.yaml`, `sleap-roots-write-back-template.yaml`,
-  `sleap-roots-pipeline.yaml`, `runai_run_pipeline.sh`, all `local-WSL2-*` files.
+  `sleap-roots-pipeline.yaml`, `runai_run_pipeline.sh`. `local-WSL2-sleap-roots-predictor-template.yaml`
+  is functionally untouched (still `nvidia.com/gpu: 1`, still `privileged`/`runAsUser: 0`) — one
+  comment added (per PR #41 review) flagging that it now diverges from the cluster template on
+  the root/non-root question and can no longer stand in for that specific test.
 - **External prerequisites:** none — this is entirely self-contained pipeline-side engineering,
   no cluster-admin action needed.

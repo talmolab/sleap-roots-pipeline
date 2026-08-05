@@ -5,11 +5,12 @@ submit (no pytest, no local WSL2 dry-run — GPU fractions are a RunAI-scheduler
 local Docker Desktop equivalent, and the local variant is out of scope for this change). Full
 rationale in `design.md` and `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`.
 
-**Commit shape**: this change produces one code commit (§1's manifest edit, lint-clean before
-committing) plus one small close-out commit recording validation evidence and doc updates (§§2-8).
-Sections 2-8 are cluster-side validation and doc follow-through with no manifest diff — their
-checkboxes don't each need their own commit. Amend §1's commit freely while iterating through live
-validation (branch is unpushed, no PR yet).
+**Commit shape**: originally planned as 1-2 commits (manifest edit + close-out). In practice this
+grew to several as the OpenSpec proposal itself went through a 5-agent adversarial review (before
+implementation) and the resulting PR #41 went through a second 5-agent review (after
+implementation) — each review round's fixes landed as their own commit rather than amending
+history once the branch was pushed/PR opened. Reconciling this note rather than leaving the
+original "1-2 commits" plan stale (per PR #41 review).
 
 ## 1. Predictor template edit
 
@@ -30,6 +31,10 @@ validation (branch is unpushed, no PR yet).
   models-input mount, `retryStrategy`, `priorityClassName`) are unchanged — closes the
   "Predictor template uses the GHCR predict image..." scenario, which this change doesn't modify
   but should still be confirmed intact.
+- [x] 1.3 **Added per PR #41 review**: set `spec.templates[predictor].schedulerName:
+  runai-scheduler` explicitly. Live testing (§3.2) already confirmed this lands automatically in
+  `runai-talmo-lab` — this is defense-in-depth against future cluster/namespace config drift, not
+  a fix for an observed problem. Re-lint after this addition (§2.1).
 
 ## 2. Static validation
 
@@ -59,6 +64,36 @@ validation (branch is unpushed, no PR yet).
   prediction files were created in the freshly kubelet-created directory (mounted `0777` on this
   NFS config, not the restrictive mode the theoretical risk assumed). The cold-path permission risk
   does not materialize on this cluster's actual NFS mount. Test artifacts cleaned up.
+- [x] 3.5 **Warm-path permission test (added per PR #41 review — 3 of 5 reviewers independently
+  flagged this gap).** §3.3 and §3.4 both left a real risk untested: §3.3's run against the real
+  `a4_poc/predictions` path hit skip-if-done for all 3 scans (zero actual writes attempted there
+  under the new non-root context); §3.4's cold-path test used a brand-new `DirectoryOrCreate`
+  directory, not a directory that already existed before this change. Neither exercised "a
+  non-root process creating new files inside a pre-existing directory tree originally populated
+  by the old `runAsUser: 0` predictor" — the exact scenario the real next production run will hit
+  the first time it processes a not-yet-done scan under the real shared path.
+  **Test definition (written before running, per TDD):** backed up, then deleted, the 4 prediction
+  files inside the pre-existing `a4_poc/predictions/scan_1009/` directory (leaving the directory
+  itself, created 2026-07-29 under the old root-owned predictor, untouched) so skip-if-done
+  couldn't short-circuit; resubmitted the real production `sleap-roots-pipeline.yaml` with
+  `scan-ids=1009` against the unmodified, real shared path (not an ad-hoc test workflow). **Pass**
+  = predictor log shows `N ok, ... skipped, 0 failed` and fresh files appear in `scan_1009/` with
+  the new run's timestamp. **Fail** = a permission-denied error in the predictor's logs, or the
+  job errors out.
+  **Result: PASS.** `sleap-roots-pipeline-sk8p9`, predictor step (`sleap-roots-pipeline-sk8p9-predictor-3457220062`,
+  2m duration — genuine inference, not a skip): log shows `Batch complete: 1 ok, 2 skipped, 0
+  failed` (scan_1009 reprocessed for real — 72 frames, 168 instances detected; scan_289/577
+  correctly skipped since their files were untouched). `ls -la --time-style=full-iso` on
+  `scan_1009/` confirms 4 files with the new run's timestamp (`2026-08-05 12:08:35`) while the
+  directory itself (`.`/`..`) still shows its original `2026-07-29 21:02:42` creation time — proof
+  the non-root process wrote successfully into a directory root created seven days earlier. No
+  permission error anywhere in the log. `trait-extractor` also succeeded reading the fresh output
+  (12s). `write-back` failed on this same run, but for a reason entirely unrelated to this PR: its
+  content-addressed blob store correctly refused to overwrite `scan_1009`'s already-ingested blob
+  with a different checksum (deliberately re-running inference produces slightly different, still
+  valid, numeric output) — expected behavior given this test intentionally reprocessed
+  already-ingested data, not a defect. Test workflow and original `scan_1009` files
+  (restored from backup, byte-identical to originals) both cleaned up.
 
 ## 4. Concurrent co-scheduling validation (real cluster; closes issue #25's second acceptance criterion)
 
@@ -74,15 +109,21 @@ validation (branch is unpushed, no PR yet).
   directory (real overlapping inference, not skip-if-done). First attempt let RunAI's scheduler
   place them independently (landed on 2 different nodes — instructive but not what this task
   needs); redirected the second pod via `nodeSelector: {kubernetes.io/hostname: gpu-node2}` to
-  force genuine co-location with the first. Did not use an ad-hoc `runai workspace submit` flag —
-  confirmed no `--gpu-memory-request`-equivalent flag exists in `.claude/skills/runai/SKILL.md`.
+  force genuine co-location with the first. Used `argo submit` against the registered template
+  rather than an ad-hoc `runai workspace submit` flag — at the time this ran, no
+  node/GPU-co-location flag was confirmed to exist for `workspace submit` (note: `--gpu-memory-request`
+  itself was later verified real in §7.3 — that's a *sizing* flag, not a co-location one; no
+  equivalent to force two ad-hoc jobs onto the same physical device was found).
 - [x] 4.3 `kubectl exec`/`nvidia-smi` was not available (this identity lacks `pods/exec` RBAC for
   ad-hoc Argo-submitted pods — `runai workspace exec` manages its own separate auth layer per the
-  `runai` skill, and doesn't apply here). Confirmed co-scheduling a stronger way instead: both
+  `runai` skill, and doesn't apply here). Confirmed co-scheduling a different way instead: both
   pods' `kubectl get pod -o yaml` show the **identical `runai-gpu-group` UUID**
-  (`2f254411-445d-40de-83bf-328add9dbb8e`) — definitive proof RunAI assigned both to the exact same
-  physical GPU, not just the same node. No pre-existing tenant session on `gpu-node2` was
-  disrupted (checked before/after: same jobs, same status).
+  (`2f254411-445d-40de-83bf-328add9dbb8e`) — **strong evidence** RunAI assigned both to the same
+  physical GPU, not just the same node (per PR #41 review: no RunAI doc is cited anywhere in this
+  change defining exactly what `runai-gpu-group` encodes, so this is strong corroborating evidence
+  rather than a documented guarantee — flagged as a follow-up to find/cite the authoritative
+  definition, not something this change can close on its own). No pre-existing tenant session on
+  `gpu-node2` was disrupted (checked before/after: same jobs, same status).
 - [x] 4.4 Both completed successfully (`Succeeded`, real inference output in each pod's separate
   output directory, no truncation/errors in logs) while genuinely overlapping in execution time on
   the same physical GPU. Neither OOMed. Test artifacts (workflows, throwaway directories) deleted.
@@ -101,13 +142,16 @@ validation (branch is unpushed, no PR yet).
 
 - [x] 6.1 (static) Confirmed via diff: this edit only touched `metadata.annotations`,
   `resources.limits`, and `securityContext` — `priorityClassName`/`retryStrategy` lines untouched.
-- [x] 6.2 (live cluster) Confirmed on the live `sleap-roots-pipeline-m7mjp-predictor` pod: both
-  `priorityClassName: interactive-preemptible` and the full `retryStrategy`
-  (`limit:3, retryPolicy:Always, backoff:{duration:2m,factor:2}`) are present, unchanged, and
-  correctly propagated through the re-registered template. A real forced-eviction-and-retry
-  observation was not exercised (stretch goal, not required) — live eviction/retry under the
-  fractional shape remains unverified beyond confirming the fields themselves are intact, matching
-  the pre-existing caveat already in the templates' own comments about eviction risk.
+- [x] 6.2a (live cluster, field presence only) Confirmed on the live
+  `sleap-roots-pipeline-m7mjp-predictor` pod: both `priorityClassName: interactive-preemptible`
+  and the full `retryStrategy` (`limit:3, retryPolicy:Always, backoff:{duration:2m,factor:2}`) are
+  present, unchanged, and correctly propagated through the re-registered template.
+- [ ] 6.2b (live cluster, actual interaction — NOT exercised, per PR #41 review) A real
+  forced-eviction-and-retry observation under the fractional `gpu-memory` shape was not run. This
+  section's own title ("interaction check") oversells 6.2a alone — field presence is confirmed,
+  but whether eviction+retry actually behaves correctly under the new annotation-only scheduling
+  remains unverified. Stretch goal, not required to close this change, but left honestly
+  unchecked rather than folded into 6.2a's checkmark.
 - [x] 6.3 Note in the PR (not a code fix): if a Workflow is retrying (per `retryStrategy limit: 3`)
   at the moment the template is updated on the cluster, the retry could resolve to the new
   non-root template while a root-owned partial file from a prior (old-template) attempt still sits
@@ -137,9 +181,12 @@ validation (branch is unpushed, no PR yet).
 - [x] 8.1 `openspec validate enable-predictor-gpu-fractions --strict` → valid.
 - [x] 8.2 No manifest edit happened after §2.1's lint (§3/§4 findings didn't require tuning
   `8192`) — re-ran anyway to confirm: still clean, no-op as expected.
-- [ ] 8.3 `/pr-description`; open PR referencing issue #25 and this change-id. Paste the live
-  evidence from §3.2 (pod YAML annotation slice) and §4.3 (`nvidia-smi` trace) directly into the
-  PR body — a reviewer can't reproduce live-cluster runs themselves. Note the local-WSL2 predictor
+- [x] 8.3 `/pr-description` generated; PR #41 opened
+  (https://github.com/talmolab/sleap-roots-pipeline/pull/41), referencing issue #25 and this
+  change-id. Pasted the live evidence from §3.2 (pod YAML annotation slice) directly into the PR
+  body; corrected the instruction to paste an `nvidia-smi` trace from §4.3 — that command was
+  unavailable (see §4.3), the actual evidence used was the `runai-gpu-group` UUID match, which is
+  what the PR body contains. Note the local-WSL2 predictor
   variant is deliberately untouched, that trait-extractor's `privileged`/`runAsUser` TODO is now
   confirmed-droppable by this change's findings but is a separate out-of-scope follow-up, and that
   `runai_run_pipeline.sh`'s documented manual re-registration alternative (`argo template update`

@@ -7,8 +7,10 @@ The `predictor` template SHALL run the rebuilt warm-batch predict container (the
 `WANDB_API_KEY` environment variable sourced from a Kubernetes secret. The template SHALL NOT
 mount a model-input directory (models load in-process from the wandb registry). It SHALL request
 a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value, not a whole-GPU
-`resources.limits.nvidia.com/gpu` and not a relative `gpu-fraction`), SHALL NOT set
-`privileged: true` or `runAsUser: 0` on its `securityContext`, and SHALL retain a `retryStrategy`.
+`resources.limits.nvidia.com/gpu` and not a relative `gpu-fraction`), SHALL explicitly set
+`schedulerName: runai-scheduler` (defense-in-depth, since the annotation-only GPU request has no
+`nvidia.com/gpu` fallback if scheduler wiring ever changes), SHALL NOT set `privileged: true` or
+`runAsUser: 0` on its `securityContext`, and SHALL retain a `retryStrategy`.
 
 #### Scenario: Predictor template uses the GHCR predict image with WANDB key and no models mount
 
@@ -25,6 +27,7 @@ a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value,
   numeric string value (MiB)
 - **AND** it does NOT declare a `gpu-fraction` annotation
 - **AND** the container's `resources.limits` does NOT include `nvidia.com/gpu`
+- **AND** `spec.templates[predictor].schedulerName` is explicitly `runai-scheduler`
 - **AND** the container's `securityContext` does NOT set `privileged: true`
 - **AND** the container's `securityContext` does NOT set `runAsUser: 0`
 
@@ -40,3 +43,13 @@ a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value,
 - **WHEN** a predictor pod is preempted or evicted mid-run
 - **THEN** `retryStrategy` retries the step
 - **AND** the retried pod schedules successfully under the same `gpu-memory` annotation
+
+#### Scenario: Predictor writes as non-root into a pre-existing, previously root-owned directory
+
+- **WHEN** the predictor processes a scan whose output directory already exists on the shared
+  `predictions-output-dir` path from a prior run under the old `runAsUser: 0` configuration
+- **AND** that scan's existing output files are absent or stale, so skip-if-done does not
+  short-circuit
+- **THEN** the predictor (running without `privileged`/`runAsUser: 0`) successfully writes fresh
+  output files into that pre-existing directory
+- **AND** no permission-denied error occurs
