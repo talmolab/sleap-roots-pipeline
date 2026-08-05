@@ -27,3 +27,16 @@ a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value,
 - **AND** the container's `resources.limits` does NOT include `nvidia.com/gpu`
 - **AND** the container's `securityContext` does NOT set `privileged: true`
 - **AND** the container's `securityContext` does NOT set `runAsUser: 0`
+
+#### Scenario: Multiple predictor pods co-schedule on one physical GPU
+
+- **WHEN** two predictor pods, each requesting the template's `gpu-memory` value, are scheduled
+  concurrently onto the same physical GPU
+- **THEN** both pods complete successfully
+- **AND** neither pod is OOM-killed
+
+#### Scenario: Predictor retries correctly under the fractional GPU shape
+
+- **WHEN** a predictor pod is preempted or evicted mid-run
+- **THEN** `retryStrategy` retries the step
+- **AND** the retried pod schedules successfully under the same `gpu-memory` annotation
