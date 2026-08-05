@@ -64,14 +64,20 @@ clean up manually) rather than `runai training` (auto-terminates on completion).
 | Need | Flag |
 |---|---|
 | GPU (whole) | `--gpu-devices-request 1` |
-| GPU (fractional) | `--gpu-portion-request 0.5` (the predictor template annotates `gpu-fraction: "0.5"`) |
+| GPU (fractional, relative) | `--gpu-portion-request 0.5` (fraction of a GPU, 0-1) |
+| GPU (fractional, absolute) | `--gpu-memory-request 8G` (absolute amount, e.g. `1G`/`500M` — the predictor template annotates the pod-level `gpu-memory: "8192"` (MiB), this is the CLI equivalent for ad-hoc `workspace submit` jobs) |
 | CPU cores | `--cpu-core-request 12` |
 | Memory | `--cpu-memory-request 32G` |
 | Always re-pull image | `--image-pull-policy Always` |
 
 Only the **predictor** stage needs a GPU; `models-downloader` and `trait-extractor` are
-CPU-only. (Note: the predictor template pins both `gpu-fraction: "0.5"` and a hard
-`nvidia.com/gpu: 1` — under fractional scheduling the annotation governs.)
+CPU-only. The predictor template uses a **pod-level** `gpu-memory: "8192"` annotation with **no**
+`nvidia.com/gpu` resource (fixed in
+[issue #25](https://github.com/talmolab/sleap-roots-pipeline/issues/25) — it previously pinned an
+inert *object-level* `gpu-fraction: "0.5"` annotation alongside a hard `nvidia.com/gpu: 1`, which
+silently claimed a whole GPU regardless of the annotation). Annotation placement matters: only
+`spec.templates[].metadata.annotations` (pod-level) is copied onto the pod by Argo — the
+WorkflowTemplate object's own `metadata.annotations` (top of the file) never is.
 
 ## 5. Stage images
 
@@ -99,7 +105,7 @@ runai workspace submit srp-predict-test \
   -p talmo-lab \
   --image registry.gitlab.com/salk-tm/sleap-roots-predict:<tag> \
   --image-pull-policy Always \
-  --gpu-portion-request 0.5 \
+  --gpu-memory-request 8G \
   --cpu-core-request 8 \
   --cpu-memory-request 16G \
   --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/images_downloader_output,mount=/workspace/images_input,mount-propagation=HostToContainer \

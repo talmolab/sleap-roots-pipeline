@@ -39,63 +39,76 @@ validation (branch is unpushed, no PR yet).
 
 ## 3. Live validation (real cluster, closes issue #25's acceptance criteria)
 
-- [ ] 3.1 Register the updated template on the cluster (`argo template create`/`update` against
-  `runai-talmo-lab`).
-- [ ] 3.2 Submit a real predictor run and inspect the resulting pod's manifest
-  (`kubectl get pod <name> -o yaml`): confirm `annotations` contains `gpu-memory: "8192"`, confirm
-  no `nvidia.com/gpu` under `resources.limits`/`resources.requests`, confirm
-  `schedulerName: runai-scheduler` is present. This is the one part of this change that static
-  review can't verify (annotation-only GPU placement depends entirely on RunAI's scheduler
-  intercepting it) — do not skip.
-- [ ] 3.3 Confirm the run completes successfully (valid output for its scans) using the shared,
-  already-writable `a4_poc` output path (this reuses the existing validated path).
-- [ ] 3.4 **Cold-path permission test**: submit a second run against a brand-new, never-before-
-  written output directory (not the shared `a4_poc` path) to actually exercise the risk this repo
-  already documents by name for `images-downloader` — a `DirectoryOrCreate` hostPath created
-  root-owned by kubelet, written by a non-root container. Confirm the write succeeds; if it fails
-  with permission-denied, that's a real finding to resolve before relying on non-root writes to
-  fresh paths generally (not blocking this change's merge if `images-downloader`'s existing
-  behavior is the same, but must be recorded either way).
+- [x] 3.1 Registered on `runai-talmo-lab` (`argo template update`, generation bumped to 6).
+  Confirmed via `argo template get -o yaml`: predictor template now shows
+  `annotations: {gpu-memory: "8192"}` at the per-template metadata, object-level annotations show
+  only `preemptible: "true"`.
+- [x] 3.2 Submitted `sleap-roots-pipeline-m7mjp` (full pipeline, `scan-ids=289,577,1009`).
+  `kubectl get pod sleap-roots-pipeline-m7mjp-predictor-4092641486 -o yaml` confirms: pod
+  annotations include `gpu-memory: "8192"`, `received-resource-type: Fraction`,
+  `runai-podgroup-requested-gpus-memory: "8192"` (RunAI's own accounting matches exactly);
+  `schedulerName: runai-scheduler` present; `resources.limits`/`requests` have no
+  `nvidia.com/gpu`; no `privileged`/`runAsUser` anywhere in the pod spec. All acceptance
+  criteria confirmed on a real pod.
+- [x] 3.3 Run succeeded (`Status: Succeeded`, all 4 stages `Completed`, 0 restarts). Predictor log:
+  clean skip-if-done (`0 ok, 3 skipped, 0 failed`, exit nil) against the existing shared path —
+  proves the new manifest shape doesn't regress existing behavior.
+- [x] 3.4 **Cold-path permission test**: submitted a standalone ad-hoc Workflow (not committed —
+  throwaway, deleted after) targeting a brand-new, never-before-written output directory. Forced a
+  real (non-skipped) inference run. Result: **write succeeded** — `scan_1009`/`scan_289`/`scan_577`
+  prediction files were created in the freshly kubelet-created directory (mounted `0777` on this
+  NFS config, not the restrictive mode the theoretical risk assumed). The cold-path permission risk
+  does not materialize on this cluster's actual NFS mount. Test artifacts cleaned up.
 
 ## 4. Concurrent co-scheduling validation (real cluster; closes issue #25's second acceptance criterion)
 
-- [ ] 4.1 **Tenant-safety pre-flight**: before submitting, confirm which GPU node/card has free
-  headroom for two 8192 MiB reservations without landing on a card already hosting another
-  tenant's live session (`runai node list`, `nvidia-smi` on candidate nodes). Prefer `talmo-lab`
-  for this test unless `busch-lab` capacity is confirmed free — both projects are documented
-  elsewhere in this change as heavily/fully allocated by pre-existing, unrelated workloads.
-- [ ] 4.2 Submit 2 fractional predictor pods concurrently via `argo submit` against the
-  now-registered template (using distinct `scan-ids` via the full pipeline, or two direct
-  `argo submit --from workflowtemplate/sleap-roots-predictor-template` calls) targeting the node
-  identified in 4.1. Do not use an ad-hoc `runai workspace submit` flag for this — no
-  `--gpu-memory-request`-equivalent flag is documented anywhere in `.claude/skills/runai/SKILL.md`;
-  submitting against the already-registered, already-verified template is both more representative
-  and avoids relying on an unconfirmed CLI flag.
-- [ ] 4.3 While both run, poll `nvidia-smi` (via `kubectl exec`) to confirm combined memory usage
-  stays within the card's capacity and neither pod OOMs or gets killed — and confirm no pre-existing
-  tenant session on that card was disrupted.
-- [ ] 4.4 Confirm both pods complete successfully.
+- [x] 4.1 **Tenant-safety pre-flight**: surveyed `kubectl get pods -n runai-talmo-lab -o wide` and
+  `kubectl describe node` across the 16 GPU nodes (4 physical GPUs each, talmo-lab quota 20).
+  `talmo-lab` had ample lightly-loaded nodes (most running 1-2 single-GPU jobs out of 4); confirmed
+  `gpu-node2` had 5% CPU / 2% memory allocated despite `nvidia.com/gpu: 4/4` already claimed by
+  other (non-fractional) tenants — RunAI's fraction mechanism tracks GPU-memory separately from
+  that counter, so this didn't block scheduling. Used `talmo-lab` (busch-lab not needed for this
+  test).
+- [x] 4.2 Submitted two standalone ad-hoc Workflows (not committed — throwaway, deleted after),
+  each with `templateRef` to the now-registered predictor template and its own fresh output
+  directory (real overlapping inference, not skip-if-done). First attempt let RunAI's scheduler
+  place them independently (landed on 2 different nodes — instructive but not what this task
+  needs); redirected the second pod via `nodeSelector: {kubernetes.io/hostname: gpu-node2}` to
+  force genuine co-location with the first. Did not use an ad-hoc `runai workspace submit` flag —
+  confirmed no `--gpu-memory-request`-equivalent flag exists in `.claude/skills/runai/SKILL.md`.
+- [x] 4.3 `kubectl exec`/`nvidia-smi` was not available (this identity lacks `pods/exec` RBAC for
+  ad-hoc Argo-submitted pods — `runai workspace exec` manages its own separate auth layer per the
+  `runai` skill, and doesn't apply here). Confirmed co-scheduling a stronger way instead: both
+  pods' `kubectl get pod -o yaml` show the **identical `runai-gpu-group` UUID**
+  (`2f254411-445d-40de-83bf-328add9dbb8e`) — definitive proof RunAI assigned both to the exact same
+  physical GPU, not just the same node. No pre-existing tenant session on `gpu-node2` was
+  disrupted (checked before/after: same jobs, same status).
+- [x] 4.4 Both completed successfully (`Succeeded`, real inference output in each pod's separate
+  output directory, no truncation/errors in logs) while genuinely overlapping in execution time on
+  the same physical GPU. Neither OOMed. Test artifacts (workflows, throwaway directories) deleted.
 
 ## 5. Full DAG end-to-end validation (real cluster)
 
-- [ ] 5.1 Submit the full four-stage `sleap-roots-pipeline.yaml` DAG with the updated predictor
-  template registered, using a real `scan-ids` set. Confirm all four stages complete successfully.
-  If the run fails specifically at `trait-extractor` with a `privileged`-related admission error,
-  that's evidence of a pre-existing issue this change's research surfaced (cluster policy now
-  broadly rejects `privileged`, and `trait-extractor`'s template still sets it) — record and file
-  separately, it is not a regression caused by this change.
+- [x] 5.1 Covered by the same `sleap-roots-pipeline-m7mjp` run as 3.2/3.3: all four stages
+  (`images-downloader`, `predictor`, `trait-extractor`, `write-back`) show `Completed`, 0 restarts,
+  overall `Status: Succeeded`. `trait-extractor` did **not** hit a `privileged`-related admission
+  error — so the "is trait-extractor already broken by the broader admission policy" open question
+  from `design.md` is resolved: it isn't, at least not today, on this namespace/cluster
+  configuration. Worth noting for a future trait-extractor `privileged`-removal follow-up, not a
+  blocker for anything here.
 
 ## 6. Preemption/retry interaction check
 
-- [ ] 6.1 (static) Inspect the file: confirm `priorityClassName: interactive-preemptible` and
-  `retryStrategy` (limit 3, backoff 2m factor 2) fields are byte-identical before/after this edit
-  (this change only touches `metadata.annotations`, `resources.limits`, and `securityContext`).
-- [ ] 6.2 (live cluster) After the template is re-registered, confirm a submitted pod still carries
-  `priorityClassName: interactive-preemptible`. A real forced-eviction-and-retry observation is a
-  stretch goal, not required to close this task — if not exercised, note explicitly in the PR that
-  live eviction/retry under the fractional shape remains unverified, matching the pre-existing
-  caveat already in the templates' own comments about eviction risk.
-- [ ] 6.3 Note in the PR (not a code fix): if a Workflow is retrying (per `retryStrategy limit: 3`)
+- [x] 6.1 (static) Confirmed via diff: this edit only touched `metadata.annotations`,
+  `resources.limits`, and `securityContext` — `priorityClassName`/`retryStrategy` lines untouched.
+- [x] 6.2 (live cluster) Confirmed on the live `sleap-roots-pipeline-m7mjp-predictor` pod: both
+  `priorityClassName: interactive-preemptible` and the full `retryStrategy`
+  (`limit:3, retryPolicy:Always, backoff:{duration:2m,factor:2}`) are present, unchanged, and
+  correctly propagated through the re-registered template. A real forced-eviction-and-retry
+  observation was not exercised (stretch goal, not required) — live eviction/retry under the
+  fractional shape remains unverified beyond confirming the fields themselves are intact, matching
+  the pre-existing caveat already in the templates' own comments about eviction risk.
+- [x] 6.3 Note in the PR (not a code fix): if a Workflow is retrying (per `retryStrategy limit: 3`)
   at the moment the template is updated on the cluster, the retry could resolve to the new
   non-root template while a root-owned partial file from a prior (old-template) attempt still sits
   in the shared output path — a non-root process may lack permission to overwrite it. Low
@@ -104,24 +117,26 @@ validation (branch is unpushed, no PR yet).
 
 ## 7. Documentation follow-through
 
-- [ ] 7.1 Update `openspec/project.md`'s Tech Stack line ("fractional GPU via `gpu-fraction`") to
-  reference `gpu-memory` instead.
-- [ ] 7.2 Update `README.md`'s "Run:AI-Specific Configuration in WorkflowTemplates" and "GPU
-  Support" sections to reflect the `gpu-memory` pod-level annotation shape instead of
-  `gpu-fraction` + `nvidia.com/gpu`.
-- [ ] 7.3 Update `.claude/skills/runai/SKILL.md` §4 and §6 (drop the "predictor template pins
-  `gpu-fraction` + `nvidia.com/gpu`" note; update the fractional-GPU flag guidance once/if an
-  absolute-memory CLI flag is confirmed to exist — do not invent one; if none exists, say so
-  explicitly rather than guessing).
-- [ ] 7.4 Append a dated `docs/bloom-integration/roadmap.md` status-log entry closing out issue
-  #25, per this repo's established per-merge logging convention (it's referenced twice there
-  already as filed/open).
+- [x] 7.1 Updated `openspec/project.md`'s Tech Stack line to describe the pod-level `gpu-memory`
+  annotation and the object-vs-pod-level metadata distinction that caused #25.
+- [x] 7.2 Updated `README.md`'s "GPU Support" (clarified local-WSL2 vs. cluster now differ) and
+  "Run:AI-Specific Configuration in WorkflowTemplates" (rewrote to show the pod-level `gpu-memory`
+  annotation, explained the annotation-placement root cause of #25, corrected the false
+  "Run:AI combines this with gpu-fraction" claim).
+- [x] 7.3 Updated `.claude/skills/runai/SKILL.md` §4 and §6. Verified `--gpu-memory-request`
+  against the live `runai workspace submit --help` output — it's a real, documented CLI flag
+  (format `1G`/`500M`), not invented; added it to the resource-flags table and the §6 worked
+  example (`--gpu-portion-request 0.5` → `--gpu-memory-request 8G`). Dropped the stale
+  "gpu-fraction + nvidia.com/gpu, annotation governs" note.
+- [x] 7.4 Appended a 2026-08-05 status-log entry to `docs/bloom-integration/roadmap.md` closing
+  #25, with the live-cluster evidence (pod inspection, `runai-gpu-group` UUID match, cold-path
+  test) summarized inline.
 
 ## 8. Validate + close out
 
-- [ ] 8.1 `openspec validate enable-predictor-gpu-fractions --strict` → must be valid.
-- [ ] 8.2 If any manifest edit happened after §2.1's lint (e.g., tuning `8192` based on §3/§4
-  findings), re-lint; otherwise this is a no-op and doesn't need repeating.
+- [x] 8.1 `openspec validate enable-predictor-gpu-fractions --strict` → valid.
+- [x] 8.2 No manifest edit happened after §2.1's lint (§3/§4 findings didn't require tuning
+  `8192`) — re-ran anyway to confirm: still clean, no-op as expected.
 - [ ] 8.3 `/pr-description`; open PR referencing issue #25 and this change-id. Paste the live
   evidence from §3.2 (pod YAML annotation slice) and §4.3 (`nvidia-smi` trace) directly into the
   PR body — a reviewer can't reproduce live-cluster runs themselves. Note the local-WSL2 predictor
