@@ -125,11 +125,19 @@ the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai
 
 | Class | Preemptible? | Behaviour |
 |---|---|---|
-| `inference` (125), `build` (100) | no | must fit the project's **deserved quota**; never evicted |
+| `very-high` (150) | no | **default when `priorityClassName` is unset on this cluster** — do not rely on omitting the field as a "safe default"; it's the most aggressive non-preemptible tier here, not a neutral one |
+| `high` (125), `build` (100) | no | must fit the project's **deserved quota**; never evicted |
 | `interactive-preemptible` (75), `train` (50) | yes | may use **over-quota** GPUs; may be evicted → pair with `retryStrategy` |
 
-The lab's preemptible GPU class is **`interactive-preemptible`**. The predictor's GPU jobs
-typically run *within* quota, so over-quota preemption isn't usually exercised — but if a GPU
+Cluster-admin-confirmed naming (2026-08-06): the 125 tier's real name on this cluster is
+**`high`**, not `inference` — corrected here after an earlier assumption. The predictor template
+uses `high` (set 2026-08-06, per cluster-admin guidance, since trait-extractor has no
+skip-if-done yet — see issue #37 — so avoiding eviction-triggered whole-batch recomputation
+outweighs bursting above quota for now). The other three stage templates
+(images-downloader/trait-extractor/write-back) stay on **`interactive-preemptible`** —
+**never remove that field outright**, since an unset `priorityClassName` lands at `very-high`
+(150) on this cluster, not something safer. The predictor's GPU jobs typically run *within*
+quota, so over-quota preemption isn't usually exercised — but if a GPU
 pod is stuck `Pending`/`Unschedulable` with:
 
 ```

@@ -28,9 +28,14 @@ spec:
       # no GPU reservation and no obvious failure signal.
       schedulerName: runai-scheduler
       # RunAI: preemptibility is governed by priorityClassName, NOT the preemptible
-      # annotation (a UI breadcrumb). interactive-preemptible (75) lets the GPU pod use
-      # over-quota capacity when the 20-GPU deserved quota is full; retryStrategy covers eviction.
-      priorityClassName: interactive-preemptible
+      # annotation (a UI breadcrumb). Set to `high` (125, non-preemptible) per cluster-admin
+      # guidance 2026-08-06: trait-extractor has no skip-if-done yet (#37), so avoiding
+      # eviction-triggered whole-batch recomputation matters more right now than bursting above
+      # deserved quota. Cluster admin set this live first; this file was synced to match so a
+      # future `argo template update` from this repo doesn't silently revert it. Never remove
+      # this field outright — an Argo pod with no priorityClassName lands at very-high (150) on
+      # this cluster, which is worse than either named tier here.
+      priorityClassName: high
       retryStrategy:
         # Preemptible GPU stage — can be evicted mid-run when over-quota, so allow several
         # retries with backoff (don't slam straight back into a still-full cluster).

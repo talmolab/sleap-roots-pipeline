@@ -200,3 +200,24 @@ original "1-2 commits" plan stale (per PR #41 review).
   run by hand) has no enforced ordering against `argo submit` — forgetting it silently serves the
   stale template. Not fixed by this change (launcher script behavior is out of scope), just
   flagged for whoever runs the manual path next.
+
+## 9. Priority-tier correction (cluster admin feedback, 2026-08-06)
+
+- [x] 9.1 Cluster admin (Bryan) confirmed the `gpu-memory`/template-level annotation choice was
+  correct (his originally-suggested `spec.podMetadata.annotations` would have applied the GPU
+  annotation to all four steps, deadlocking the three CPU-only ones waiting on GPU capacity
+  before the predictor ever ran) and confirmed the absolute-vs-relative sizing math (48305 MiB
+  per A40 → `8192` gives 5 slots/GPU, not 4).
+- [x] 9.2 Set `priorityClassName: high` (125, non-preemptible) on the predictor template, syncing
+  a live change the cluster admin already applied directly to `runai-talmo-lab`'s registered
+  copy — done specifically so a future `argo template update` from this repo's YAML doesn't
+  silently revert it back to `interactive-preemptible`. Rationale: trait-extractor has no
+  skip-if-done yet (#37), so avoiding eviction-triggered whole-batch recomputation matters more
+  than bursting above deserved quota right now. The other three templates
+  (images-downloader/trait-extractor/write-back) stay on `interactive-preemptible` — confirmed
+  via grep that all four templates already explicitly set `priorityClassName` (never rely on
+  omitting it: unset lands at `very-high` (150) on this cluster, not something safer).
+- [x] 9.3 Corrected `.claude/skills/runai/SKILL.md`'s priority-tier naming: the 125 tier's real
+  name on this cluster is `high`, not `inference` (an earlier, uncorrected assumption). Added the
+  `very-high` (150) default-when-unset row explicitly.
+- [x] 9.4 `argo lint --offline sleap-roots-predictor-template.yaml` → clean after the edit.
