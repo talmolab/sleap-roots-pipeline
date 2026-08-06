@@ -12,6 +12,13 @@ metadata:
     project: talmo-lab
 spec:
   entrypoint: pipeline
+  # Step pods need workflowtaskresults create/patch to report results back to Argo, or every DAG
+  # step fails with "workflowtaskresults.argoproj.io is forbidden". bloom-workflow is the
+  # dedicated ServiceAccount for this (separate from bloom-pipeline, which Bloom's backend
+  # authenticates as to submit Workflows) — confirmed present in both runai-talmo-lab and
+  # runai-busch-lab, 2026-08-06. None of the four stage templates override serviceAccountName, so
+  # this single value applies to every step.
+  serviceAccountName: bloom-workflow
 
   arguments:
     parameters:
@@ -24,14 +31,15 @@ spec:
     # A4: models-downloader dropped — the warm predictor loads models in-process from the
     # wandb registry, so no models-input/models-output volumes.
     # NOTE: hostPath onto the /hpi/hpi_dev NFS — cross-node reschedule/resume only works because
-    # that mount exists at the SAME path on every GPU node. images-input-dir is now staged
-    # automatically by images-downloader (DirectoryOrCreate — no human needs to have pre-staged a
-    # scan here first); the other two are DirectoryOrCreate so a fresh run/node doesn't FailedMount.
-    # ⚠️ Unverified on a truly cold path: kubelet creates a DirectoryOrCreate hostPath as root with a
-    # restrictive mode, and images-downloader's container deliberately runs non-root (see its
-    # template) — a fresh node/path with no prior ownership could hit a permission-denied write
-    # rather than a clean stage-in. The real cluster run that validated this reused an
-    # already-existing, already-writable path, so this specific edge case wasn't exercised.
+    # that mount exists at the SAME path on every GPU node.
+    # type: Directory (not DirectoryOrCreate), per cluster-admin guidance 2026-08-06: if the NFS
+    # mount is down on whichever node a step lands on, DirectoryOrCreate silently creates a local
+    # directory on that node's root disk instead — output vanishes, with a successful-looking
+    # pipeline result on top. Directory fails loudly instead. All three paths have existed
+    # continuously since this program's PoC and aren't going away, so there's no cold-start case
+    # left that DirectoryOrCreate was protecting (the permission-on-a-truly-fresh-path risk this
+    # comment used to flag was separately live-tested for the predictor's own output path in
+    # PR #41 — write succeeded — but that test is now moot here since these paths are pre-existing).
     # These a4_poc paths are the PoC reference scan, shared across every run — deliberately, not a
     # gap to "fix" by parameterizing them per-run/per-pipeline_run_id. Cluster-side skip-if-done
     # dedup (sleap-roots-predict's batch.py) only works because this path IS shared: it's how a
@@ -45,15 +53,15 @@ spec:
     - name: images-input-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/input
-        type: DirectoryOrCreate
+        type: Directory
     - name: predictions-output-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/predictions
-        type: DirectoryOrCreate
+        type: Directory
     - name: traits-output-dir
       hostPath:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
-        type: DirectoryOrCreate
+        type: Directory
     - name: bloom-credentials
       # Provisioned via the RunAI console (Credentials → Generic secret, Project scope
       # talmo-lab), same as WANDB_API_KEY — RunAI prefixes the asset name with `genericsecret-`
