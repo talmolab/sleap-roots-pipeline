@@ -31,8 +31,11 @@ change-breakdown table for the full remaining list.
 - **Argo Workflows** — DAG orchestration (`sleap-roots-pipeline.yaml` entrypoint +
   `*-template.yaml` `WorkflowTemplate`s referenced via `templateRef`)
 - **Argo Events** — (planned, A4) scan-ingest → workflow trigger
-- **RunAI** — GPU scheduling on the `runai-talmo-lab` namespace (fractional GPU via
-  `gpu-fraction`, `preemptible`, `project` labels for quota)
+- **RunAI** — GPU scheduling on the `runai-talmo-lab` namespace (fractional GPU via a pod-level
+  `gpu-memory` annotation — absolute MiB, not the relative `gpu-fraction` annotation, which must
+  also live at `spec.templates[].metadata.annotations`, not the WorkflowTemplate object's own
+  metadata, or Argo never copies it to the pod — see issue #25; `preemptible`, `project` labels
+  for quota)
 - **Kubernetes** — execution substrate; `hostPath` volumes (cluster: NFS-backed
   `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits
 - **Bash** — launchers (`runai_run_pipeline.sh` for the cluster,

@@ -24,6 +24,14 @@ spec:
             mountPath: /workspace/models_input
           - name: predictions-output-dir
             mountPath: /workspace/output
+        # NOTE (added per PR #41 review, issue #25): the CLUSTER predictor template
+        # (sleap-roots-predictor-template.yaml) no longer sets privileged/runAsUser:0 — confirmed
+        # unnecessary there via live testing. This local template still runs privileged/root,
+        # which is a real, newly-introduced divergence (previously the two agreed on this point
+        # even though other things had already drifted). Left as-is here since Docker Desktop's
+        # local dev flow isn't otherwise being touched by that change, but a future maintainer
+        # should know: this file can no longer serve as any kind of stand-in for "does a non-root
+        # write succeed against this hostPath" — it never exercises that path at all now.
         securityContext:
           privileged: true
           runAsUser: 0
