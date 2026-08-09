@@ -137,13 +137,18 @@ volumes:
 
 ## ⚙️ GPU Support
 
-The predictor step requires a GPU:
+The predictor step requires a GPU. **Local/WSL2 dev** (`local-WSL2-sleap-roots-predictor-template.yaml`)
+still uses the standard Kubernetes device-plugin resource:
 
 ```yaml
 resources:
   limits:
     nvidia.com/gpu: 1
 ```
+
+**On the cluster**, the predictor template (`sleap-roots-predictor-template.yaml`) instead uses a
+RunAI pod-level `gpu-memory` annotation with no `nvidia.com/gpu` resource at all — see
+"Run:AI-Specific Configuration in WorkflowTemplates" below.
 
 Example to test GPU support.
 
@@ -203,16 +208,40 @@ kubectl describe pod <pod-name> -n runai-talmo-lab
 
 Your `WorkflowTemplates` include annotations and labels that are interpreted by the Run:AI scheduler to manage GPU allocation and job priority.
 
+**Important: annotation placement matters.** Argo only copies **pod-level**
+`spec.templates[].metadata.annotations` onto the actual pod — annotations on the
+`WorkflowTemplate` object's own `metadata` (top of the file) are never copied anywhere and have
+no effect. This was the root cause of
+[issue #25](https://github.com/talmolab/sleap-roots-pipeline/issues/25): an object-level
+`gpu-fraction` annotation silently did nothing while the container's `nvidia.com/gpu: 1` limit
+claimed a whole GPU regardless.
+
 ### 🔖 `annotations`
+
+Object-level (`WorkflowTemplate.metadata.annotations`) — a UI/convention breadcrumb only, **not**
+copied to the pod:
 
 ```yaml
 annotations:
-  gpu-fraction: "0.5"
   preemptible: "true"
 ```
 
-- **`gpu-fraction`**: Requests a fractional GPU (e.g., 0.5 of a full GPU). Useful for light inference workloads. Run:AI schedules jobs with this annotation accordingly.
-- **`preemptible`**: Allows the job to be evicted if GPU capacity is needed for higher-priority jobs. Recommended to combine with a `retryStrategy` to resubmit the task if it's interrupted.
+- **`preemptible`**: inert breadcrumb; actual preemptibility is governed by `priorityClassName`
+  (see below), not this annotation.
+
+Pod-level (`spec.templates[<name>].metadata.annotations`) — this is what Run:AI's scheduler
+actually reads:
+
+```yaml
+annotations:
+  gpu-memory: "8192"
+```
+
+- **`gpu-memory`**: requests an absolute amount of GPU memory (MiB) rather than a whole GPU —
+  multiple pods can then share one physical GPU. RunAI also supports a relative `gpu-fraction`
+  (e.g. `"0.5"`) annotation instead; this repo uses the absolute `gpu-memory` form, sized from a
+  real measured VRAM trace (see `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`)
+  — precision RunAI's own docs recommend over a flat percentage.
 
 ### 🏷️ `labels`
 
@@ -225,13 +254,10 @@ labels:
 
 ### ⚙️ `resources.limits`
 
-```yaml
-resources:
-  limits:
-    nvidia.com/gpu: 1
-```
-
-- Specifies that a GPU is required. Run:AI combines this with `gpu-fraction` to handle fractional allocation.
+The predictor template sets **no** `nvidia.com/gpu` resource — GPU access comes entirely from the
+pod-level `gpu-memory` annotation above. `nvidia.com/gpu` and RunAI's fractional/absolute-memory
+annotations are mutually exclusive: including both makes RunAI treat the request as a whole GPU
+and ignore the annotation (this combination is exactly what caused #25).
 
 ---
 
