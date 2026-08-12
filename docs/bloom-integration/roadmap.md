@@ -190,7 +190,7 @@ The real fix, in dependency order, spans four repos and starts with `sleap-roots
 | Repo | What | Status |
 |---|---|---|
 | `sleap-roots-contracts` | Define a run-manifest shape (`RunManifest`: `pipeline_run_id` + `scan_keys: list[str]`), following the established pattern for shared cross-repo shapes (`ResultEnvelope`, `Provenance`, `ModelCard`, `ResolvedParams`, `PredictionManifest`) | ✅ **Done — released [`v0.1.0a7`](https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a7)** ([PR #30](https://github.com/talmolab/sleap-roots-contracts/pull/30)). File-based (not CLI-arg); `scan_keys` is `list[str]` (not `list[int]`) to avoid the bloom#555 int/str mismatch class of bug at this boundary. |
-| `bloomctl` (`salk-bloom`) | Write the manifest during `images-downloader` (already writes per-scan sidecars into the same shared directory); bundle in a lock/lease around the skip-check + write, which also resolves bloom #533's race and gives bloom #481's deferred cross-command lock design its first concrete implementation | ⬜ Not started — unblocked, contracts released. **Proposal drafted 2026-08-12** (scope + open questions written up; not yet filed as an issue — hand off to whoever picks up the bloomctl session). |
+| `bloomctl` (`salk-bloom`) | Write the manifest during `images-downloader` (already writes per-scan sidecars into the same shared directory); bundle in a lock/lease around the skip-check + write, which also resolves bloom #533's race and gives bloom #481's deferred cross-command lock design its first concrete implementation | ⬜ Not started — unblocked, contracts released. Filed **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** (2026-08-12). |
 | `sleap-roots-predict` | Consume the manifest, scope `run_batch` to exactly those scan_ids instead of directory-wide-scanning; upgrade skip-if-done from existence-only to a real `idempotency_key` comparison | ⬜ Blocked on bloomctl |
 | `sleap-roots` (traits) | Consume the manifest; add skip-if-done, which it currently lacks entirely (confirmed: traits always recomputes today) | ⬜ Blocked on bloomctl |
 | `sleap-roots-pipeline` (this repo) | **No template/args changes needed** for the manifest itself — it's a file in the already-shared, already-mounted input directory rather than a CLI arg (confirmed: predict's and traits' entrypoints use `argparse` with exactly 2 required positional args — a 3rd arg would hard-fail today, not no-op). Stale "per-scan trigger parameterizes them" comment corrected + explicit shared-path guardrail added. **But bloomctl needs a `pipeline_run_id` source this repo must provide** (see below) — [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38). | 🔵 Comment/guardrail fix done; `ARGO_WORKFLOW_NAME` env var addition tracked separately, not yet started |
@@ -413,11 +413,12 @@ Adversarial 4-lens review. Resolutions:
   opened 2026-08-11/12): `storage`/`realtime`/`supavisor` were reading the wrong env var for JWT
   key material while `auth`/`rest` had it right, explaining exactly the observed pattern (reads
   fine, Storage writes rejected). Fix is in flight on the bloom side, external to this repo.
-  Two new tracked items filed while that lands (chosen specifically because neither depends on
-  Storage writes, per the `auth`/`rest`-vs-`storage` split above): a proposal for `bloomctl` to
-  write the `RunManifest` during `images-downloader` bundled with a lock/lease (resolving bloom
-  #533's race + giving #481's deferred design its first implementation) — drafted, not yet filed
-  as an issue; and **[bloom #652](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/652)**,
+  Two new issues filed while that lands (chosen specifically because neither depends on
+  Storage writes, per the `auth`/`rest`-vs-`storage` split above):
+  **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** —
+  `bloomctl` writes the `RunManifest` during `images-downloader` bundled with a lock/lease
+  (resolving bloom #533's race + giving #481's deferred design its first implementation); and
+  **[bloom #652](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/652)**,
   a newly-filed, deliberately separate performance ask to make `download-for-predict` itself
   concurrent (mirroring PR #623's pattern for the sibling `cyl download` command, which explicitly
   didn't touch this one). Also corrected a stale roadmap entry: the A3-predict parity gate (#15)
