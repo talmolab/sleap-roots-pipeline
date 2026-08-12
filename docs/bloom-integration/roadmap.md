@@ -216,7 +216,7 @@ blocks carry any workflow-identity value today (both only set `HOME`). Filed
 **[#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38)**: add an
 `ARGO_WORKFLOW_NAME` env var (sourced from Argo's built-in `{{workflow.name}}`) to both templates
 so `bloomctl` has something to populate `RunManifest.pipeline_run_id` with. **Manifest-visibility
-question resolved (2026-08-04): copy the manifest forward at each stage**, matching `predict`'s
+question resolved (2026-08-12): copy the manifest forward at each stage**, matching `predict`'s
 existing "copy sidecar forward" pattern (D1), rather than adding a cross-stage volume mount to
 `write-back`'s template — consistent with how every stage already receives its inputs as a
 self-contained tree rather than reaching across another stage's mount. Not yet started — next in
@@ -402,7 +402,22 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
-- **2026-08-04** — **Cross-repo compatibility check before filing #38's handoff: found `bloomctl` work already in progress, confirmed compatible.** Before handing off issue #38 (`ARGO_WORKFLOW_NAME` env var) to a new session, checked sibling repos for any conflicting in-progress work rather than assuming a clean slate. Found a full OpenSpec proposal already active in `salk-bloom` (`add-cyl-batch-manifest-lock`, in worktree `bloomctl-run-manifest-lock`), tracked as **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** — covering `RunManifest` write+merge and a per-scan/manifest lock design for `batch-download-for-predict`, resolving bloom #533 and giving bloom #481's deferred cross-command lock design its first implementation. **Confirmed compatible**: that proposal already expects `os.environ.get("ARGO_WORKFLOW_NAME")` (with a `local-<hex>` fallback so it doesn't hard-fail before #38 lands) — the exact env var name #38 plans to add, no coordination needed. **Confirmed still-open**: that proposal explicitly excludes `write-back` — gap (2) from contracts' review (the identical unscoped-glob vulnerability in `batch-ingest-result`) remains completely unaddressed by anyone, and the manifest-visibility question (copy-forward vs. an extra volume mount, since `write-back`'s template doesn't mount `images-input-dir`) is still undecided **[⚠️ RESOLVED same-day — copy-forward chosen, see the `#38` entry above]**. Updated the `bloomctl` row and gap-tracking above accordingly; handoff for #38 updated to reference bloom #653 directly rather than a generic "check for conflicts" instruction.
+- **2026-08-12 (later)** — **JWT fix merged; bloom #653 has an open PR (not yet merged); corrected
+  two mis-dated status-log entries below.** Confirmed live: **bloom #647 merged** (22:33 UTC),
+  closing #646 — the Storage/Realtime/Supavisor JWKS-env-var fix this morning's entry flagged as
+  "in flight" is now landed. This unblocks re-attempting the busch-lab `write-back` validation
+  that was blocked on it. Separately, confirmed **bloom #653 already has real implementation**:
+  a parallel session (using the handoff drafted earlier today) built the OpenSpec proposal
+  (`add-cyl-batch-manifest-lock`), the lock/lease primitive, `RunManifest` write/merge, bumped the
+  `sleap-roots-contracts` pin to `>=0.1.0a7`, and opened
+  **[bloom #655](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/655)** (open, not
+  yet merged) — all in the `bloomctl-run-manifest-lock` worktree, exactly as the handoff specified.
+  Also found: the two status-log entries directly below this one were self-dated **2026-08-04** by
+  the sessions that wrote them, which is impossible (bloom #653 didn't exist until today) —
+  corrected both date labels to 2026-08-12; their actual content held up against direct
+  verification (worktree, branch, commits, and PR #655 all confirmed to exist as described) and
+  needed no other correction.
+- **2026-08-12** — **Cross-repo compatibility check on #38's handoff: found `bloomctl` work already in progress (a parallel session working from the #653 handoff), confirmed compatible.** [Date corrected — this entry was originally mis-dated 2026-08-04 by the session that wrote it; the work it describes happened today, after bloom #653 was filed.] Before handing off issue #38 (`ARGO_WORKFLOW_NAME` env var) to a new session, checked sibling repos for any conflicting in-progress work rather than assuming a clean slate. Found a full OpenSpec proposal already active in `salk-bloom` (`add-cyl-batch-manifest-lock`, in worktree `bloomctl-run-manifest-lock`), tracked as **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** — covering `RunManifest` write+merge and a per-scan/manifest lock design for `batch-download-for-predict`, resolving bloom #533 and giving bloom #481's deferred cross-command lock design its first implementation. **Confirmed compatible**: that proposal already expects `os.environ.get("ARGO_WORKFLOW_NAME")` (with a `local-<hex>` fallback so it doesn't hard-fail before #38 lands) — the exact env var name #38 plans to add, no coordination needed. **Confirmed still-open**: that proposal explicitly excludes `write-back` — gap (2) from contracts' review (the identical unscoped-glob vulnerability in `batch-ingest-result`) remains completely unaddressed by anyone, and the manifest-visibility question (copy-forward vs. an extra volume mount, since `write-back`'s template doesn't mount `images-input-dir`) is still undecided **[⚠️ RESOLVED same-day — copy-forward chosen, see the `#38` entry above]**. Updated the `bloomctl` row and gap-tracking above accordingly; handoff for #38 updated to reference bloom #653 directly rather than a generic "check for conflicts" instruction.
 - **2026-08-12** — **PR #41/#42 merged + live-validated under the real `bloom-pipeline`/
   `bloom-workflow` identities in both namespaces; busch-lab fully wired; JWT bug found and
   traced to a bloom-side fix already in flight; two new tracked items filed.** Bryan created a
