@@ -8,7 +8,10 @@ TBD - created by archiving change add-per-batch-argo-workflow. Update Purpose af
 The pipeline Workflow SHALL define a four-task DAG: `images-downloader` (root) → `predictor` →
 `trait-extractor` → `write-back`, with each stage depending on the one before it. The Workflow
 SHALL declare a `scan-ids` argument parameter that `images-downloader` consumes, so the batch a run
-processes is a caller-supplied input rather than a hardcoded scan.
+processes is a caller-supplied input rather than a hardcoded scan. The Workflow SHALL set
+`spec.serviceAccountName: bloom-workflow` so every step's pod can report its results back to Argo.
+Its `hostPath` volumes SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS
+mount fails the pod loudly instead of silently writing output to the node's local disk.
 
 #### Scenario: Workflow runs all four stages in order
 
@@ -20,13 +23,30 @@ processes is a caller-supplied input rather than a hardcoded scan.
 - **AND** `write-back` lists `trait-extractor` in its `dependencies`
 - **AND** the Workflow declares a `scan-ids` entry under `arguments.parameters`
 
+#### Scenario: Workflow sets bloom-workflow as its ServiceAccount
+
+- **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
+- **THEN** `spec.serviceAccountName` is `bloom-workflow`
+- **AND** none of the four stage templates override `serviceAccountName` at the template level
+
+#### Scenario: hostPath volumes fail loudly on a down NFS mount
+
+- **WHEN** the Workflow's `volumes` are inspected
+- **THEN** `images-input-dir`, `predictions-output-dir`, and `traits-output-dir` all declare
+  `hostPath.type: Directory`
+- **AND** none of the three declares `type: DirectoryOrCreate`
+
 ### Requirement: Predictor runs the warm GHCR predict container
 
 The `predictor` template SHALL run the rebuilt warm-batch predict container (the
 `sleap-roots-predict` GHCR image), invoked as `<image> <input_dir> <output_dir>` with a
 `WANDB_API_KEY` environment variable sourced from a Kubernetes secret. The template SHALL NOT
 mount a model-input directory (models load in-process from the wandb registry). It SHALL request
-a GPU (`nvidia.com/gpu`) and retain a `retryStrategy`.
+a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value, not a whole-GPU
+`resources.limits.nvidia.com/gpu` and not a relative `gpu-fraction`), SHALL explicitly set
+`schedulerName: runai-scheduler` (defense-in-depth, since the annotation-only GPU request has no
+`nvidia.com/gpu` fallback if scheduler wiring ever changes), SHALL NOT set `privileged: true` or
+`runAsUser: 0` on its `securityContext`, and SHALL retain a `retryStrategy`.
 
 #### Scenario: Predictor template uses the GHCR predict image with WANDB key and no models mount
 
@@ -35,7 +55,40 @@ a GPU (`nvidia.com/gpu`) and retain a `retryStrategy`.
 - **AND** its `args` are the input and output directory mount paths only (no models-input argument)
 - **AND** it sets `WANDB_API_KEY` from a `secretKeyRef`
 - **AND** it declares no models-input `volumeMount`
-- **AND** it requests `nvidia.com/gpu`
+
+#### Scenario: Predictor requests a fractional GPU at the pod level
+
+- **WHEN** `sleap-roots-predictor-template.yaml` is inspected
+- **THEN** `spec.templates[predictor].metadata.annotations` declares `gpu-memory` with a positive
+  numeric string value (MiB)
+- **AND** it does NOT declare a `gpu-fraction` annotation
+- **AND** the container's `resources.limits` does NOT include `nvidia.com/gpu`
+- **AND** `spec.templates[predictor].schedulerName` is explicitly `runai-scheduler`
+- **AND** the container's `securityContext` does NOT set `privileged: true`
+- **AND** the container's `securityContext` does NOT set `runAsUser: 0`
+
+#### Scenario: Multiple predictor pods co-schedule on one physical GPU
+
+- **WHEN** two predictor pods, each requesting the template's `gpu-memory` value, are scheduled
+  concurrently onto the same physical GPU
+- **THEN** both pods complete successfully
+- **AND** neither pod is OOM-killed
+
+#### Scenario: Predictor retries correctly under the fractional GPU shape
+
+- **WHEN** a predictor pod is preempted or evicted mid-run
+- **THEN** `retryStrategy` retries the step
+- **AND** the retried pod schedules successfully under the same `gpu-memory` annotation
+
+#### Scenario: Predictor writes as non-root into a pre-existing, previously root-owned directory
+
+- **WHEN** the predictor processes a scan whose output directory already exists on the shared
+  `predictions-output-dir` path from a prior run under the old `runAsUser: 0` configuration
+- **AND** that scan's existing output files are absent or stale, so skip-if-done does not
+  short-circuit
+- **THEN** the predictor (running without `privileged`/`runAsUser: 0`) successfully writes fresh
+  output files into that pre-existing directory
+- **AND** no permission-denied error occurs
 
 ### Requirement: Trait-extractor runs the GHCR trait-extractor image
 
