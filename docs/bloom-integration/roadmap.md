@@ -190,7 +190,7 @@ The real fix, in dependency order, spans four repos and starts with `sleap-roots
 | Repo | What | Status |
 |---|---|---|
 | `sleap-roots-contracts` | Define a run-manifest shape (`RunManifest`: `pipeline_run_id` + `scan_keys: list[str]`), following the established pattern for shared cross-repo shapes (`ResultEnvelope`, `Provenance`, `ModelCard`, `ResolvedParams`, `PredictionManifest`) | ✅ **Done — released [`v0.1.0a7`](https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a7)** ([PR #30](https://github.com/talmolab/sleap-roots-contracts/pull/30)). File-based (not CLI-arg); `scan_keys` is `list[str]` (not `list[int]`) to avoid the bloom#555 int/str mismatch class of bug at this boundary. |
-| `bloomctl` (`salk-bloom`) | Write the manifest during `images-downloader` (already writes per-scan sidecars into the same shared directory); bundle in a lock/lease around the skip-check + write, which also resolves bloom #533's race and gives bloom #481's deferred cross-command lock design its first concrete implementation | ⬜ Not started — unblocked, contracts released. Filed **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** (2026-08-12). |
+| `bloomctl` (`salk-bloom`) | Write the manifest during `images-downloader` (already writes per-scan sidecars into the same shared directory); bundle in a lock/lease around the skip-check + write, which also resolves bloom #533's race and gives bloom #481's deferred cross-command lock design its first concrete implementation | 🔵 **In progress** — tracked as **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)**; a full OpenSpec proposal (`add-cyl-batch-manifest-lock`) already exists in an active `salk-bloom` worktree (`bloomctl-run-manifest-lock`), covering `batch-download-for-predict` only: `RunManifest` write+merge (not overwrite — batches share `out_dir` with non-overlapping scan_ids), a per-scan lock (`out_dir/.locks/{scan_key}.lock`, deliberately narrower than one invocation-spanning lock so `K`-concurrent chunked batches per design §9 stay concurrent) + a separate manifest lock, `pipeline_run_id` read from `ARGO_WORKFLOW_NAME` with a `local-<hex>` fallback so it never hard-fails before #38 lands. **Confirmed compatible with #38's planned env var name** — this proposal already expects exactly `ARGO_WORKFLOW_NAME`. **Explicitly does not cover `write-back`** — gap (2) below remains completely unaddressed by this work. |
 | `sleap-roots-predict` | Consume the manifest, scope `run_batch` to exactly those scan_ids instead of directory-wide-scanning; upgrade skip-if-done from existence-only to a real `idempotency_key` comparison | ⬜ Blocked on bloomctl |
 | `sleap-roots` (traits) | Consume the manifest; add skip-if-done, which it currently lacks entirely (confirmed: traits always recomputes today) | ⬜ Blocked on bloomctl |
 | `sleap-roots-pipeline` (this repo) | **No template/args changes needed** for the manifest itself — it's a file in the already-shared, already-mounted input directory rather than a CLI arg (confirmed: predict's and traits' entrypoints use `argparse` with exactly 2 required positional args — a 3rd arg would hard-fail today, not no-op). Stale "per-scan trigger parameterizes them" comment corrected + explicit shared-path guardrail added. **But bloomctl needs a `pipeline_run_id` source this repo must provide** (see below) — [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38). | 🔵 Comment/guardrail fix done; `ARGO_WORKFLOW_NAME` env var addition tracked separately, not yet started |
@@ -198,12 +198,16 @@ The real fix, in dependency order, spans four repos and starts with `sleap-roots
 **Design question resolved (2026-08-04):** `sleap-roots-contracts` chose file-based, not a CLI
 arg — this repo needs **no** template/args changes for the manifest itself.
 
-**Three gaps found during contracts' adversarial review, not yet solved:** (1) a concurrent-run
-race on the manifest's fixed filename, assumed-safe only because runs are sequential today; (2)
-`write-back` (`bloomctl cyl batch-ingest-result`) has the identical unscoped-glob vulnerability
-predict's `discover_scans` had, and is a **5th step** this chain needs, not previously tracked;
-(3) `bloomctl` has no existing `pipeline_run_id` source (no sidecar field, no Argo env var) — its
-implementation session must add that wiring. Full detail in contracts'
+**Three gaps found during contracts' adversarial review — status as of 2026-08-04:** (1) a
+concurrent-run race on the manifest's fixed filename — **being addressed** by bloom #653's
+per-scan + manifest lock design (see the `bloomctl` row above), not "assumed-safe because runs are
+sequential" anymore, though that proposal hasn't merged yet; (2) `write-back` (`bloomctl cyl
+batch-ingest-result`) has the identical unscoped-glob vulnerability predict's `discover_scans`
+had, and is a **5th step** this chain needs — **confirmed still completely unaddressed**, bloom
+#653 explicitly excludes it; (3) `bloomctl` has no existing `pipeline_run_id` source — **this
+repo's job, not bloomctl's**, tracked as [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38)
+(see below) and already confirmed compatible with bloom #653's expectations. Full detail in
+contracts'
 [design doc](https://github.com/talmolab/sleap-roots-contracts/blob/main/docs/superpowers/specs/2026-08-03-run-manifest-contract-design.md#known-limitations-explicitly-out-of-scope-not-silently-omitted).
 
 **Gap (3) is actually this repo's job, not bloomctl's** — confirmed neither
@@ -397,6 +401,7 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-08-04** — **Cross-repo compatibility check before filing #38's handoff: found `bloomctl` work already in progress, confirmed compatible.** Before handing off issue #38 (`ARGO_WORKFLOW_NAME` env var) to a new session, checked sibling repos for any conflicting in-progress work rather than assuming a clean slate. Found a full OpenSpec proposal already active in `salk-bloom` (`add-cyl-batch-manifest-lock`, in worktree `bloomctl-run-manifest-lock`), tracked as **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)** — covering `RunManifest` write+merge and a per-scan/manifest lock design for `batch-download-for-predict`, resolving bloom #533 and giving bloom #481's deferred cross-command lock design its first implementation. **Confirmed compatible**: that proposal already expects `os.environ.get("ARGO_WORKFLOW_NAME")` (with a `local-<hex>` fallback so it doesn't hard-fail before #38 lands) — the exact env var name #38 plans to add, no coordination needed. **Confirmed still-open**: that proposal explicitly excludes `write-back` — gap (2) from contracts' review (the identical unscoped-glob vulnerability in `batch-ingest-result`) remains completely unaddressed by anyone, and the manifest-visibility question (copy-forward vs. an extra volume mount, since `write-back`'s template doesn't mount `images-input-dir`) is still undecided. Updated the `bloomctl` row and gap-tracking above accordingly; handoff for #38 updated to reference bloom #653 directly rather than a generic "check for conflicts" instruction.
 - **2026-08-12** — **PR #41/#42 merged + live-validated under the real `bloom-pipeline`/
   `bloom-workflow` identities in both namespaces; busch-lab fully wired; JWT bug found and
   traced to a bloom-side fix already in flight; two new tracked items filed.** Bryan created a
