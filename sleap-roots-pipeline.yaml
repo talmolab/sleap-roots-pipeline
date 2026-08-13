@@ -7,9 +7,9 @@ apiVersion: argoproj.io/v1alpha1
 kind: Workflow
 metadata:
   generateName: sleap-roots-pipeline-
-  namespace: runai-talmo-lab
+  namespace: runai-busch-lab
   labels:
-    project: talmo-lab
+    project: busch-lab
 spec:
   entrypoint: pipeline
   # Step pods need workflowtaskresults create/patch to report results back to Argo, or every DAG

@@ -11,7 +11,7 @@ metadata:
   annotations:
     preemptible: "true"
   labels:
-    project: talmo-lab
+    project: busch-lab
 spec:
   templates:
     - name: predictor
