@@ -13,7 +13,7 @@ kind: WorkflowTemplate
 metadata:
   name: sleap-roots-images-downloader-template
   labels:
-    project: talmo-lab
+    project: busch-lab
 spec:
   templates:
     - name: images-downloader

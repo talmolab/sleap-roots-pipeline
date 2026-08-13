@@ -8,7 +8,7 @@ kind: WorkflowTemplate
 metadata:
   name: sleap-roots-write-back-template
   labels:
-    project: talmo-lab
+    project: busch-lab
 spec:
   templates:
     - name: write-back
