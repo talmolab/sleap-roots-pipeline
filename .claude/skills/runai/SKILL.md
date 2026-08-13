@@ -1,6 +1,6 @@
 ---
 name: runai
-description: Use when submitting, monitoring, exec-ing into, or troubleshooting RunAI GPU jobs for the sleap-roots pipeline on the Salk cluster (project talmo-lab / namespace runai-talmo-lab) — e.g. running the predictor stage interactively, debugging a stuck pod, or staging data over the /hpi/hpi_dev NFS mount. Adapted from the mosquito-cfd runai-cluster-skill.
+description: Use when submitting, monitoring, exec-ing into, or troubleshooting RunAI GPU jobs for the sleap-roots pipeline on the Salk cluster (project busch-lab / namespace runai-busch-lab) — e.g. running the predictor stage interactively, debugging a stuck pod, or staging data over the /hpi/hpi_dev NFS mount. Adapted from the mosquito-cfd runai-cluster-skill.
 ---
 
 # RunAI cluster skill — sleap-roots-pipeline
@@ -10,16 +10,19 @@ RunAI CLI v2 assistance for the Salk GPU cluster. The **production path is Argo*
 **interactive / ad-hoc / debug** path — running a single stage by hand, staging data,
 exec-ing into a live pod, or diagnosing scheduling.
 
-> Project: **`talmo-lab`** · Namespace: **`runai-talmo-lab`** · Cluster Argo server:
-> `gpu-master:8888`. These are the canonical identifiers (confirmed against the live cluster
-> and the GAPIT pipeline). If a manifest still says `tye-lab`, it is stale — fix it.
+> Project: **`busch-lab`** · Namespace: **`runai-busch-lab`** · Cluster Argo server:
+> `gpu-master:8888`. **Updated 2026-08-13 — this pipeline now targets busch-lab only** (was
+> `talmo-lab`; see `sleap-roots-pipeline.yaml`'s `metadata.namespace`). `talmo-lab`/
+> `runai-talmo-lab` remain live on the cluster (20 GPU quota) but are no longer this pipeline's
+> target — don't assume examples elsewhere still apply without checking. If a manifest still
+> says `tye-lab`, it is stale — fix it.
 
 ## 1. WSL command execution pattern
 
 RunAI runs in **WSL**, not Windows PowerShell, and needs an explicit KUBECONFIG:
 
 ```bash
-wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml && \
+wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml && \
   runai <command>"
 ```
 
@@ -45,17 +48,17 @@ wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml && \
 
 ## 3. Workspace lifecycle
 
-All commands take `-p talmo-lab`. Use **`runai workspace`** (does not auto-terminate — you
+All commands take `-p busch-lab`. Use **`runai workspace`** (does not auto-terminate — you
 clean up manually) rather than `runai training` (auto-terminates on completion).
 
 | Operation | Command |
 |---|---|
-| List | `runai workspace list -p talmo-lab` |
-| Describe | `runai workspace describe <name> -p talmo-lab` |
-| Logs | `runai workspace logs <name> -p talmo-lab --follow` |
-| Exec | `runai workspace exec <name> -p talmo-lab -- <cmd>` |
-| Interactive shell | `runai workspace exec <name> -p talmo-lab --stdin --tty -- /bin/bash` |
-| Delete | `runai workspace delete <name> -p talmo-lab` |
+| List | `runai workspace list -p busch-lab` |
+| Describe | `runai workspace describe <name> -p busch-lab` |
+| Logs | `runai workspace logs <name> -p busch-lab --follow` |
+| Exec | `runai workspace exec <name> -p busch-lab -- <cmd>` |
+| Interactive shell | `runai workspace exec <name> -p busch-lab --stdin --tty -- /bin/bash` |
+| Delete | `runai workspace delete <name> -p busch-lab` |
 
 > Use `runai workspace exec`, **not** `kubectl exec` — RunAI manages its own auth layer.
 
@@ -100,9 +103,9 @@ to those exact container paths.** Note the non-obvious remap: the *models-downlo
 dir (`models_downloader_output`) is what feeds the predictor's `models_input`.
 
 ```bash
-wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml && \
+wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml && \
 runai workspace submit srp-predict-test \
-  -p talmo-lab \
+  -p busch-lab \
   --image registry.gitlab.com/salk-tm/sleap-roots-predict:<tag> \
   --image-pull-policy Always \
   --gpu-memory-request 8192M \
@@ -115,7 +118,7 @@ runai workspace submit srp-predict-test \
 ```
 
 `sleep infinity` keeps the pod alive after the run so you can `runai workspace exec` in to
-inspect outputs. **Delete it when done** (`runai workspace delete srp-predict-test -p talmo-lab`).
+inspect outputs. **Delete it when done** (`runai workspace delete srp-predict-test -p busch-lab`).
 
 ## 7. Preemptibility & GPU over-quota
 
@@ -141,9 +144,15 @@ quota, so over-quota preemption isn't usually exercised — but if a GPU
 pod is stuck `Pending`/`Unschedulable` with:
 
 ```
-NonPreemptibleOverQuota: Non-preemptible workload is over quota. ... talmo-lab quota is 20 GPUs,
-while 20 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.
+NonPreemptibleOverQuota: Non-preemptible workload is over quota. ... busch-lab quota is 2 GPUs,
+while 2 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.
 ```
+
+busch-lab's deserved quota is only **2 GPUs** (vs. talmo-lab's 20) — over-quota scheduling is far
+more likely to actually happen here. Check current usage before submitting anything
+non-preemptible (`kubectl get pods -n runai-busch-lab` — other jobs holding whole GPUs, not just
+fractional ones, will block a fractional predictor pod from landing even though the memory math
+looks fine).
 
 set the priority class:
 
@@ -178,5 +187,6 @@ set the priority class:
 ---
 
 *Adapted from the `mosquito-cfd` `runai-cluster-skill` (CFD/IAMReX → sleap-roots
-predict/traits). The same Salk cluster, project `talmo-lab`, and WSL/KUBECONFIG pattern
-apply; workloads, images, and the GPU-on-predictor-only shape are sleap-roots-specific.*
+predict/traits). The same Salk cluster and WSL/KUBECONFIG pattern apply (project is
+`busch-lab` here, not `mosquito-cfd`'s); workloads, images, and the GPU-on-predictor-only shape
+are sleap-roots-specific.*
