@@ -42,6 +42,10 @@ spec:
           # deterministically to the path the bloom-credentials volume below is mounted at.
           - name: HOME
             value: /home/bloom
+          # Sourced from Argo's built-in {{workflow.name}} — bloomctl reads this as
+          # pipeline_run_id for RunManifest (bloom #653); see sleap-roots-pipeline#38.
+          - name: ARGO_WORKFLOW_NAME
+            value: "{{workflow.name}}"
         volumeMounts:
           - name: images-input-dir
             mountPath: /workspace/images_input

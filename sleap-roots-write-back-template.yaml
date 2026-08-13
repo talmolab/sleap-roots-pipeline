@@ -31,6 +31,9 @@ spec:
           # See sleap-roots-images-downloader-template.yaml for why HOME is set explicitly.
           - name: HOME
             value: /home/bloom
+          # See sleap-roots-images-downloader-template.yaml for why ARGO_WORKFLOW_NAME is set.
+          - name: ARGO_WORKFLOW_NAME
+            value: "{{workflow.name}}"
         volumeMounts:
           - name: traits-output-dir
             mountPath: /workspace/input
