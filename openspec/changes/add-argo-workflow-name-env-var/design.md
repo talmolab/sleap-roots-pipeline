@@ -42,3 +42,19 @@ in practice.
   explicitly rejected, not merely deferred.
 - Fixing `write-back`'s unscoped-glob vulnerability (the identical issue `discover_scans` had) —
   a separate, still fully open gap; this change doesn't touch it.
+
+## Known risk, documented not fixed: `templateRef` live-resolution timing
+
+Found during PR #43 review, not introduced by this change. `sleap-roots-pipeline.yaml`'s DAG tasks
+use per-step `templateRef:` (not the whole-workflow `spec.workflowTemplateRef`, which alone gets
+snapshotted into `status.storedWorkflowTemplate` at submission time). Argo has a documented public
+ambiguity (argoproj/argo-workflows#1525) about whether step-level `templateRef` resolves against a
+snapshot or the *live* registered `WorkflowTemplate` object when each node starts — meaning
+`argo template update` while a workflow is in-flight has a theoretical ordering risk: a running
+workflow could pick up a template's `env:`/`args` changes mid-run rather than the version it
+started with. This change's own validation confirmed no in-flight workflows existed in
+`runai-talmo-lab` when `argo template update` was run for either template (`argo list --running`
+returned none), so no actual exposure occurred here. The general risk is real and undocumented
+elsewhere in this repo, and matters more once concurrent-batch operation (this repo's own A4
+roadmap target) exists — whoever builds that should confirm Argo's actual resolution behavior
+first rather than assume `argo template update` is always safe mid-flight.

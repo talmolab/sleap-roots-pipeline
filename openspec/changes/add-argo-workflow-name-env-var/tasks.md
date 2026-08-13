@@ -6,6 +6,16 @@
       post-edit lint (2.3/3.3) and the real cluster run (task 4) below.
 - [x] 1.2 `grep -n "env:" -A3` on both templates before editing confirmed only `HOME` was set —
       no `ARGO_WORKFLOW_NAME` or equivalent already present.
+- [x] 1.3 **RED→GREEN evidence gap found in PR #43 review, fixed here.** The PR body claimed
+      `argo lint` also passed on the full `sleap-roots-pipeline.yaml`, but that step was never
+      actually recorded anywhere in this file — re-ran it post-edit to close the gap between claim
+      and evidence trail:
+      ```
+      $ argo lint sleap-roots-pipeline.yaml
+      ✔ no linting errors found!
+      ```
+      (plus unrelated pre-existing `W0813 ... Use tokens from the TokenRequest API ...`
+      deprecation warnings from `kubectl`'s own auth path, not from this change).
 
 ## 2. images-downloader template
 
@@ -46,6 +56,23 @@ used instead, per user direction (2026-08-12) not to rely on the out-of-date loc
       (`sleap-roots-pipeline-tgmb8`, same `scan-ids=289,577,1009`): full 4/4 success, `write-back`
       green on the first attempt, `ARGO_WORKFLOW_NAME` again confirmed correctly resolved
       (`sleap-roots-pipeline-tgmb8`) in its pod spec.
+
+      **Pasted evidence (PR #43 review flagged this claim as narrated-only, not shown —
+      fixed here with the actual captured output):**
+      ```
+      $ kubectl get pod sleap-roots-pipeline-mqbhq-images-downloader-1518998170 -n runai-talmo-lab \
+          -o jsonpath='{.spec.containers[?(@.name=="main")].env}'
+      [{"name":"HOME","value":"/home/bloom"},{"name":"ARGO_WORKFLOW_NAME","value":"sleap-roots-pipeline-mqbhq"}, ...]
+
+      $ kubectl get pod sleap-roots-pipeline-mqbhq-write-back-1999280327 -n runai-talmo-lab \
+          -o jsonpath='{.spec.containers[?(@.name=="main")].env}'
+      [{"name":"HOME","value":"/home/bloom"},{"name":"ARGO_WORKFLOW_NAME","value":"sleap-roots-pipeline-mqbhq"}, ...]
+
+      $ kubectl get pod sleap-roots-pipeline-tgmb8-write-back-3193021068 -n runai-talmo-lab \
+          -o jsonpath='{.spec.containers[?(@.name=="main")].env}'
+      [{"name":"HOME","value":"/home/bloom"},{"name":"ARGO_WORKFLOW_NAME","value":"sleap-roots-pipeline-tgmb8"}, ...]
+      ```
+      All three show the real resolved workflow name, never the literal `{{workflow.name}}` string.
 - [x] 4.3 N/A — live cluster access was available and used; no fallback needed.
 
 **Unrelated finding, root-caused and resolved during this session (not a code regression):**
@@ -53,7 +80,10 @@ used instead, per user direction (2026-08-12) not to rely on the out-of-date loc
 described (`blob upload failed ... "alg" (Algorithm) Header Parameter value not allowed`), despite
 #646's fix (bloom PR #647) being merged to `staging` ~1 hour earlier. Root cause: the `staging`
 GitHub Environment has a required-reviewer approval gate; an unrelated prior deploy (from a
-2026-08-11 docs-only merge) had sat unapproved for ~24h, and because both deploy jobs share a
+2026-08-11 merge, verified during PR #43 review to touch only comment-string path updates in
+`deploy.yml`/`docker-build-bloomcli.yml`/several `bloommcp/*.py` files after an OpenSpec archive
+rename — zero executable/behavioral change, "docs-only" in effect) had sat unapproved for ~24h,
+and because both deploy jobs share a
 `cancel-in-progress: false` concurrency group, it blocked PR #647's deploy from ever running —
 `status: pending`, zero steps executed. The fix itself was never wrong or reverted; it just hadn't
 reached the running containers. User approved the pending deployment; re-running the same
@@ -82,3 +112,29 @@ recorded here and in the roadmap status log for the record.
       unchanged in shape since this handoff was written. Nothing to reconcile.
 - [x] 5.4 N/A — the #646-adjacent finding was root-caused and resolved within this session (stuck
       staging deploy-approval gate, not a code regression); no GitHub post needed.
+
+## 6. Follow-up items found during PR #43 review (not yet due, tracked here)
+
+- [ ] 6.1 **Image-tag/consumer coordination.** Both templates still pin
+      `ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-c21d11b`, a build that predates
+      `salk-bloom` PR #655 (bloom #653) — the actual, still-unmerged consumer of
+      `ARGO_WORKFLOW_NAME`. This change proves the env var resolves correctly at the pod-spec
+      level; it does **not** prove the currently-pinned `bloomctl` binary reads it (it can't —
+      that code doesn't exist in this image yet). **When the pinned tag is next bumped** to a
+      build that includes #655's merged work, re-confirm `ARGO_WORKFLOW_NAME`'s name and semantics
+      still match what that `bloomctl` release actually expects (re-read its source, don't assume
+      this proposal's snapshot is still accurate) before/as part of that image-bump PR.
+- [ ] 6.2 **`templateRef` live-resolution timing, documented not fixed.** `sleap-roots-pipeline.yaml`'s
+      DAG tasks use per-step `templateRef:` (not the whole-workflow `spec.workflowTemplateRef`,
+      which alone gets snapshotted into `status.storedWorkflowTemplate` at submission). Argo's
+      behavior here has a documented public ambiguity
+      (argoproj/argo-workflows#1525) about whether step-level `templateRef` resolves against a
+      snapshot or the live registered `WorkflowTemplate` object at each node's start — meaning
+      `argo template update` while a workflow is in-flight has a theoretical ordering risk. Checked
+      for this session's own real submits: `argo list -n runai-talmo-lab --running` showed no
+      in-flight workflows in the namespace at the time either `argo template update` call was made,
+      so no actual exposure occurred here. The general risk remains real and undocumented for
+      future concurrent-batch operation (this repo's own roadmap A4 target) — flagging here rather
+      than fixing, since resolving Argo's actual behavior needs upstream confirmation or a live
+      test this change doesn't need to block on. Whoever builds concurrent-batch support (A4) should
+      confirm Argo's actual behavior before assuming `argo template update` is safe mid-flight.
