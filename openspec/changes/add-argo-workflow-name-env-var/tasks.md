@@ -138,3 +138,32 @@ recorded here and in the roadmap status log for the record.
       than fixing, since resolving Argo's actual behavior needs upstream confirmation or a live
       test this change doesn't need to block on. Whoever builds concurrent-batch support (A4) should
       confirm Argo's actual behavior before assuming `argo template update` is safe mid-flight.
+
+## 7. Merge conflict resolution + busch-lab re-validation (2026-08-13)
+
+A concurrent session (`fix(pipeline): target runai-busch-lab as the pipeline's namespace`,
+`d1ab43e`) landed on `main` while this branch was in progress, switching the pipeline's
+`namespace`/`project` label from `runai-talmo-lab` to `runai-busch-lab` across all four templates
+and the top-level Workflow. Separately, two more concurrent commits independently resolved the
+same manifest-visibility question this change addresses and corrected mis-dated status-log
+entries in `docs/bloom-integration/roadmap.md`.
+
+- [x] 7.1 Merged `main` into this branch. The two changed templates and `sleap-roots-pipeline.yaml`
+      auto-merged cleanly (non-overlapping lines: this branch's `ARGO_WORKFLOW_NAME` env-var
+      addition vs. main's namespace/label switch). `docs/bloom-integration/roadmap.md` had two real
+      conflicts — resolved by combining both sides' content (kept this branch's "shipped,
+      real-cluster-validated" status plus main's date-corrected status-log entries and
+      architectural framing), not by discarding either side.
+- [x] 7.2 `openspec validate add-argo-workflow-name-env-var --strict` — clean after the merge.
+- [x] 7.3 **Re-validated for real in `runai-busch-lab`** (the pipeline's now-actual target,
+      post-merge), not just re-using the earlier `runai-talmo-lab` result: registered both updated
+      templates (`argo template update`, `runai-busch-lab-argo-user` identity, matching this
+      program's established convention of using `argo-user` for template management and
+      `bloom-pipeline`'s real identity for submission) and submitted
+      `sleap-roots-pipeline.yaml --parameter scan-ids=289,577,1009` under the `bloom-pipeline`
+      identity → `sleap-roots-pipeline-l2247`. Full 4/4 success. Confirmed via
+      `kubectl get pod ... -o jsonpath` on both changed templates' pods: `ARGO_WORKFLOW_NAME` =
+      `sleap-roots-pipeline-l2247` (the real resolved name) in both. `write-back` logged
+      `Ingested 0/4 envelopes -> /workspace/input (4 skipped)` — the same idempotent no-op as the
+      `runai-talmo-lab` run (scans 289/577/1009 already ingested from prior real tests), consistent
+      with `upload_blob`'s checksum-match-skip behavior, not a failure.
