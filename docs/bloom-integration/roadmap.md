@@ -264,15 +264,24 @@ just a recommendation, in the archived `add-argo-workflow-name-env-var` OpenSpec
 The actual copy-forward code remains unimplemented (lives in `sleap-roots-predict`/`sleap-roots`
 traits, unstarted). **Shipped and real-cluster-validated 2026-08-13.**
 
-**Separate, newly-filed 2026-08-12: `download-for-predict` concurrency (performance, not
-correctness).** bloom PR #623 (merged 2026-08-07) added an 8-worker concurrent download pool to
-the *sibling* `cyl download` command, explicitly deferring this command ("stages one scan at a
-time, so it isn't where the time goes" — true per-scan, less true across a full batch). Filed
-**[bloom #652](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/652)** to track
-applying the same worker-pool pattern to `batch-download-for-predict`'s frame-fetch loop.
-Deliberately kept separate from the manifest/lock work above — this is throughput, not
-correctness; the two should compose (lock scopes the invocation, workers inside stay
-independent) but don't need to land together.
+**`download-for-predict` concurrency (performance, not correctness) — shipped 2026-08-19.**
+bloom PR #623 (merged 2026-08-07) added an 8-worker concurrent download pool to the *sibling*
+`cyl download` command, explicitly deferring this command ("stages one scan at a time, so it
+isn't where the time goes" — true per-scan, less true across a full batch). Filed **[bloom
+#652](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/652)** to track applying
+the same worker-pool pattern to both `download-for-predict` and `batch-download-for-predict`'s
+frame-fetch loops; closed by **[bloom PR #698](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/698)**
+(merged 2026-08-19, verified live). Adds a `-n`/`--workers` option (1-64, default 8) to both
+commands, built on the same shared `fetch_all`/`download_to` primitives `cyl download`/
+`plate download` already use rather than a new bespoke pool — and, as a side effect of that reuse,
+gives `download-for-predict` real disk-full fail-fast handling for the first time, at *every*
+`--workers` value including `1` (it had none at all before). Composed cleanly with the
+manifest/lock work above exactly as anticipated: the per-scan lock scopes the whole invocation,
+the worker pool inside stays independent — confirmed by dedicated lock-composition tests, not just
+assumed. Three full adversarial review rounds (2× `/review-openspec` pre-implementation, 3×
+`/review-pr` post-implementation) found and fixed two real bugs (an unguarded post-write read that
+could crash the pool; a missing `disk_full` flag that silently dropped the "disk filled up" error
+wording) before merge — see the archived OpenSpec change's `design.md` for the full trail.
 
 #### A4 change breakdown (design settled 2026-07-01; decompose now — past tier-decomposition time)
 
@@ -485,6 +494,35 @@ Adversarial 4-lens review. Resolutions:
   bloomctl images-downloader → predict → traits → write-back) is now fully shipped end to end.
   Reconciling tracking issue #37 itself is left to its owner (eberrigan), per this doc's own
   close-the-loop checklist — not closed automatically by this entry.
+- **2026-08-19** — **`download-for-predict` concurrency shipped: [bloom PR
+  #698](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/698) merged, closing
+  [bloom #652](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/652).** Verified
+  merged live (`gh pr view 698 --json state,mergedAt,mergeCommit`: `MERGED`, `2026-08-19T23:26:49Z`,
+  `95a3b211`) before writing this entry. Adds `-n`/`--workers` (1-64, default 8) to both
+  `download-for-predict` and `batch-download-for-predict`, built on the existing shared
+  `fetch_all`/`download_to` primitives (mirroring `plate/download.py`'s `download_plate_image`)
+  rather than a new bespoke pool, and gets real disk-full fail-fast handling as a side effect of
+  that reuse — at every `--workers` value including `1`, where this command previously had none.
+  Composes with the #653/#655 per-scan lock exactly as this doc anticipated back in the
+  2026-08-12 entry below: the lock scopes the invocation, the worker pool inside stays
+  independent, now confirmed by dedicated tests rather than left as a design assumption. Full
+  workflow: OpenSpec proposal → 2 rounds of 5-subagent `/review-openspec` → TDD implementation
+  (26 tests, each RED-confirmed against the pre-change code before its GREEN step) → 3 rounds of
+  5-subagent `/review-pr`. The `/review-pr` rounds found and fixed two real bugs before merge: a
+  post-write `dest.read_bytes()` call (added to get checksum bytes from disk rather than the
+  in-memory download response) had no exception guard, contradicting its own "never raises"
+  contract; and `DownloadResult.disk_full` was never propagated, unlike `cyl download`'s/
+  `plate download`'s identical orchestrators, so the new disk-full handling never actually said
+  "the disk filled up" in either command's error message. Both fixed and covered by regression
+  tests confirmed RED against the pre-fix code specifically. See the archived OpenSpec change
+  (`openspec/changes/archive/2026-08-19-add-cyl-download-for-predict-concurrency/` in the bloom
+  repo) for the full design trail, including three findings surfaced but deliberately not fixed
+  here since they predate this PR: `frame_dest_for_predict` lacks the path-containment guard the
+  sibling `cyl download` command has (not currently exploitable — `frame_number` is a Postgres
+  `INT`, independently re-verified against the migration), `download-for-predict` (the single-scan
+  command) still has no lock at all, and this command still has no per-frame error log the way
+  `cyl download` does (so the new disk-full/read-back error text, while correctly classified, isn't
+  yet surfaced anywhere an operator would see it).
 - **2026-08-19** — **Phase 1+2 were merged but undeployable in either environment: zero of the ten
   `STAGING_`/`PROD_` GitHub Actions secrets they read existed.** Found while working in a parallel
   session — confirmed via `gh secret list --repo Salk-Harnessing-Plants-Initiative/bloom`, not
