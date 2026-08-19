@@ -191,27 +191,63 @@ The real fix, in dependency order, spans four repos and starts with `sleap-roots
 |---|---|---|
 | `sleap-roots-contracts` | Define a run-manifest shape (`RunManifest`: `pipeline_run_id` + `scan_keys: list[str]`), following the established pattern for shared cross-repo shapes (`ResultEnvelope`, `Provenance`, `ModelCard`, `ResolvedParams`, `PredictionManifest`) | ✅ **Done — released [`v0.1.0a7`](https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a7)** ([PR #30](https://github.com/talmolab/sleap-roots-contracts/pull/30)). File-based (not CLI-arg); `scan_keys` is `list[str]` (not `list[int]`) to avoid the bloom#555 int/str mismatch class of bug at this boundary. |
 | `bloomctl` (`salk-bloom`) | Write the manifest during `images-downloader` (already writes per-scan sidecars into the same shared directory); bundle in a lock/lease around the skip-check + write, which also resolves bloom #533's race and gives bloom #481's deferred cross-command lock design its first concrete implementation | ✅ **Merged** — **[bloom #655](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/655)** merged to `staging` 2026-08-14 (tracked as **[bloom #653](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/653)**; OpenSpec change `add-cyl-batch-manifest-lock` archived, [bloom #676](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/676)), covering `batch-download-for-predict` only: `RunManifest` write+merge (not overwrite — batches share `out_dir` with non-overlapping scan_ids), a per-scan lock (`out_dir/.locks/{scan_key}.lock`, deliberately narrower than one invocation-spanning lock so `K`-concurrent chunked batches per design §9 stay concurrent) + a separate manifest lock, `pipeline_run_id` read from `ARGO_WORKFLOW_NAME` with a `local-<hex>` fallback (confirmed compatible with #38's env var name, which shipped the same week). Two rounds of adversarial `/review-pr` found and fixed real BLOCKING bugs in the lock primitive (a crash/short-write leaving a permanently unreclaimable lock; release deleting a peer's live lock without an ownership check) before merge; manually verified against real staging including an actual concurrent-process race. **Known accepted residual**: pure age-based staleness with no lease-renewal means a legitimately slow (not crashed) holder's lock can still be initially reclaimed — documented as a near-term follow-up in that PR's design.md, not yet built. **Explicitly does not cover `write-back`** — gap (2) below remains completely unaddressed by this work. |
-| `sleap-roots-predict` | Consume the manifest, scope `run_batch` to exactly those scan_ids instead of directory-wide-scanning; upgrade skip-if-done from existence-only to a real `idempotency_key` comparison | ✅ **Shipped** — [predict #35](https://github.com/talmolab/sleap-roots-predict/pull/35), merged 2026-08-18. `discover_scans` scopes to a present `run_manifest.json`'s `scan_keys` (falls back to unscoped when absent); skip-if-done recomputes an idempotency key from already-written artifacts (no new storage) instead of `Path.exists()`. |
-| `sleap-roots` (traits) | Consume the manifest; add skip-if-done, which it currently lacks entirely (confirmed: traits always recomputes today) | ✅ **Shipped** — [PR #263](https://github.com/talmolab/sleap-roots/pull/263) merged 2026-08-17 (`add-run-manifest-consumption`). `extract_batch` scopes discovery to `RunManifest.scan_keys` when a `run_manifest.json` is present (falls back to the original unscoped recursive discovery otherwise, so non-pipeline callers see byte-identical behavior), copies the manifest forward into `output_dir` for `write-back`, and adds skip-if-done from scratch via a real `idempotency_key` **and** `contract_version` comparison — not existence-only, so it doesn't repeat predict's original design mistake. Bumped `sleap-roots-contracts` to `0.1.0a7` (`RunManifest` doesn't exist before a7). Full OpenSpec workflow (proposal → 2 rounds of 5-subagent `/openspec-review` → TDD → 3 rounds of 5-subagent `/review-pr`), each round finding and fixing real issues: a confirmed `contract_version`-not-in-idempotency-hash gap, a `shutil.SameFileError` crash on `input_dir == output_dir`, a completely untested CLI exit-code path, and a case-insensitive scan_key collision risk on Windows/macOS, among smaller items — see the change's `design.md` for the full trail. **New pre-deploy blocker surfaced during review, not resolved here:** Bloom's live write-back RPC hard-pins its accepted `contract_version` to exactly `0.1.0a3` (bloom PR #399) and will reject every envelope once this image's bumped pin is deployed — filed as [bloom#685](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/685); **this image must not be redeployed to the pipeline before that lands.** |
+| `sleap-roots-predict` | Consume the manifest, scope `run_batch` to exactly those scan_ids instead of directory-wide-scanning; upgrade skip-if-done from existence-only to a real `idempotency_key` comparison | ✅ **Shipped** — [predict #35](https://github.com/talmolab/sleap-roots-predict/pull/35), merged 2026-08-18. `discover_scans` scopes to a present `run_manifest.json`'s `scan_keys` (falls back to unscoped when absent); skip-if-done recomputes an idempotency key from already-written artifacts (no new storage) instead of `Path.exists()`. **⚠️ Found 2026-08-19: does not copy the manifest forward** into its own output (`predictions-output-dir`) — confirmed by reading `batch.py` directly, no such code exists. Predict only copies the per-scan sidecar forward (D1), not the run-level manifest. This means traits' own manifest-consumption (row below) currently sees "no manifest present" in every real run and silently falls back to unscoped — see the `#37` comment thread for the full chain. |
+| `sleap-roots` (traits) | Consume the manifest; add skip-if-done, which it currently lacks entirely (confirmed: traits always recomputes today) | ✅ **Shipped** — [PR #263](https://github.com/talmolab/sleap-roots/pull/263) merged 2026-08-17 (`add-run-manifest-consumption`). `extract_batch` scopes discovery to `RunManifest.scan_keys` when a `run_manifest.json` is present (falls back to the original unscoped recursive discovery otherwise, so non-pipeline callers see byte-identical behavior), copies the manifest forward into `output_dir` for `write-back`, and adds skip-if-done from scratch via a real `idempotency_key` **and** `contract_version` comparison — not existence-only, so it doesn't repeat predict's original design mistake. Bumped `sleap-roots-contracts` to `0.1.0a7` (`RunManifest` doesn't exist before a7). Full OpenSpec workflow (proposal → 2 rounds of 5-subagent `/openspec-review` → TDD → 3 rounds of 5-subagent `/review-pr`), each round finding and fixing real issues: a confirmed `contract_version`-not-in-idempotency-hash gap, a `shutil.SameFileError` crash on `input_dir == output_dir`, a completely untested CLI exit-code path, and a case-insensitive scan_key collision risk on Windows/macOS, among smaller items — see the change's `design.md` for the full trail. **New pre-deploy blocker surfaced during review, not resolved here:** Bloom's live write-back RPC hard-pins its accepted `contract_version` to exactly `0.1.0a3` (bloom PR #399) and will reject every envelope once this image's bumped pin is deployed — filed as [bloom#685](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/685); **this image must not be redeployed to the pipeline before that lands.** **⚠️ Found 2026-08-19: `copy_run_manifest_forward` isn't concurrency-safe** — read it directly (`trait_extractor/run_manifest.py`): atomic against a crash (temp-file + rename) but a naive copy, not a merge, and holds no lock, unlike bloomctl's own images-downloader-stage handling. Two concurrent batches sharing `traits-output-dir` could have one silently clobber the other's `scan_keys`. |
+| `bloomctl` (`salk-bloom`) — `write-back` | Scope `cyl batch-ingest-result`'s `discover_envelopes()` to the manifest's `scan_keys` — the identical unscoped-glob vulnerability predict's `discover_scans` had, gap (2) below, the 5th and final step of this chain | ✅ **Merged** — **[bloom #697](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/697)** merged to `staging` 2026-08-19 (confirmed live: `gh pr view 697 --json state,mergedAt` → `MERGED`, `2026-08-19T22:55:41Z`; tracked as **[bloom #678](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/678)**; OpenSpec change `add-cyl-writeback-manifest-scope` archived, [bloom #707](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/707)). `discover_envelopes` scopes to a present `run_manifest.json`'s `scan_keys` (falls back to fully unscoped when absent, matching predict's/traits' own fallback convention — also load-bearing today since traits' manifest-writing image can't redeploy yet per the `contract_version` blocker above); a manifest-declared scan_key with no matching file is reported as a batch failure rather than a silent gap. Two rounds of adversarial `/review-pr` found and fixed a real BLOCKING bug — a manifest-scoped batch could report the same scan_key twice with contradictory `ok`/`failed` statuses when a file's name disagreed with its body's `provenance.scan_key`, silently shadowing a real successful write-back behind a false failure — reproduced directly against the real code before being accepted, not just read from the diff. A second round also caught an uncaught `PermissionError` in the manifest-as-directory hard-fail itself (`Path.exists()`/`.is_file()` only swallow ENOENT-class errors, not `EACCES`). **Closes gap (2) — the last unaddressed leg of this chain.** Three non-blocking follow-ups filed: [bloom#702](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/702) (a pre-existing duplicate-entry edge case when two files relabel to the same body scan_key, not introduced by this change), [bloom#703](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/703) (no `pipeline_run_id` cross-check across runs sharing `envelopes_dir` — matches predict's/traits' own same limitation), [bloom#704](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/704) (missing-scan_key failure conflates traits-failed/run-not-done-yet/intentionally-skipped, depends on an Argo DAG guarantee this repo's templates don't currently verify). |
 | `sleap-roots-pipeline` (this repo) | **No template/args changes needed** for the manifest itself — it's a file in the already-shared, already-mounted input directory rather than a CLI arg (confirmed: predict's and traits' entrypoints use `argparse` with exactly 2 required positional args — a 3rd arg would hard-fail today, not no-op). Stale "per-scan trigger parameterizes them" comment corrected + explicit shared-path guardrail added. **`bloomctl` now has a `pipeline_run_id` source this repo provides** — [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38). | ✅ **Shipped** — `ARGO_WORKFLOW_NAME` env var added to both `images-downloader` and `write-back` templates, real-cluster-validated 2026-08-13 (workflow `sleap-roots-pipeline-tgmb8`, full 4/4 success, env var confirmed resolved in both pods). Manifest-visibility decision recorded: copy-forward at each stage, no new mount on `write-back` — see the archived `add-argo-workflow-name-env-var` OpenSpec change's [`design.md`](../../openspec/changes/archive/2026-08-13-add-argo-workflow-name-env-var/design.md). |
 
 **Design question resolved (2026-08-04):** `sleap-roots-contracts` chose file-based, not a CLI
 arg — this repo needs **no** template/args changes for the manifest itself.
 
 **Three gaps found during contracts' adversarial review — status as of 2026-08-04:** (1) a
-concurrent-run race on the manifest's fixed filename — **resolved** by bloom #653's per-scan +
-manifest lock design (see the `bloomctl` row above), merged 2026-08-14 ([bloom
-#655](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/655)); no longer
-"assumed-safe because runs are sequential" — a known, accepted residual (slow-but-alive-holder
-reclaim, no lease-renewal yet) remains, tracked in that PR's design.md, not a fresh gap; (2)
-`write-back` (`bloomctl cyl batch-ingest-result`) has the identical unscoped-glob vulnerability
-predict's `discover_scans`
-had, and is a **5th step** this chain needs — **confirmed still completely unaddressed**, bloom
-#653 explicitly excludes it; (3) `bloomctl` has no existing `pipeline_run_id` source — **this
+concurrent-run race on the manifest's fixed filename — **resolved only at the origin**: bloom
+#653's per-scan + manifest lock design (see the `bloomctl` row above), merged 2026-08-14 ([bloom
+#655](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/655)), protects
+`images-downloader`'s own write. **⚠️ Found 2026-08-19: the same race is unprotected one and two
+hops downstream** — see gap (4) below, newly found, not covered by #653/#655's fix; a known,
+accepted residual on the *origin* write specifically (slow-but-alive-holder reclaim, no
+lease-renewal yet) remains tracked in that PR's design.md, separate from gap (4); (2) `write-back`
+(`bloomctl cyl batch-ingest-result`) has the identical unscoped-glob vulnerability predict's
+`discover_scans`
+had, and is a **5th step** this chain needs — **resolved** by bloom #678/[PR #697](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/697)
+(see the `bloomctl` — `write-back` row above), merged 2026-08-19; no longer unaddressed (three
+smaller non-blocking follow-ups filed instead, see that row); (3)
+`bloomctl` has no existing `pipeline_run_id` source — **this
 repo's job, not bloomctl's**, tracked as [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38)
 (see below) and already confirmed compatible with bloom #653's expectations. Full detail in
 contracts'
 [design doc](https://github.com/talmolab/sleap-roots-contracts/blob/main/docs/superpowers/specs/2026-08-03-run-manifest-contract-design.md#known-limitations-explicitly-out-of-scope-not-silently-omitted).
+
+**The three gaps contracts' adversarial review originally found are resolved, but a 4th gap was
+found the same day, discovered by actually tracing the code rather than trusting each repo's own
+PR description in isolation:**
+
+**(4) The manifest doesn't actually flow end-to-end in production, and where it's copied forward
+it isn't concurrency-safe.** Found 2026-08-19 while answering a question about pipeline
+concurrency more broadly. `sleap-roots-predict` never copies `run_manifest.json` from its input
+into its output (confirmed: no such code exists in `batch.py`) — only the per-scan sidecar is
+forwarded (D1), not the run-level manifest. This means traits' own manifest-consumption (#263,
+shipped) sees "absent" in every real run today and silently falls back to unscoped discovery —
+its actual payoff doesn't currently activate outside its own unit tests. Separately, traits' own
+forward-copy (`copy_run_manifest_forward`) is atomic against a crash but is a naive copy, not a
+merge, and holds no lock — unlike bloomctl's origin-stage handling (#653/#655). Two concurrent
+batches sharing `traits-output-dir` could have one silently clobber the other's `scan_keys`. This
+was harmless while nothing forwarded the manifest and nothing downstream consumed it, but bloom
+#677 (Phase 2, real concurrent dispatch) and bloom #697 (write-back now scoping its own discovery
+to whatever manifest is present) together turn this from inert into a real risk: a losing batch in
+that race could have its real, successfully-computed results silently excluded from write-back.
+Full writeup, filed as a comment (not yet its own issue number) on tracking issue #37:
+[comment](https://github.com/talmolab/sleap-roots-pipeline/issues/37#issuecomment-5349061294);
+also flagged on [PR #697](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/697)
+after the fact (that PR had already merged by the time this was found — doesn't invalidate it,
+since #697's own scoping is correct in isolation). **Needed**: predict adds a copy-forward step
+for the manifest (mirroring its own sidecar-forwarding convention); traits upgrades
+`copy_run_manifest_forward` from a naive copy to a concurrency-safe merge-with-lock, matching
+bloomctl's own established discipline. Neither blocks anything already shipped; both should land
+before batches are actually run concurrently in production. Per this doc's own "Close-the-loop
+checklist," reconciling tracking issue #37 itself (closing it, or leaving a final summary comment)
+is owner (eberrigan)'s call, not done automatically here — and shouldn't happen until gap (4) also
+has a real fix, not just a filed finding.
 
 **Gap (3) is actually this repo's job, not bloomctl's** — confirmed neither
 `sleap-roots-images-downloader-template.yaml` nor `sleap-roots-write-back-template.yaml`'s `env:`
@@ -408,6 +444,47 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-08-19 (even later)** — **Gap (4) found: the manifest doesn't actually reach traits/
+  write-back in production, and where it's copied forward it isn't concurrency-safe.** Came up
+  while answering a direct question about pipeline concurrency more broadly — traced the actual
+  code in `sleap-roots-predict` and `sleap-roots` rather than trusting the merged PRs' own
+  descriptions. Confirmed: predict reads the manifest for scoping but never writes/copies it
+  forward into its own output (no such code exists in `batch.py`), so traits' manifest-consumption
+  (#263, shipped 2026-08-17) sees "absent" in every real run today and silently no-ops to unscoped
+  — its actual payoff isn't active outside its own tests. Separately, traits' own forward-copy
+  (`copy_run_manifest_forward`) is atomic against a crash but is a naive copy with no lock, unlike
+  bloomctl's origin-stage handling (#653/#655) — two concurrent batches sharing
+  `traits-output-dir` could silently clobber each other's `scan_keys`. Posted as a comment on
+  tracking issue #37 (full writeup, not yet its own issue number) and flagged on PR #697 (already
+  merged by the time this was found, per the entry below — doesn't invalidate either finding).
+  Needed: predict adds manifest-forwarding (mirroring its own sidecar-forward convention); traits
+  upgrades its copy to a concurrency-safe merge-with-lock. Neither blocks anything already shipped;
+  both matter before batches actually run concurrently for real. Updated the manifest-scoped-
+  processing section's gap-tracking and the predict/traits rows accordingly.
+- **2026-08-19 (later)** — **write-back shipped: `bloomctl cyl batch-ingest-result` consumes
+  `RunManifest`, closing gap (2) of #37 — the last unaddressed leg of the whole 5-repo chain.**
+  [bloom #697](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/697) merged to
+  `staging` (confirmed live: `gh pr view 697 --json state,mergedAt` → `state: MERGED`, merged
+  `2026-08-19T22:55:41Z`, merge commit `4cad02f2`). `discover_envelopes` scopes discovery to a
+  present `run_manifest.json`'s `scan_keys` (fully unscoped fallback when absent — both for
+  manual/dev use and because traits' manifest-writing image still can't redeploy per the
+  `contract_version` blocker, bloom#685); a manifest-declared scan_key with no matching file is
+  reported as a batch failure. Full OpenSpec workflow (proposal → 2 rounds of 5-subagent
+  `/review-openspec` → TDD → 2 rounds of 5-subagent `/review-pr` on the open PR itself). The
+  second `/review-pr` round found and fixed a real BLOCKING bug, independently reproduced against
+  the real code before being accepted: a manifest-scoped batch could report the same scan_key
+  twice with contradictory `ok`/`failed` statuses when a file's name disagreed with its body's
+  `provenance.scan_key`, silently shadowing a real successful write-back behind a false failure. A
+  further review pass on that fix caught an uncaught `PermissionError` in the manifest-as-directory
+  hard-fail (`Path.exists()`/`.is_file()` only swallow ENOENT-class errors, not `EACCES`) — fixed by
+  reading the manifest directly rather than pre-checking with `exists()`/`is_file()`. OpenSpec
+  change `add-cyl-writeback-manifest-scope` archived, [bloom #707](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/707).
+  Three non-blocking follow-ups filed (not this chain's concern going forward — see the `bloomctl`
+  — `write-back` row above for what each covers): bloom#702, bloom#703, bloom#704. **This closes
+  every gap contracts' adversarial review found on 2026-08-04** — the cross-repo chain (contracts →
+  bloomctl images-downloader → predict → traits → write-back) is now fully shipped end to end.
+  Reconciling tracking issue #37 itself is left to its owner (eberrigan), per this doc's own
+  close-the-loop checklist — not closed automatically by this entry.
 - **2026-08-19** — **Phase 1+2 were merged but undeployable in either environment: zero of the ten
   `STAGING_`/`PROD_` GitHub Actions secrets they read existed.** Found while working in a parallel
   session — confirmed via `gh secret list --repo Salk-Harnessing-Plants-Initiative/bloom`, not
