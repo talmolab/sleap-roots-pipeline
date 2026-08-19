@@ -1,0 +1,415 @@
+<title>Root System Status</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Spectral:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #EDEAE1;
+    --surface: #F8F6EF;
+    --surface-raised: #FFFFFE;
+    --ink: #221F1A;
+    --ink-muted: #6B6459;
+    --ink-faint: #96907F;
+    --line: #DAD4C6;
+    --accent: #34606A;
+    --accent-ink: #FFFFFF;
+    --done-bg: #DDEBD9;
+    --done-ink: #2E5C2A;
+    --progress-bg: #F3E3C6;
+    --progress-ink: #7A5518;
+    --blocked-bg: #F5DAD2;
+    --blocked-ink: #8A3520;
+    --notstarted-bg: #E4E1D6;
+    --notstarted-ink: #6B6459;
+    --shadow: 0 1px 2px rgba(34,31,26,0.06), 0 6px 20px rgba(34,31,26,0.05);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17140F;
+      --surface: #201C16;
+      --surface-raised: #262119;
+      --ink: #ECE7DA;
+      --ink-muted: #A79E8B;
+      --ink-faint: #756D5D;
+      --line: #362F25;
+      --accent: #7FB3BC;
+      --accent-ink: #12211F;
+      --done-bg: #223324;
+      --done-ink: #8FCB85;
+      --progress-bg: #382C16;
+      --progress-ink: #E5B968;
+      --blocked-bg: #3A2019;
+      --blocked-ink: #E2917A;
+      --notstarted-bg: #2A2620;
+      --notstarted-ink: #9B937F;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17140F;
+    --surface: #201C16;
+    --surface-raised: #262119;
+    --ink: #ECE7DA;
+    --ink-muted: #A79E8B;
+    --ink-faint: #756D5D;
+    --line: #362F25;
+    --accent: #7FB3BC;
+    --accent-ink: #12211F;
+    --done-bg: #223324;
+    --done-ink: #8FCB85;
+    --progress-bg: #382C16;
+    --progress-ink: #E5B968;
+    --blocked-bg: #3A2019;
+    --blocked-ink: #E2917A;
+    --notstarted-bg: #2A2620;
+    --notstarted-ink: #9B937F;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-family: "Spectral", Georgia, serif;
+    text-wrap: balance;
+    font-weight: 600;
+    margin: 0;
+  }
+  code, .mono, .pill, .idnum, td.num, th.num {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+
+  /* ---- header ---- */
+  header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  header h1 { font-size: clamp(1.8rem, 4vw, 2.4rem); }
+  header p.sub { margin: 0; color: var(--ink-muted); max-width: 62ch; font-size: 1.02rem; }
+
+  /* ---- summary strip ---- */
+  .strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .strip .cell {
+    background: var(--surface);
+    padding: 1.1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .strip .num { font-family: "Spectral", serif; font-size: 1.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .strip .label { font-size: 0.82rem; color: var(--ink-muted); }
+
+  /* ---- section ---- */
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+  section > h2 {
+    font-size: 1.3rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+  section > h2 .idx { color: var(--ink-faint); font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; font-weight: 400; }
+  section > p.lede { margin: -0.6rem 0 0; color: var(--ink-muted); max-width: 68ch; }
+
+  /* ---- pills ---- */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .pill.done { background: var(--done-bg); color: var(--done-ink); }
+  .pill.progress { background: var(--progress-bg); color: var(--progress-ink); }
+  .pill.blocked { background: var(--blocked-bg); color: var(--blocked-ink); }
+  .pill.notstarted { background: var(--notstarted-bg); color: var(--notstarted-ink); }
+  .pill::before { content: "●"; font-size: 0.55rem; }
+
+  /* ---- tier table ---- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.7rem 0.9rem; vertical-align: top; }
+  thead th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-muted);
+    border-bottom: 1px solid var(--line);
+    font-weight: 500;
+  }
+  tbody tr + tr td { border-top: 1px solid var(--line); }
+  td.tier { font-family: "IBM Plex Mono", monospace; font-weight: 500; color: var(--accent); white-space: nowrap; }
+  td.note { color: var(--ink-muted); }
+  td.note code { background: var(--bg); padding: 0.05rem 0.3rem; border-radius: 4px; font-size: 0.85em; }
+
+  /* ---- cards (in-flight) ---- */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.9rem; }
+  .card {
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.1rem 1.2rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .card .repo { font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card h3 { font-size: 1.02rem; font-family: "IBM Plex Sans", sans-serif; font-weight: 600; }
+  .card p { margin: 0; font-size: 0.88rem; color: var(--ink-muted); }
+  .card .idnum { font-size: 0.8rem; color: var(--accent); }
+
+  /* ---- blockers list ---- */
+  .blockers { display: flex; flex-direction: column; gap: 0.8rem; }
+  .blocker {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.9rem;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--blocked-ink);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+  }
+  .blocker.decision { border-left-color: var(--progress-ink); }
+  .blocker .idnum { font-family: "IBM Plex Mono", monospace; font-size: 0.82rem; color: var(--ink-faint); white-space: nowrap; padding-top: 0.15rem; }
+  .blocker p { margin: 0; font-size: 0.92rem; }
+  .blocker p.what { font-weight: 500; }
+  .blocker p.why { color: var(--ink-muted); margin-top: 0.25rem; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 1.5rem;
+    color: var(--ink-faint);
+    font-size: 0.82rem;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  @media (max-width: 560px) {
+    .strip { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">sleap-roots ↔ Bloom · A4 program</span>
+    <h1>Root System Status</h1>
+    <p class="sub">Where the whole integration program stands as of 2026-08-19 — every tier, what's actually shipped vs. claimed, and what's moving right now. Source of truth: <code>sleap-roots-pipeline/docs/bloom-integration/roadmap.md</code>.</p>
+  </header>
+
+  <div class="strip">
+    <div class="cell"><span class="num">2</span><span class="label">tiers fully done (A0, A1)</span></div>
+    <div class="cell"><span class="num">3</span><span class="label">tiers in progress (A2, A3, A4)</span></div>
+    <div class="cell"><span class="num">5</span><span class="label">tasks in flight, 2 with open PRs</span></div>
+    <div class="cell"><span class="num">1</span><span class="label">live blocker, unfixed</span></div>
+  </div>
+
+  <section>
+    <h2>Tiers <span class="idx">A0 → B2</span></h2>
+    <p class="lede">The program's own vocabulary: a <em>tier</em> decomposes into <em>changes</em>, one OpenSpec PR per change, per repo.</p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Tier</th><th>What</th><th>Status</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="tier">A0</td>
+            <td>Tooling baseline — OpenSpec + commands + Dockerfile/GHCR across all four service repos</td>
+            <td><span class="pill done">done</span></td>
+            <td class="note">All four repos standardized.</td>
+          </tr>
+          <tr>
+            <td class="tier">A1</td>
+            <td>Result + provenance contract (<code>sleap-roots-contracts</code>)</td>
+            <td><span class="pill done">done</span></td>
+            <td class="note">On PyPI, now at <code>v0.1.0a8</code>. Every consumer pins explicitly.</td>
+          </tr>
+          <tr>
+            <td class="tier">A2</td>
+            <td>Bloom schema + write-back RPC + RLS + CLI</td>
+            <td><span class="pill progress">in progress</span></td>
+            <td class="note">Consume-pin, changes A/C/D/E, read-path, CLI all shipped. Change B deferred (no image traits). Box backfill (<code>#19</code>) not started — needs a key-derivation decision first.</td>
+          </tr>
+          <tr>
+            <td class="tier">A3</td>
+            <td>Producers — predict / traits / training / params</td>
+            <td><span class="pill progress">in progress</span></td>
+            <td class="note">Parity gate closed, params landed, manifest-consumption shipped both sides. Argo-readiness hardening (exit codes, SIGTERM) in flight now. Training's native sleap-nn rebuild still pending.</td>
+          </tr>
+          <tr>
+            <td class="tier">A4</td>
+            <td>Scan-level Argo orchestration — the pipeline itself</td>
+            <td><span class="pill progress">in progress</span></td>
+            <td class="note">Full breakdown below — this is where almost everything active right now lives.</td>
+          </tr>
+          <tr>
+            <td class="tier">B1</td>
+            <td>Analysis-input contract</td>
+            <td><span class="pill done">done</span></td>
+            <td class="note">Released, alpha until a consumer round-trips it.</td>
+          </tr>
+          <tr>
+            <td class="tier">B2</td>
+            <td>Analyze consumes the contract</td>
+            <td><span class="pill notstarted">cross-linked</span></td>
+            <td class="note"><code>sleap-roots-analyze#144</code> — owned by the analyze/bloom-mcp effort, not this program.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>A4 detail <span class="idx">the active tier</span></h2>
+    <p class="lede">Nine tracked changes. Six are done, one closed this week, two are live right now.</p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Change</th><th>Status</th><th>Note</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>firewall</td><td><span class="pill done">done</span></td><td class="note"><code>bloom-dev</code> → cluster API, resolved 2026-07-21.</td></tr>
+          <tr><td>credential</td><td><span class="pill progress">staging only</span></td><td class="note">Dedicated Supabase account + K8s ServiceAccounts live in both namespaces. Production credential not yet created — deliberate, pending real go-live.</td></tr>
+          <tr>
+            <td>bloom trigger route</td>
+            <td><span class="pill progress">2 of 3 phases</span></td>
+            <td class="note">Phase 1+2 merged (<code>#677</code>) — <strong>and, found 2026-08-19, actually deployable now</strong>: none of the five <code>STAGING_</code> deploy secrets it needs existed on GitHub, all now set and checksum-verified. Phase 3 (status polling) still in flight, scoping stage.</td>
+          </tr>
+          <tr><td>pipeline-runs data model + dispatch worker</td><td><span class="pill done">done</span></td><td class="note">Built alongside Phase 1/2.</td></tr>
+          <tr><td>images-downloader</td><td><span class="pill done">done</span></td><td class="note">Real-cluster validated, both namespaces.</td></tr>
+          <tr><td>workflow template</td><td><span class="pill done">done</span></td><td class="note">All four stages run together. Concurrent-batch semaphore/quota still unbuilt — becomes a real question once dispatch is fully live.</td></tr>
+          <tr><td>predict wiring</td><td><span class="pill progress">in progress</span></td><td class="note">Container + parity gate shipped. Argo-readiness hardening (<code>predict#26</code>) in flight now.</td></tr>
+          <tr><td>traits wiring</td><td><span class="pill progress">in progress</span></td><td class="note">Emitter + image shipped. Argo-readiness hardening (<code>sleap-roots#259</code>) in flight now.</td></tr>
+          <tr><td>write-back</td><td><span class="pill blocked">blocked</span></td><td class="note">Ingest CLI + blob upload shipped and cluster-validated. <strong>Live blocker</strong>: write-back RPC still hard-pins <code>contract_version=0.1.0a3</code> — see below.</td></tr>
+          <tr><td>notification</td><td><span class="pill notstarted">not started</span></td><td class="note">Channel undefined (<code>#18</code>) — needs your decision before it's buildable.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Right now <span class="idx">5 sessions in flight</span></h2>
+    <p class="lede">All started from handoffs this session, each in its own isolated worktree.</p>
+    <div class="cards">
+      <div class="card">
+        <span class="repo">salk-bloom</span>
+        <h3>Phase 3 — status polling</h3>
+        <p class="idnum">bloom #11 · scoping</p>
+        <p>Poll Argo, progress <code>cyl_pipeline_runs.status</code> past "submitted." No PR yet.</p>
+      </div>
+      <div class="card">
+        <span class="repo">salk-bloom</span>
+        <h3>Write-back manifest scope</h3>
+        <p class="idnum">bloom #678 · PR #697 open</p>
+        <p>Closes the last leg of the idempotency chain (<code>#37</code>).</p>
+      </div>
+      <div class="card">
+        <span class="repo">salk-bloom</span>
+        <h3>Download concurrency</h3>
+        <p class="idnum">bloom #652 · PR #698 open</p>
+        <p>Parallel frame fetches in <code>download-for-predict</code>.</p>
+      </div>
+      <div class="card">
+        <span class="repo">sleap-roots-predict</span>
+        <h3>Argo-ready exit semantics</h3>
+        <p class="idnum">predict #26 · in progress</p>
+        <p>Exit codes, empty-input guard, SIGTERM handling. No PR yet.</p>
+      </div>
+      <div class="card">
+        <span class="repo">sleap-roots</span>
+        <h3>Argo-ready exit semantics</h3>
+        <p class="idnum">sleap-roots #259 · just started</p>
+        <p>Same hardening, traits side — must match predict's convention. No PR yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Open &amp; blocked</h2>
+    <div class="blockers">
+      <div class="blocker">
+        <span class="idnum">bloom #685</span>
+        <div>
+          <p class="what">Write-back RPC will reject every new envelope once the traits image redeploys.</p>
+          <p class="why"><code>insert_cyl_result_envelope</code> hard-pins <code>contract_version</code> to exactly <code>0.1.0a3</code>. Traits just bumped its own pin to <code>a7</code> (<code>#263</code>, already merged) — the RPC has no idea <code>a7</code> exists. Not urgent until that image is actually redeployed, but it will silently reject 100% of scans the moment it is.</p>
+        </div>
+      </div>
+      <div class="blocker decision">
+        <span class="idnum">#18</span>
+        <div>
+          <p class="what">Notification channel undecided.</p>
+          <p class="why">Success/failure needs somewhere to fire — Slack? email? Needs your call before it's handoff-ready.</p>
+        </div>
+      </div>
+      <div class="blocker decision">
+        <span class="idnum">#19</span>
+        <div>
+          <p class="what">Box backfill for legacy results — key-derivation undecided.</p>
+          <p class="why">Provenance-incomplete legacy rows need a distinct key scheme or they'll silently collide.</p>
+        </div>
+      </div>
+      <div class="blocker decision">
+        <span class="idnum">bloom #398</span>
+        <div>
+          <p class="what">bloomctl auth is still a static, non-refreshing credential file.</p>
+          <p class="why">The same fragile pattern behind this week's JWT outage (<code>#646</code>/<code>#647</code>). Not yet handed off.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Last swept 2026-08-19</span>
+    <span>Canonical doc: <code>docs/bloom-integration/roadmap.md</code></span>
+  </footer>
+
+</div>
