@@ -310,7 +310,7 @@
 
   <section>
     <h2>A4 detail <span class="idx">the active tier</span></h2>
-    <p class="lede">Ten tracked changes. Seven done (three more closed this week), one staging-only, one blocked, one not started — and nobody currently working any of the last three.</p>
+    <p class="lede">Eleven tracked changes. Seven done (three more closed this week), one staging-only, one blocked, two not started — and nobody currently working any of the last three.</p>
     <div class="tablewrap">
       <table>
         <thead>
@@ -330,7 +330,12 @@
           <tr><td>predict wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots-predict/pull/36">predict #36</a>: exit-code convention, atomic writes, SIGTERM handling) plus a 2026-08-24 cross-repo-review follow-up (<a href="https://github.com/talmolab/sleap-roots-predict/pull/38">predict #38</a>).</td></tr>
           <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots/pull/266">sleap-roots #266</a>) — exit-code convention independently verified byte-identical to predict's.</td></tr>
           <tr><td>write-back</td><td><span class="pill blocked">blocked</span></td><td class="note">Ingest CLI, blob upload, and manifest-scoped discovery all shipped and cluster-validated. <strong>Two live blockers, both unowned</strong>: the RPC's hard-pinned <code>contract_version</code>, and the manifest not actually reaching write-back in production — see below.</td></tr>
-          <tr><td>notification</td><td><span class="pill notstarted">not started</span></td><td class="note">Channel undefined (<code>#18</code>) — needs your decision before it's buildable.</td></tr>
+          <tr><td>notification</td><td><span class="pill notstarted">not started</span></td><td class="note">Channel undefined (<code>#18</code>) — but likely moot for v1: the design's own §14 puts Slack/email out of scope and treats the status panel (below) as v1's notification.</td></tr>
+          <tr>
+            <td>Bloom UI — trigger + progress panel</td>
+            <td><span class="pill notstarted">not started</span></td>
+            <td class="note"><strong>Found missing from this roadmap's own tracking, 2026-08-24</strong> — design §10 spec (trigger button + Realtime "N/M" status panel + drill-down) existed since 2026-07-06, but the tracking issue (<a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/15">bloom #15</a>, filed 2026-02-11) was marked out-of-scope before the backend existed, and nobody revisited that call once it shipped. Backend's fully ready now. Blocked on <a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/716">bloom #716</a> for the "N/M" count. No session assigned.</td>
+          </tr>
         </tbody>
       </table>
     </div>
