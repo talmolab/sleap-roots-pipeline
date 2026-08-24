@@ -345,35 +345,44 @@ A0 unblocks A3/A4 (the service repos need OpenSpec/commands first). A1 ✅ unblo
 Within A2: **consume-pin ✅ → A ✅ → C ✅ (B deferred, off critical path) → D+E ✅ (co-land) →
 read-path ✅ → `bloom cyl` CLI → D re-pin (a2→a3, #393) → backfill**. A4 needs A0 + A2 + A3. B2 needs B1.
 
-**Next (true frontier, as of 2026-08-03):**
+**Next (true frontier, as of 2026-08-24):**
 
-A0/A1/A2/A3 are done; A4's Argo-wiring half is done and cluster-validated (PR #33, 2026-07-30 —
-the first fully-real end-to-end run: `images-downloader → predictor → trait-extractor →
-write-back`, real write-back into Bloom staging). What's left for A4 is entirely Bloom-side:
+A0/A1/A2/A3 are done; the bloom trigger route (all 3 phases), both producers' Argo-readiness
+hardening, and write-back's manifest scoping are now all shipped too. **But nothing has exercised
+all of it together on a real cluster since PR #33 (2026-07-30)** — six merges since then
+(dispatch worker #677 08-18, status poller #701 08-21, both producers' exit-code/SIGTERM changes
+08-21, write-back manifest scoping #697 08-19, download concurrency bloom #652) have never been
+run end-to-end as one system. The actual frontier is:
 
-1. **Bloom trigger route** ([bloom #11](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/11))
-   — `POST /workflows/pipeline`: auth → resolve params → enumerate (scan/wave/experiment/scan_ids)
-   → dedup pre-check → insert `cyl_pipeline_runs`/`_scans` rows → chunk into batches → submit one
-   Argo workflow per batch. **Phase 1 ✅ merged 2026-08-03** ([bloom #570](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/570)) — validation, enumeration, dedup preview, and enqueue, with zero Argo/K8s dependency by design. Still needed: **Phase 2** (the actual `argo submit sleap-roots-pipeline.yaml --parameter scan-ids=...` call — blocked on item 3 below) and **Phase 3** (status polling).
-2. **Pipeline-runs data model + dispatch worker** ([bloom #404](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/404))
-   — the `cyl_pipeline_runs`/`cyl_pipeline_run_scans` migration + RLS + Realtime, and the thin
-   pgmq dispatch worker (claim = submit the batch's Argo workflow). #404's original read-access
-   question is already resolved (`bloom_workflows` already has the cyl grants it needs); its
-   remaining scope is just the new tables' grants. (Item 1's Phase 1 built the `cyl_pipeline_runs`/`cyl_pipeline_run_scans` tables directly rather than waiting on this row — reconcile scope here when next touched.)
-3. **K8s ServiceAccount for Bloom's own submission** — drafted
-   ([`bloom-pipeline-serviceaccount.yaml`](https://github.com/talmolab/sleap-roots-pipeline/blob/main/bloom-pipeline-serviceaccount.yaml),
-   2026-07-22), still not applied — the cluster admin has been unresponsive for ~12 days. Live
-   RBAC investigation (2026-08-03, see status log + [design doc](../superpowers/specs/2026-08-03-busch-lab-rbac-investigation-design.md))
-   found neither `argo-user` nor available access can self-apply it either, and that
-   `services/workflows` has no Phase 2 code yet to consume any K8s credential regardless. A
-   tested (then cleaned up), explicitly temporary `argo-user`-based stopgap is documented for
-   whoever builds Phase 2 ([#34](https://github.com/talmolab/sleap-roots-pipeline/issues/34),
-   [#35](https://github.com/talmolab/sleap-roots-pipeline/issues/35) track the follow-up).
-4. Once 1–3 land: the UI trigger itself (design §10 — "Run pipeline" button, multi-select,
-   live status panel) is separate, likely-later work.
+1. **Baseline E2E run, before touching anything else below.** Re-run the design doc's own §14
+   batch-oracle scenarios for real — re-run an already-done batch (expect 0 GPU pods, all `reused`);
+   kill predict mid-batch (expect resume, only the tail redone); inject a poison scan (expect
+   `partial`, others succeed). No evidence any of these three has actually been exercised against
+   the currently-shipped dispatch-worker/status-poller/hardened-producers combination — confirm the
+   base is sound before adding more surface area on top of it.
+2. **Fix [bloom #685](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/685)**
+   (write-back RPC's hard-pinned `contract_version=0.1.0a3`) — small, same fix pattern already
+   proven at [bloom #399](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/399)
+   (prefix-tolerant match). Currently the only thing blocking redeploying traits' `a7`-pinned image
+   to the pipeline at all — see the `write-back` row above.
+3. **Fix [bloom #716](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/716)**
+   (`done_count`/`failed_count` never populated) — small, and it's the direct dependency for both
+   the batch-oracle counts and the UI panel's "N/M" display (item 5).
+4. **Re-run the step-1 batch-oracle scenarios** after 2+3 land, this time confirming write-back
+   accepts real `a7` envelopes and the counts populate correctly.
+5. **Build the Bloom UI — trigger + progress panel** ([bloom #15](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/15),
+   design §10 — see the A4 row above). Fully designed, backend ready once 2-4 land; real multi-day
+   scope, not a quick fix. Keep triggering real E2E runs throughout its build so the Realtime
+   subscription has live data to develop against, not mocks.
 
-Handoff for #11/#404 written to
-`C:\vaults\sleap-roots\bloom-pipeline-integration\handoff_prompts\new_session_prompt_bloom11_404_trigger_route.md`.
+**Lower priority, no dependency on the above, do whenever convenient:** gap (4) manifest-forwarding
+concurrency fix (real but not urgent — nothing runs concurrent batches in production yet); #19
+(Box backfill key-derivation) and bloom #398 (non-interactive auth — may already be closable per
+the file-mount comment on that issue) are pure decisions with no code blocking them.
+
+*(Superseded 2026-08-03 handoff, kept for the record: was written to
+`C:\vaults\sleap-roots\bloom-pipeline-integration\handoff_prompts\new_session_prompt_bloom11_404_trigger_route.md`
+for the (now-shipped) bloom trigger route work.)*
 
 ## Close-the-loop checklist (after each change merges)
 
@@ -454,6 +463,21 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-08-24 (later)** — **Refreshed the stale "Next (true frontier)" sequencing note** (last
+  written 2026-08-03; all four of its items had since shipped, so it no longer described real
+  work). Replaced with the current frontier, prompted by a direct question about where to put E2E
+  testing checkpoints: **no full end-to-end run has happened on a real cluster since PR #33
+  (2026-07-30)**, despite six significant merges landing since (dispatch worker, status poller,
+  both producers' Argo-readiness hardening, write-back manifest scoping, download concurrency) —
+  none of the design doc's own §14 batch-oracle scenarios (re-run-already-done / kill-mid-batch /
+  poison-scan) have confirmed evidence of being exercised against that combination. New sequence:
+  (1) run those three scenarios for real as a baseline check, (2) fix bloom #685 (small,
+  proven-pattern fix, currently blocking the traits `a7` image's redeploy), (3) fix bloom #716
+  (small, unblocks both the batch-oracle counts and the UI panel's "N/M" display), (4) re-run the
+  batch-oracle scenarios to confirm both fixes actually worked, (5) build the Bloom UI panel
+  (bloom #15 / design §10, tracked above) with real E2E runs kept going throughout for the Realtime
+  work to develop against. Gap (4) and the three decision-gated issues (#18/#19/bloom #398) stay
+  lower priority, no dependency on this sequence.
 - **2026-08-24** — **Gap found: the Bloom UI progress panel (design §10) had silently fallen out of
   this roadmap's own tracking.** During a routine dashboard-refresh sweep, a live-state check
   confirmed no drift on any previously-tracked item — but a direct conversation about what to
