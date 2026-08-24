@@ -242,14 +242,14 @@
   <header>
     <span class="eyebrow">sleap-roots ↔ Bloom · A4 program</span>
     <h1>Root System Status</h1>
-    <p class="sub">Where the whole integration program stands as of 2026-08-19 — every tier, what's actually shipped vs. claimed, and what's moving right now. Source of truth: <code>sleap-roots-pipeline/docs/bloom-integration/roadmap.md</code>.</p>
+    <p class="sub">Where the whole integration program stands as of 2026-08-24 — every tier, what's actually shipped vs. claimed, and what's moving right now. Source of truth: <code>sleap-roots-pipeline/docs/bloom-integration/roadmap.md</code>.</p>
   </header>
 
   <div class="strip">
-    <div class="cell"><span class="num">2</span><span class="label">tiers fully done (A0, A1)</span></div>
+    <div class="cell"><span class="num">3</span><span class="label">tiers fully done (A0, A1, B1)</span></div>
     <div class="cell"><span class="num">3</span><span class="label">tiers in progress (A2, A3, A4)</span></div>
-    <div class="cell"><span class="num">5</span><span class="label">tasks in flight, 2 with open PRs</span></div>
-    <div class="cell"><span class="num">1</span><span class="label">live blocker, unfixed</span></div>
+    <div class="cell"><span class="num">0</span><span class="label">sessions actively in flight</span></div>
+    <div class="cell"><span class="num">2</span><span class="label">live blockers, unfixed &amp; unowned</span></div>
   </div>
 
   <section>
@@ -310,7 +310,7 @@
 
   <section>
     <h2>A4 detail <span class="idx">the active tier</span></h2>
-    <p class="lede">Nine tracked changes. Six are done, one closed this week, two are live right now.</p>
+    <p class="lede">Ten tracked changes. Seven done (three more closed this week), one staging-only, one blocked, one not started — and nobody currently working any of the last three.</p>
     <div class="tablewrap">
       <table>
         <thead>
@@ -321,15 +321,15 @@
           <tr><td>credential</td><td><span class="pill progress">staging only</span></td><td class="note">Dedicated Supabase account + K8s ServiceAccounts live in both namespaces. Production credential not yet created — deliberate, pending real go-live.</td></tr>
           <tr>
             <td>bloom trigger route</td>
-            <td><span class="pill progress">2 of 3 phases</span></td>
-            <td class="note">Phase 1+2 merged (<code>#677</code>) — <strong>and, found 2026-08-19, actually deployable now</strong>: none of the five <code>STAGING_</code> deploy secrets it needs existed on GitHub, all now set and checksum-verified. Phase 3 (status polling) still in flight, scoping stage.</td>
+            <td><span class="pill done">done — 3 of 3</span></td>
+            <td class="note">Phase 3 (status polling) shipped 2026-08-21 (<a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/701">bloom #701</a>, closes bloom #11) — unusually rigorous review history, 5 adversarial rounds, 4 follow-up issues filed (<code>#696 #706 #710 #716</code>). All three phases of the trigger route are now complete.</td>
           </tr>
           <tr><td>pipeline-runs data model + dispatch worker</td><td><span class="pill done">done</span></td><td class="note">Built alongside Phase 1/2.</td></tr>
           <tr><td>images-downloader</td><td><span class="pill done">done</span></td><td class="note">Real-cluster validated, both namespaces.</td></tr>
           <tr><td>workflow template</td><td><span class="pill done">done</span></td><td class="note">All four stages run together. Concurrent-batch semaphore/quota still unbuilt — becomes a real question once dispatch is fully live.</td></tr>
-          <tr><td>predict wiring</td><td><span class="pill progress">in progress</span></td><td class="note">Container + parity gate shipped. Argo-readiness hardening (<code>predict#26</code>) in flight now.</td></tr>
-          <tr><td>traits wiring</td><td><span class="pill progress">in progress</span></td><td class="note">Emitter + image shipped. Argo-readiness hardening (<code>sleap-roots#259</code>) in flight now.</td></tr>
-          <tr><td>write-back</td><td><span class="pill blocked">blocked</span></td><td class="note">Ingest CLI + blob upload shipped and cluster-validated. <strong>Live blocker</strong>: write-back RPC still hard-pins <code>contract_version=0.1.0a3</code> — see below.</td></tr>
+          <tr><td>predict wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots-predict/pull/36">predict #36</a>: exit-code convention, atomic writes, SIGTERM handling) plus a 2026-08-24 cross-repo-review follow-up (<a href="https://github.com/talmolab/sleap-roots-predict/pull/38">predict #38</a>).</td></tr>
+          <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots/pull/266">sleap-roots #266</a>) — exit-code convention independently verified byte-identical to predict's.</td></tr>
+          <tr><td>write-back</td><td><span class="pill blocked">blocked</span></td><td class="note">Ingest CLI, blob upload, and manifest-scoped discovery all shipped and cluster-validated. <strong>Two live blockers, both unowned</strong>: the RPC's hard-pinned <code>contract_version</code>, and the manifest not actually reaching write-back in production — see below.</td></tr>
           <tr><td>notification</td><td><span class="pill notstarted">not started</span></td><td class="note">Channel undefined (<code>#18</code>) — needs your decision before it's buildable.</td></tr>
         </tbody>
       </table>
@@ -337,40 +337,8 @@
   </section>
 
   <section>
-    <h2>Right now <span class="idx">5 sessions in flight</span></h2>
-    <p class="lede">All started from handoffs this session, each in its own isolated worktree.</p>
-    <div class="cards">
-      <div class="card">
-        <span class="repo">salk-bloom</span>
-        <h3>Phase 3 — status polling</h3>
-        <p class="idnum">bloom #11 · scoping</p>
-        <p>Poll Argo, progress <code>cyl_pipeline_runs.status</code> past "submitted." No PR yet.</p>
-      </div>
-      <div class="card">
-        <span class="repo">salk-bloom</span>
-        <h3>Write-back manifest scope</h3>
-        <p class="idnum">bloom #678 · PR #697 open</p>
-        <p>Closes the last leg of the idempotency chain (<code>#37</code>).</p>
-      </div>
-      <div class="card">
-        <span class="repo">salk-bloom</span>
-        <h3>Download concurrency</h3>
-        <p class="idnum">bloom #652 · PR #698 open</p>
-        <p>Parallel frame fetches in <code>download-for-predict</code>.</p>
-      </div>
-      <div class="card">
-        <span class="repo">sleap-roots-predict</span>
-        <h3>Argo-ready exit semantics</h3>
-        <p class="idnum">predict #26 · in progress</p>
-        <p>Exit codes, empty-input guard, SIGTERM handling. No PR yet.</p>
-      </div>
-      <div class="card">
-        <span class="repo">sleap-roots</span>
-        <h3>Argo-ready exit semantics</h3>
-        <p class="idnum">sleap-roots #259 · just started</p>
-        <p>Same hardening, traits side — must match predict's convention. No PR yet.</p>
-      </div>
-    </div>
+    <h2>Right now <span class="idx">0 sessions in flight</span></h2>
+    <p class="lede">Everything that was in flight as of the last sweep (2026-08-19) has since shipped — trigger-route Phase 3, both producers' Argo-readiness hardening, and download concurrency all merged 2026-08-21 through 2026-08-24. The critical path has gone quiet: what's left is two unowned blockers and three decisions only Elizabeth can make (see below). Nobody is currently working any of them.</p>
   </section>
 
   <section>
@@ -380,7 +348,14 @@
         <span class="idnum">bloom #685</span>
         <div>
           <p class="what">Write-back RPC will reject every new envelope once the traits image redeploys.</p>
-          <p class="why"><code>insert_cyl_result_envelope</code> hard-pins <code>contract_version</code> to exactly <code>0.1.0a3</code>. Traits just bumped its own pin to <code>a7</code> (<code>#263</code>, already merged) — the RPC has no idea <code>a7</code> exists. Not urgent until that image is actually redeployed, but it will silently reject 100% of scans the moment it is.</p>
+          <p class="why"><code>insert_cyl_result_envelope</code> hard-pins <code>contract_version</code> to exactly <code>0.1.0a3</code>. Traits just bumped its own pin to <code>a7</code> (<code>#263</code>, already merged) — the RPC has no idea <code>a7</code> exists. Not urgent until that image is actually redeployed, but it will silently reject 100% of scans the moment it is. Open since 2026-08-14, still unowned, zero comments.</p>
+        </div>
+      </div>
+      <div class="blocker">
+        <span class="idnum">#37 (gap 4)</span>
+        <div>
+          <p class="what">The run manifest never actually reaches write-back in production — a losing concurrent batch could silently lose real results.</p>
+          <p class="why">Predict doesn't copy <code>run_manifest.json</code> forward into its own output (confirmed: no such code in <code>batch.py</code>), so traits' manifest-consumption sees "absent" and falls back to unscoped in every real run today. Separately, traits' own <code>copy_run_manifest_forward</code> is a naive copy with no lock, unlike bloomctl's origin-stage handling — two concurrent batches sharing an output dir could clobber each other's <code>scan_keys</code>. Harmless while nothing downstream consumed the manifest; no longer harmless now that write-back scopes its own discovery to it (bloom #697, merged 2026-08-19). Found 2026-08-19, filed as a comment on <code>#37</code>, flagged on bloom PR #697 — still unaddressed, unowned.</p>
         </div>
       </div>
       <div class="blocker decision">
@@ -408,7 +383,7 @@
   </section>
 
   <footer>
-    <span>Last swept 2026-08-19</span>
+    <span>Last swept 2026-08-24</span>
     <span>Canonical doc: <code>docs/bloom-integration/roadmap.md</code></span>
   </footer>
 
