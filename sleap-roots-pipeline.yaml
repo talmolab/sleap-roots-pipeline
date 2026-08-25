@@ -2,6 +2,20 @@
 # https://argo-workflows.readthedocs.io/en/latest/workflow-concepts/
 # https://argo-workflows.readthedocs.io/en/latest/walk-through/dag/
 # https://kubernetes.io/docs/concepts/storage/volumes/#hostpath
+#
+# CROSS-REPO VENDORING NOTICE: this file is the only canonical, correctly-complete definition
+# of this Workflow's shape (volumes, entrypoint, serviceAccountName, DAG structure). `salk-bloom`
+# vendors a pinned copy of it at `services/workflows/vendored/sleap-roots-pipeline.yaml` (pin
+# recorded in a sibling `SLEAP_ROOTS_PIPELINE_REF` file) for its dispatch worker
+# (`k8s_client.py::build_workflow_body`), which loads that copy and layers a few dispatch-specific
+# overrides on top (batch labels, real scan-ids, ttlStrategy) rather than reimplementing this
+# shape by hand — a prior hand-reconstruction silently dropped `spec.volumes` entirely and broke
+# every real batch dispatch (found 2026-08-24/25, see
+# docs/superpowers/specs/2026-08-25-shared-argo-workflow-source-design.md and
+# https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/737). `salk-bloom`'s CI diffs
+# its vendored copy against this file at the pinned commit on every PR and fails loudly on drift.
+# If you change this file's `volumes`, `entrypoint`, `serviceAccountName`, or DAG structure, update
+# the vendored copy and bump the pinned commit SHA in `salk-bloom` too, or that repo's CI will fail.
 
 apiVersion: argoproj.io/v1alpha1
 kind: Workflow
