@@ -86,11 +86,19 @@ programmatically) and explicitly out of scope here.
 - Vendor a copy at `services/workflows/vendored/sleap-roots-pipeline.yaml`, plus a sibling
   `services/workflows/vendored/SLEAP_ROOTS_PIPELINE_REF` file containing the exact
   `sleap-roots-pipeline` commit SHA the vendored copy was pulled from.
-- A new CI check (added to `pr-checks.yml`): on every PR, fetch
+- A new CI check (added to `pr-checks.yml`, scoped to PRs touching the vendored files): fetch
   `https://raw.githubusercontent.com/talmolab/sleap-roots-pipeline/<pinned-SHA>/sleap-roots-pipeline.yaml`
   and diff it byte-for-byte against the vendored copy. Fail loudly on any mismatch — this is the
   one network fetch in the whole design, and it happens in CI (which already talks to GitHub
   constantly and is already trusted), never in the running service or its container build.
+  **Honest scope of this guarantee:** the check only diffs the vendored copy against the file *at
+  the pinned commit* — it has no way to know whether `sleap-roots-pipeline.yaml` has since moved on
+  at `main`, because it never looks at `main`. It catches "the vendored copy and the pin disagree
+  with each other" (e.g. someone hand-edited one without the other), not "upstream changed and
+  nobody in `salk-bloom` has noticed yet." Closing that second gap would need something that
+  actively polls upstream (a scheduled job, a bot) — not part of this design. In practice, staleness
+  persists silently until some unrelated `salk-bloom` PR happens to touch the vendored files and
+  trips the check, or until a human deliberately re-syncs the pin.
 - `k8s_client.py::build_workflow_body` is rewritten to load the vendored YAML (via
   `importlib.resources` or a plain file read relative to the module — whichever matches how this
   service already packages non-Python data, to be confirmed during implementation), deep-copy it,
