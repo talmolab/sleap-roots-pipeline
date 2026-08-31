@@ -18,5 +18,5 @@
 
 ## 3. Validate and merge
 
-- [ ] 3.1 `openspec validate add-shared-workflow-source-guardrail --strict` passes.
-- [ ] 3.2 PR opened, referencing this change-id and bloom #737.
+- [x] 3.1 `openspec validate add-shared-workflow-source-guardrail --strict` passes.
+- [x] 3.2 PR opened, referencing this change-id and bloom #737. — [PR #49](https://github.com/talmolab/sleap-roots-pipeline/pull/49), merged 2026-08-31.
