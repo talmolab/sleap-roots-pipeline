@@ -25,10 +25,12 @@ all.
 
 ## What Changes
 
-- **MODIFIED** `per-batch-pipeline` capability, "Four-stage per-batch DAG" requirement: add a
-  scenario asserting `sleap-roots-pipeline.yaml` carries a guardrail comment naming the vendored
-  path in `salk-bloom` and the drift-check mechanism, so the requirement now also covers this
-  file's role as a cross-repo canonical source, not just its own internal shape.
+- **MODIFIED** `per-batch-pipeline` capability, "Four-stage per-batch DAG" requirement: appends a
+  new sentence to the requirement's existing prose (this file's role as the only canonical,
+  correctly-complete definition of the Workflow's shape, now also covering why it needs the
+  guardrail) and adds a new scenario asserting `sleap-roots-pipeline.yaml` carries that guardrail
+  comment, naming the vendored path in `salk-bloom` and the drift-check mechanism. The three
+  pre-existing scenarios are reproduced verbatim, unchanged.
 - Add the guardrail comment itself to `sleap-roots-pipeline.yaml`'s header (above the existing
   `apiVersion`/`kind`/`metadata` block, alongside the file's existing reference-link comments).
 
