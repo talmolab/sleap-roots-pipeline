@@ -19,7 +19,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-c21d11b
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-3659705
         imagePullPolicy: Always
         args:
           - "cyl"
