@@ -53,9 +53,10 @@ spec:
         # Models load in-process from the wandb registry — no models-input mount. Contract:
         # `<image> <in_dir> <out_dir>` + WANDB_API_KEY. Bakes SRP_PREDICT_CODE_SHA → non-empty
         # predict_code_sha (idempotency-key input).
-        # Pinned to the immutable sha-<gitsha> tag; tighten to
-        # @sha256:68a0ba123eacabc606ae0a38cae8bdab2dcb8f142abefb099b5bde9fe3ca8be0 when public.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-4a70e59978cffbf2b144b5b20cb08f8d12ef633f
+        # Bumped 2026-09-10 (#54): the previous pin (4a70e599, 2026-07-07) predated predict's own
+        # RunManifest consumption (predict#35, merged 08-18) and Argo exit-semantics hardening
+        # (predict#36/#38) by 6 weeks — same class of bug as #51/#55.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-f974632332a2a7c6126af57837ec80df7393640f
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"

@@ -23,9 +23,13 @@ spec:
         # A4: GHCR trait-extractor (sleap-roots #257, merged main bb2199c). ENTRYPOINT is
         # ["python","-m","trait_extractor"] (exec form) → args are the two dirs only, no `command:`.
         # Bakes SRT_TRAITS_CODE_SHA → non-empty traits_code_sha (idempotency-key input).
-        # Pinned to the immutable sha-<gitsha> tag; tighten to @sha256:<digest> (from the build
-        # run summary / `docker buildx imagetools inspect` when public) per run.
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-bb2199c
+        # Bumped 2026-09-10 (#52/#55): the previous pin (bb2199c, 2026-07-06 — this image's very
+        # first GHCR publish, never bumped since) predated manifest-scoped discovery + skip-if-done
+        # (sleap-roots#263, merged 08-17) and the a7 contract_version re-pin (bloom#685, resolved
+        # 2026-09-08) by weeks. Confirmed causing real leftover-scan contamination live
+        # (2026-09-01 batch-oracle testing). bloom#685 is now genuinely deployed and verified —
+        # this image's a7-emitting envelopes will be accepted, not silently rejected.
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-689cffb
         imagePullPolicy: Always
         args:
           - "/workspace/input"
