@@ -1,6 +1,14 @@
 # Tasks
 
-Ships as **one PR**. `argo` is not on the Windows PATH — run every `argo` command from WSL
+Ships as **one PR**.
+
+> **Status:** everything local is done and verified (19/36). What remains is the live-cluster
+> work (§7), the cross-repo lockstep (§8), the roadmap record (§9), and the two `argo lint`
+> steps (3.4, 10.1) — `argo` is not installed on this machine, so those are the PR's own
+> checklist. Digests for 1.1/1.2 were verified against the GHCR registry API rather than via
+> `docker buildx`; same evidence.
+
+`argo` is not on the Windows PATH — run every `argo` command from WSL
 (cluster Argo is **v3.6.7**, read off the `argoexec` image tag on live Argo pods).
 
 Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR digest checks in
@@ -8,7 +16,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 1. Image pins (do first — the wiring is inert without them)
 
-- [ ] 1.1 Bump `sleap-roots-images-downloader-template.yaml` and
+- [x] 1.1 Bump `sleap-roots-images-downloader-template.yaml` and
   `sleap-roots-write-back-template.yaml` from `bloomctl:sha-3659705` to `sha-0614889`, recording in
   each file's comment that this build carries **both** bloom#830's partial-success exit code and
   bloom#774's per-scan status marking (#774 changed `cyl/ingest.py`, i.e. the write-back stage —
@@ -19,12 +27,12 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   → `sha256:e39b4746e68b4405d1d91899e358aee5a2badf1a9b8f103cd6971d28881a7cc5`.
   Tags here are **7 chars** (`sha-0614889` resolves, `sha-06148896` 404s) — never derive one from a
   local `git rev-parse --short`, which abbreviates differently than the CI runner.
-- [ ] 1.2 Bump `sleap-roots-predictor-template.yaml` to
+- [x] 1.2 Bump `sleap-roots-predictor-template.yaml` to
   `sha-e025e309230de52cef0ccffa199048fe1dbd1b24` (predict#42's `run_manifest.json` forward-copy).
   **Validate:** `docker buildx imagetools inspect ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24 --format '{{.Manifest.Digest}}'`
   → `sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060`. predict tags the
   **full 40-char** sha — do not pattern-match bloomctl's 7.
-- [ ] 1.3 Leave `sleap-roots-trait-extractor-template.yaml`'s `sha-689cffb` pin unchanged, and
+- [x] 1.3 Leave `sleap-roots-trait-extractor-template.yaml`'s `sha-689cffb` pin unchanged, and
   rewrite its stale `retryStrategy` comment: sleap-roots#259 is now resolved on both sides, and the
   claim that an empty `/in` exits `0` (a "silent-green node") is false since sleap-roots#266 —
   it exits `1` with no manifest, `3` with one. Record that the limits are deliberately unchanged
@@ -35,7 +43,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 2. The exit-gate template
 
-- [ ] 2.1 Add `sleap-roots-exit-gate-template.yaml` declaring **three separately-named**
+- [x] 2.1 Add `sleap-roots-exit-gate-template.yaml` declaring **three separately-named**
   `inputs.parameters` (one per producer), reusing the already-pinned `bloomctl` image purely for
   its shell, and comparing each code against an explicit `0|3` allowlist.
   Must include, each of which is a spec requirement and none of which `argo lint` will catch:
@@ -46,7 +54,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   Pass the codes via `env` rather than interpolating them into the script body, so a substituted
   value cannot break out of the shell.
   **Validate:** the field assertions in task 6.1.
-- [ ] 2.2 Verify the gate's comparison logic by executing **the shipped artifact**, not a retyped
+- [x] 2.2 Verify the gate's comparison logic by executing **the shipped artifact**, not a retyped
   copy of it:
   ```bash
   IMG=$(yq -r '.spec.templates[0].container.image' sleap-roots-exit-gate-template.yaml)
@@ -59,7 +67,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   `(0,2,0)`, `(0,143,0)`, `(0,"",0)` (empty), `(0,"{{tasks.predictor.exitCode}}",0)` (the literal
   unsubstituted placeholder — the realistic corruption, see 2.3), and `(0,-1,0)`.
   Decide and record the `(0,03,0)` case — it forces the string-vs-numeric question explicit.
-- [ ] 2.3 Record in the template's header comment **why** the allowlist must stay an allowlist:
+- [x] 2.3 Record in the template's header comment **why** the allowlist must stay an allowlist:
   at v3.6.7, `workflow/controller/dag.go` substitutes task arguments with
   `template.Replace(..., allowUnresolved=true)` and contains no requeue path, so an unresolvable
   `{{tasks.<name>.exitCode}}` arrives as a **literal string** rather than failing or hanging. A
@@ -68,14 +76,14 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 3. DAG wiring
 
-- [ ] 3.1 Add `continueOn: {failed: true}` to `images-downloader`, `predictor` and
+- [x] 3.1 Add `continueOn: {failed: true}` to `images-downloader`, `predictor` and
   `trait-extractor` in `sleap-roots-pipeline.yaml`. Not to `write-back`. Not `error: true`.
-- [ ] 3.2 Add the `exit-gate` task depending on `write-back`, passing three named
+- [x] 3.2 Add the `exit-gate` task depending on `write-back`, passing three named
   `arguments.parameters` carrying `{{tasks.<producer>.exitCode}}`.
   **3.1, 3.2 and 3.3 must land in one commit.** 3.1 alone is `continueOn` with no gate — the state
   the design doc calls "strictly worse than today", since it reports exhausted-retry crashes as
   `Succeeded`. Do not split them.
-- [ ] 3.3 Extend the file's header comments: that the gate is the DAG's only leaf and therefore
+- [x] 3.3 Extend the file's header comments: that the gate is the DAG's only leaf and therefore
   determines the Workflow phase; that every producer the gate references must remain an *ancestor*
   of it; and that a broken reference arrives as a literal string rather than failing, so the gate's
   allowlist is what makes it visible. Also correct `serviceAccountName`'s comment: "four stage
@@ -92,7 +100,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 4. Launcher
 
-- [ ] 4.1 Register `sleap-roots-exit-gate-template.yaml` in `runai_run_pipeline.sh`'s `TEMPLATES`,
+- [x] 4.1 Register `sleap-roots-exit-gate-template.yaml` in `runai_run_pipeline.sh`'s `TEMPLATES`,
   and update the four-line `argo template update` recipe in its header comment to five. Note in the
   comment that the script's `NAMESPACE` is `runai-talmo-lab` while the Workflow and this change's
   deployment target are `runai-busch-lab` — left as-is here (pre-existing, out of scope), but it
@@ -102,20 +110,20 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 5. Documentation this change falsifies
 
-- [ ] 5.1 `README.md`: the stage list (`:6-11`), the folder-structure block (`:69-77`), and the
+- [x] 5.1 `README.md`: the stage list (`:6-11`), the folder-structure block (`:69-77`), and the
   `argo template create` block (`:166-169`) all say four.
   **Validate:** every `*-template.yaml` the DAG references appears in all three blocks.
-- [ ] 5.2 `README.md` "DAG Behavior and Step Failures" (`:281-292`): it states *"If a task fails and
+- [x] 5.2 `README.md` "DAG Behavior and Step Failures" (`:281-292`): it states *"If a task fails and
   `retryStrategy` is exhausted: the **entire workflow fails**"*, which becomes false for three of
   five tasks. Rewrite: a producer's failure no longer terminates the DAG, the terminal `exit-gate`
   re-derives the phase from the producers' real exit codes, and `{0,3}` pass while anything else
   fails the Workflow. Keep the existing non-resumability note.
   **Validate:** the section names `continueOn`, `exit-gate` and the `{0,3}` convention, and no
   longer claims an exhausted retry fails the whole workflow.
-- [ ] 5.3 `openspec/project.md`: `:6`, `:22`, `:71`, `:124` all say four; `:71` carries the literal
+- [x] 5.3 `openspec/project.md`: `:6`, `:22`, `:71`, `:124` all say four; `:71` carries the literal
   architecture-pattern name `**Four-stage per-batch DAG**` that this change's delta renames.
   **Validate:** `grep -ni "four" openspec/project.md` returns nothing about the DAG.
-- [ ] 5.4 Correct the same stale empty-input claim where it appears beyond the template comment:
+- [x] 5.4 Correct the same stale empty-input claim where it appears beyond the template comment:
   `docs/superpowers/plans/2026-07-06-a4-argo-workflow-poc.md:149` and
   `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md:202-208`. Both assert
   "empty input → exit 0 (silent-green)" for traits **and** that predict behaves identically; both
@@ -127,7 +135,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 6. Static verification (local, no cluster, no secrets)
 
-- [ ] 6.1 Assert every manifest-inspectable scenario in one pass:
+- [x] 6.1 Assert every manifest-inspectable scenario in one pass:
   ```bash
   P=sleap-roots-pipeline.yaml; G=sleap-roots-exit-gate-template.yaml
   yq '.spec.templates[0].dag.tasks | length' $P                                     # 5
@@ -155,7 +163,7 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   ```
   **Validate:** every assertion above matches its expected value. (Fall back to `python -c` +
   PyYAML if `yq` is unavailable.)
-- [ ] 6.2 Confirm the gate's references are ancestors — the constraint that, if broken, silently
+- [x] 6.2 Confirm the gate's references are ancestors — the constraint that, if broken, silently
   passes a literal string:
   ```bash
   yq -r '.spec.templates[0].dag.tasks[] | select(.name=="exit-gate") | .arguments.parameters[].value' $P
@@ -268,8 +276,8 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 ## 10. Final sweep
 
 - [ ] 10.1 `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml`
-- [ ] 10.2 `bash -n runai_run_pipeline.sh`
-- [ ] 10.3 `openspec validate add-partial-success-exit-gate --strict`
-- [ ] 10.4 Re-run task 6.1's static assertions against the final tree.
+- [x] 10.2 `bash -n runai_run_pipeline.sh`
+- [x] 10.3 `openspec validate add-partial-success-exit-gate --strict`
+- [x] 10.4 Re-run task 6.1's static assertions against the final tree.
 - [ ] 10.5 Open the PR with `/pr-description`, referencing this change-id, `Closes #56`, and
   linking #58 (this adds a fifth un-drift-checked object), bloom#857, bloom#859 and predict#44.
