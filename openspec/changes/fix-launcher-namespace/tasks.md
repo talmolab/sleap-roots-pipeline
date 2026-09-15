@@ -6,22 +6,22 @@ submits a real Workflow), so the launcher's default is verified by field asserti
 
 ## 1. Launcher namespace default
 
-- [ ] 1.1 Change `runai_run_pipeline.sh:23` from `NAMESPACE="runai-talmo-lab"` to
+- [x] 1.1 Change `runai_run_pipeline.sh:23` from `NAMESPACE="runai-talmo-lab"` to
   `NAMESPACE="${NAMESPACE:-runai-busch-lab}"`, with a comment stating it must match
   `sleap-roots-pipeline.yaml`'s `metadata.namespace` and showing the override form.
-- [ ] 1.2 Update the stale header comment block (lines 6-13): kubeconfig filename
+- [x] 1.2 Update the stale header comment block (lines 6-13): kubeconfig filename
   `~/.kube/kubeconfig-runai-talmo-lab.yaml` → `~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml`,
   and every `-n runai-talmo-lab` in that block → `-n runai-busch-lab`.
-- [ ] 1.3 Validate: `grep -n 'NAMESPACE="${NAMESPACE:-runai-busch-lab}"' runai_run_pipeline.sh`
+- [x] 1.3 Validate: `grep -n 'NAMESPACE="${NAMESPACE:-runai-busch-lab}"' runai_run_pipeline.sh`
   returns one hit, and `grep -c 'runai-talmo-lab' runai_run_pipeline.sh` returns `1` (the override
   example only).
-- [ ] 1.4 Validate the two agree: the value from 1.3 equals
+- [x] 1.4 Validate the two agree: the value from 1.3 equals
   `grep -m1 '^  namespace:' sleap-roots-pipeline.yaml | awk '{print $2}'`.
 
 ## 2. Delete the dead models-downloader template
 
-- [ ] 2.1 `git rm models-downloader-template.yaml`.
-- [ ] 2.2 Validate nothing references it:
+- [x] 2.1 `git rm models-downloader-template.yaml`.
+- [x] 2.2 Validate nothing references it:
   `grep -rn 'models-downloader-template' --include='*.sh' --include='*.yaml' --include='*.md' .`
   returns no hits outside `docs/superpowers/`, `openspec/changes/archive/`, and `.worktrees/`.
   Remove any live reference found in the launcher's `TEMPLATES` list or the README folder-structure
@@ -29,7 +29,7 @@ submits a real Workflow), so the launcher's default is verified by field asserti
 
 ## 3. Static validation
 
-- [ ] 3.1 Lint all five remaining manifests **online** (`argo` is WSL-only at
+- [x] 3.1 Lint all five remaining manifests **online** (`argo` is WSL-only at
   `/usr/local/bin/argo`; `KUBECONFIG` must be set or `templateRef`s cannot resolve):
 
   ```bash
@@ -45,6 +45,9 @@ submits a real Workflow), so the launcher's default is verified by field asserti
   `sleap-roots-pipeline.yaml` (`couldn't find workflow template ... in namespace`) — that is an
   offline-lint artifact, not a defect; passing all five files on one command line does not resolve
   it. Any *other* error is real.
+
+  **Result 2026-09-15:** all five `no linting errors found!` against `runai-busch-lab` under the
+  `argo-user` kubeconfig, including `sleap-roots-pipeline.yaml`.
 
 ## 4. Validate and close out
 
