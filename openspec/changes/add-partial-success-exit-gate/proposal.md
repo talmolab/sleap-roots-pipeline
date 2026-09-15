@@ -83,8 +83,18 @@ manifest and carries its own four-template list, so it will hard-fail on the unr
   alone, and every Argo continue-past-failure mechanism yields `Succeeded`, so `partial` is
   unreachable from this repo at any batch size. Tracked as
   [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857). **Do not read
-  a green Workflow, or a `complete` run, as "no scans failed."** Relatedly, a zero-scan batch exits
-  `0` and is green — the gate reports whether the machinery ran, not whether any scan was processed.
+  a green Workflow, or a `complete` run, as "no scans failed."** The gate mounts no volumes, so it
+  attests that every producer completed acceptably — not that any scan was processed or any output
+  landed. The outcome for a zero-scan or zero-staged batch is **input-directory-state-dependent and
+  not yet characterised** (see `design.md`); it must be measured, not assumed.
+- **`Workflow: Failed` no longer implies "nothing was written".** `continueOn` lets write-back run
+  on crash paths, where `reconcile_unresolved_scans` closes out every scan dispatched under this
+  `ARGO_WORKFLOW_NAME` as `failed`. Previously the DAG stopped at the failing producer and nothing
+  reached Bloom. Compounding this, the stage directories are shared across runs **and
+  environments** — prod dispatches the vendored copy with the same `hostPath`s — and
+  `run_manifest.json` accumulates `scan_keys`, so a crash path can be scoped by another run's
+  manifest. This change adds `ARGO_WORKFLOW_NAME` to the predictor and trait-extractor (inert
+  today) as the prerequisite for producer-side run-scope validation.
 - **Other deferred follow-ups, both filed:**
   [bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859) (a partial
   `predict`/`trait_extractor` still fails the Workflow at write-back, because a manifest

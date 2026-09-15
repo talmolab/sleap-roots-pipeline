@@ -211,13 +211,14 @@ gate references SHALL remain an ancestor of the gate.
 - **THEN** `exit-gate` is `Omitted` and inherits the failure
 - **AND** the Workflow's final phase is `Failed`
 
-#### Scenario: A zero-scan batch passes the gate
+#### Scenario: The gate attests machinery completion, not data completeness
 
-- **WHEN** a batch is submitted with no scan ids, so `images-downloader` exits `0` having staged
-  nothing
-- **THEN** the gate accepts and the Workflow's final phase is `Succeeded`
-- **AND** this is an accepted limitation: the gate reports whether the pipeline machinery ran
-  correctly, not whether any scan was processed
+- **WHEN** the `exit-gate` task and its template are inspected
+- **THEN** the template declares no `volumeMounts`, so the gate cannot observe whether any output
+  was written
+- **AND** the gate's decision is derived solely from the producers' exit codes
+- **AND** a passing gate therefore attests that every producer stage completed acceptably, and does
+  **not** attest that any scan was processed or that any output landed
 
 ### Requirement: The exit-gate template runs without data or credential access
 
@@ -232,10 +233,12 @@ no Bloom API call.
 
 The template SHALL declare an explicit `priorityClassName`, since an Argo pod with none lands at
 very-high priority on this cluster — above the predictor's own class. It SHALL declare a
-`retryStrategy` with `retryPolicy: Always`, since it is the DAG's only leaf and a transient
-gate-pod failure would otherwise report a fully-successful batch as `Failed`. It SHALL declare
-`resources` requests, so the pod is not BestEffort QoS. It SHALL carry the same `project` label the
-other stage templates carry.
+`retryStrategy` with `retryPolicy: Always` **and a `backoff`**, since it is the DAG's only leaf: a
+transient gate-pod failure would otherwise report a fully-successful batch as `Failed`, and
+retrying immediately against a still-contended cluster spends the whole budget in seconds. It SHALL
+declare `resources` requests, so the pod is not BestEffort QoS. It SHALL carry the same `project`
+label the other stage templates carry — for consistency only; object-level metadata is not copied
+onto the pod and is inert for quota attribution, which RunAI derives from the namespace.
 
 #### Scenario: Gate template overrides the image entrypoint and pins its image
 
@@ -255,5 +258,25 @@ other stage templates carry.
 - **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
 - **THEN** it declares an explicit `priorityClassName`
 - **AND** it declares a `retryStrategy` whose `retryPolicy` is `Always`
+- **AND** that `retryStrategy` declares a `backoff.duration`
 - **AND** it declares `resources.requests`
 - **AND** it carries a `project` label matching the other stage templates
+
+### Requirement: Every producer carries the Argo workflow identity
+
+Every batch-processing stage template SHALL set an `ARGO_WORKFLOW_NAME` environment variable
+sourced from Argo's built-in `{{workflow.name}}` — `images-downloader`, `predictor`,
+`trait-extractor` and `write-back` alike.
+
+The two `bloomctl` stages already consume it. The `predictor` and `trait-extractor` stages do not
+consume it yet, and it is inert for them today; it is required because the stage directories are
+fixed, shared `hostPath`s and `run_manifest.json` accumulates `scan_keys` across every run that
+writes into them. Once a producer stage can be reached after an upstream failure, the manifest a
+stage is scoped by may belong to a different run, and a stage has no way to detect that without
+knowing its own workflow identity. Carrying it is the prerequisite for any run-scope validation.
+
+#### Scenario: All four batch-processing templates carry ARGO_WORKFLOW_NAME
+
+- **WHEN** the images-downloader, predictor, trait-extractor and write-back templates are inspected
+- **THEN** each declares an `ARGO_WORKFLOW_NAME` entry in its container `env:`
+- **AND** each such entry's `value` is exactly `"{{workflow.name}}"`
