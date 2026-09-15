@@ -56,7 +56,16 @@ spec:
         # Bumped 2026-09-10 (#54): the previous pin (4a70e599, 2026-07-07) predated predict's own
         # RunManifest consumption (predict#35, merged 08-18) and Argo exit-semantics hardening
         # (predict#36/#38) by 6 weeks — same class of bug as #51/#55.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-f974632332a2a7c6126af57837ec80df7393640f
+        # Bumped 2026-09-15 (#56): sha-f974632... -> sha-e025e309..., the fourth bump for this
+        # template. Carries predict#42 (`copy_run_manifest_forward`), which forwards
+        # run_manifest.json into predict's own output so trait-extraction is run-scoped — the real
+        # reason #54/#55's fix alone did not stop leftover-scan contamination. #57's pin predated
+        # #42 by definition. NOTE predict tags the FULL 40-char sha, unlike bloomctl's 7 —
+        # verify against GHCR, don't pattern-match the other templates.
+        # Watch out (predict#44): predict still forwards the manifest unchanged rather than
+        # narrowing it to `ok ∪ skipped`. Now that #56 lets the DAG reach traits after a partial
+        # predict, a predict-failed scan becomes a misattributed *trait-extraction* failure.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"

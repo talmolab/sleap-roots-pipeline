@@ -4,14 +4,24 @@ set -euo pipefail
 # NOTE: this launcher targets the in-cluster Argo Server (gpu-master:8888) and requires ARGO_TOKEN
 # exported — it only works from a machine on the internal cluster LAN. The A4 PoC was NOT run this
 # way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig, which is
-# also how the real four-stage end-to-end run (2026-07-30) was submitted:
+# also how the real end-to-end run (2026-07-30, then four stages) was submitted:
 #   export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml
+#   argo template create sleap-roots-exit-gate-template.yaml         -n runai-talmo-lab
 #   argo template update sleap-roots-images-downloader-template.yaml -n runai-talmo-lab
 #   argo template update sleap-roots-predictor-template.yaml         -n runai-talmo-lab
 #   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-talmo-lab
 #   argo template update sleap-roots-write-back-template.yaml        -n runai-talmo-lab
 #   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-talmo-lab
 # Use that path if gpu-master:8888 is unreachable from your box.
+# `create` for the exit-gate (#56) the first time — `update` errors on a template that does not
+# exist yet. Register it BEFORE submitting any five-task DAG, or submission fails on an
+# unresolvable templateRef.
+#
+# ⚠️ NAMESPACE below is `runai-talmo-lab`, but the Workflow manifest declares
+# `namespace: runai-busch-lab` and that is where this pipeline is actually deployed. Running this
+# script unmodified therefore registers the templates into the WRONG namespace. Pre-existing and
+# deliberately not changed by #56 — but do not assume this script is the mechanism that deploys
+# the templates; use the explicit `-n runai-busch-lab` commands instead.
 
 # Color output
 YELLOW='\033[1;33m'
@@ -41,6 +51,9 @@ TEMPLATES=(
   "sleap-roots-predictor-template.yaml"
   "sleap-roots-trait-extractor-template.yaml"
   "sleap-roots-write-back-template.yaml"
+  # #56: the DAG's terminal exit-code gate. Must be registered before any five-task DAG is
+  # submitted, or submission fails on an unresolvable templateRef.
+  "sleap-roots-exit-gate-template.yaml"
 )
 
 # Log setup
