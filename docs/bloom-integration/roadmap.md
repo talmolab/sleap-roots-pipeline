@@ -505,6 +505,35 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-15** — **bloom#772's driver-side fix merged; #56's Argo-side wiring is still the
+  blocker, so scenario 3's poison-scan symptom is unchanged in practice today.**
+  - `salk-bloom` [PR #830](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/830)
+    merged to `staging` (merge commit `623414f7`): `bloomctl cyl batch-download-for-predict` now
+    exits `0`/`3` (`ctx.exit(0 if result.ok else 3)`) instead of `0`/`1`, mirroring
+    `sleap_roots_predict`/`trait_extractor`'s existing convention. `bloom#772` deliberately left
+    **open**, not auto-closed — the PR body used "Related to," not "Fixes," since this alone
+    doesn't fix the live symptom.
+  - **This repo's own images-downloader/write-back templates are not fixed yet.** Their pinned
+    `bloomctl` image (`sha-3659705`, bumped in #53 on 2026-09-02) predates today's PR #830 by two
+    weeks, and even a fresh pin wouldn't matter until #56's `retryStrategy` wiring actually reads
+    the new exit code — Argo's `retryPolicy: Always` still treats any non-zero exit identically
+    today. Re-running 2026-09-01's exact scenario 3 (poison scan + 2 good scans) right now would
+    still fail completely at 0/3, same as before. **#56 remains open and is the actual blocker**
+    for the batch-oracle poison-scan target; don't read this entry as "poison-scan scenario
+    fixed."
+  - Filed [sleap-roots-pipeline#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58)
+    while scoping #772/#56: none of the 4 registered `WorkflowTemplate`s have an automated
+    drift-check the way the top-level `Workflow` doc's vendoring (2026-08-25 design) does for
+    itself — confirmed by reading that design doc's own Scope section, which explicitly named this
+    exact risk and declared it out of scope. Worth noting here since, in the two weeks since this
+    roadmap's 2026-09-01 entry, all four of that day's stale-pin symptom issues have since been
+    fixed by hand (predictor + trait-extractor pins in [PR #57](https://github.com/talmolab/sleap-roots-pipeline/pull/57),
+    closing #54/#52/#55; images-downloader + write-back pins in
+    [PR #53](https://github.com/talmolab/sleap-roots-pipeline/pull/53), closing #51) — a live
+    demonstration of exactly the recurring pattern #58 tracks: the same class of bug, caught only
+    by hand, once per producer stage, never by an automated check.
+  - `salk-bloom` [PR #855](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/855)
+    (open as of this entry) archives the OpenSpec change for #830's fix.
 - **2026-09-01** — **#51 fixed and live in-cluster; all three §14 batch-oracle scenarios actually
   run for real, for the first time ever. Dedup + resume pass; poison-scan fails completely,
   surfacing two more stale-pin issues and one real cross-repo correctness gap. Also: corrected a
