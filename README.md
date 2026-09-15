@@ -41,10 +41,21 @@ kubectl config get-contexts
 
 ```bash
 kubectl --server=https://10.7.30.173:6443 \
+  --certificate-authority=/path/to/ca.crt \
   --token="<your-token>" \
-  --insecure-skip-tls-verify \
-  --namespace=runai-talmo-lab \
+  --namespace=runai-busch-lab \
   get pods
+```
+
+Prefer `--certificate-authority` over `--insecure-skip-tls-verify`: skipping verification removes
+the protection that makes sending a bearer token safe. Never commit the token or the CA file —
+both are covered by `.gitignore`.
+
+If you need the endpoint for a different cluster or context, read it from your own kubeconfig
+rather than copying it, since it travels with the credential:
+
+```bash
+kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
 ```
 
 ### ⚙️ Argo CLI Configuration

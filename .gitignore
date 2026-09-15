@@ -13,9 +13,21 @@ Thumbs.db
 .kube/
 .kubectl/
 
-# Ignore Kubernetes secrets and service account tokens
+# Kubernetes / cluster credentials — this repo is PUBLIC, keep these out.
+# Covers the real filenames this program produces:
+#   kubeconfig-bloom-pipeline-busch-lab.yaml, kubeconfig-runai-busch-lab-argo-user.yaml,
+#   bloom-staging-k8s-secrets.txt, credentials.pipeline-staging.txt
 secrets.yaml
 service-account.json
+*kubeconfig*
+*-secrets.txt
+*secrets*.txt
+credentials*
+*.pem
+*.crt
+*.key
+.env.*
+!.env.example
 
 # Docker related
 .dockerignore
