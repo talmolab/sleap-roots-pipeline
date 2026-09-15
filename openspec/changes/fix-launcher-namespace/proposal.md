@@ -1,0 +1,55 @@
+## Why
+
+`runai_run_pipeline.sh:23` hardcodes `NAMESPACE="runai-talmo-lab"`, but the Workflow it submits
+declares `metadata.namespace: runai-busch-lab` (`sleap-roots-pipeline.yaml:28`). This pipeline has
+targeted busch-lab only since 2026-08-13. So a hand-run launcher registers all four
+WorkflowTemplates into, and submits against, the wrong namespace — silently, because both
+namespaces are real and the operator's `argo-user` identity has rights in each.
+
+The launcher's namespace is not covered by any existing requirement. The spec's
+`Launcher registers all four templates` asserts only the contents of its `TEMPLATES` list, so
+nothing today prevents the launcher and the manifest disagreeing about where the pipeline runs.
+
+**Bloom's dispatch path is unaffected**, verified rather than assumed:
+
+- `salk-bloom` contains zero references to `runai_run_pipeline.sh` (grep across `*.py`, `*.yml`,
+  `*.yaml`, `*.md`). Bloom's `dispatch_worker.py` POSTs Workflow CRDs to the Kubernetes API
+  directly; it never invokes this script.
+- `services/workflows/k8s_client.py:48-49` resolves the namespace from `WORKFLOWS_K8S_NAMESPACE`
+  (defaulting to `runai-busch-lab`) and then *overwrites* `body["metadata"]["namespace"]` at line
+  227, because the Kubernetes API rejects a submission whose body namespace disagrees with the
+  URL's namespace segment. Even this repo's `metadata.namespace` does not reach Bloom.
+
+So this is an operator-path-only change.
+
+Separately, `models-downloader-template.yaml` is dead. The DAG is `images-downloader` →
+`predictor` → `trait-extractor` → `write-back`; the launcher does not register a
+models-downloader template, and the spec's four-template requirement excludes it. The file carries
+a stale `project: talmo-lab` label and has no consumer.
+
+## What Changes
+
+- Change `runai_run_pipeline.sh`'s namespace default from `runai-talmo-lab` to
+  `runai-busch-lab`, as an overridable `NAMESPACE="${NAMESPACE:-runai-busch-lab}"` so a one-off
+  submit into another project stays possible without editing the script.
+- Update that script's stale header comment block (lines 6-13), which instructs the reader to
+  export `~/.kube/kubeconfig-runai-talmo-lab.yaml` and run every `argo template update` against
+  `-n runai-talmo-lab`.
+- Delete `models-downloader-template.yaml`.
+
+**BREAKING**: none for automated dispatch (see Why). For a human running the launcher, the target
+namespace changes from `runai-talmo-lab` to `runai-busch-lab` — which is the correction, not a
+regression: submitting into talmo-lab was already wrong for this pipeline, and the `NAMESPACE`
+environment variable preserves the old behaviour for anyone who genuinely wants it.
+
+## Impact
+
+- **Modified capability:** `per-batch-pipeline` — the `Launcher registers all four templates`
+  requirement gains a namespace assertion and two scenarios (default, override).
+- **Affected code:** `runai_run_pipeline.sh`; `models-downloader-template.yaml` (deleted).
+- **Untouched:** `sleap-roots-pipeline.yaml` (already correct), all four
+  `sleap-roots-*-template.yaml` files, every `local-WSL2-*` variant, and
+  `bloom-pipeline-serviceaccount.yaml`.
+- **No external prerequisite.** All four WorkflowTemplates are already registered in
+  `runai-busch-lab`, and `argo lint sleap-roots-pipeline.yaml` passes clean against that namespace
+  (verified live 2026-09-15 under the `argo-user` kubeconfig).
