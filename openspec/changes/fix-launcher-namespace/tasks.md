@@ -1,8 +1,27 @@
 # Tasks
 
 Declarative repo — a task's "test" is `argo lint`, a script/manifest field inspection, or a real
-cluster submit. There is no dry-run path for `runai_run_pipeline.sh` (it registers templates and
-submits a real Workflow), so the launcher's default is verified by field assertion, not execution.
+cluster submit.
+
+`runai_run_pipeline.sh` has no dry-run flag of its own — running it registers/updates all four
+WorkflowTemplates and submits a real Workflow, and since `runai-busch-lab` is shared by Bloom
+staging and production, an `argo template update` there is not a side effect to trigger casually.
+(`argo submit` does support `--dry-run`/`--server-dry-run`; `argo template create` supports
+neither, which is what blocks a full dry run.)
+
+It can still be **observed safely** by putting a stub `argo` first on `PATH`, which makes every
+argo call a no-op and lets the script run end to end. That is how task 1.3/1.4 below were
+verified — by execution, not just by field assertion:
+
+```bash
+S=$(mktemp -d); printf '#!/bin/bash
+echo "[stub] argo $*"
+exit 0
+' > "$S/argo"; chmod +x "$S/argo"
+PATH="$S:$PATH" ARGO_TOKEN=stub ./runai_run_pipeline.sh          # expect: runai-busch-lab
+PATH="$S:$PATH" NAMESPACE=runai-talmo-lab ./runai_run_pipeline.sh  # expect: runai-talmo-lab
+rm -f workflow_logs_*.txt   # the script writes one per run
+```
 
 ## 1. Launcher namespace default
 
@@ -17,6 +36,13 @@ submits a real Workflow), so the launcher's default is verified by field asserti
   example only).
 - [x] 1.4 Validate the two agree: the value from 1.3 equals
   `grep -m1 '^  namespace:' sleap-roots-pipeline.yaml | awk '{print $2}'`.
+- [x] 1.5 Validate by **execution** with a stub `argo` (see header). Confirmed 2026-09-15: with
+  no `NAMESPACE` set the script prints `Using namespace: runai-busch-lab` and every argo call
+  carries `-n runai-busch-lab`; with `NAMESPACE=runai-talmo-lab` both switch to talmo-lab. Both
+  spec scenarios exercised for real.
+- [x] 1.6 Found while doing 1.5: `workflow_logs_*.txt` (written once per run, documented in the
+  README's folder structure) was not gitignored. Added, since these hold streamed `argo logs`
+  output.
 
 ## 2. Delete the dead models-downloader template
 

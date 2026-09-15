@@ -41,6 +41,9 @@ argo_cache/
 workflow_cache/
 *.argo.run
 workflow_templates/*.yaml
+# runai_run_pipeline.sh writes one of these per run (see README folder structure).
+# They hold streamed `argo logs` output, so keep them out of the repo.
+workflow_logs_*.txt
 
 # Ignore compiled code or bytecode
 *.o
