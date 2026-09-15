@@ -135,7 +135,10 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
 
 ## 6. Static verification (local, no cluster, no secrets)
 
-- [x] 6.1 Assert every manifest-inspectable scenario in one pass:
+- [x] 6.0 Commit those assertions as `scripts/check_manifests.py` so they are re-runnable by the
+  next person. This repo has no CI, so an un-runnable prose checklist is the same as no check.
+  **Validate:** `python scripts/check_manifests.py` exits 0 and reports every assertion.
+- [x] 6.1 Assert every manifest-inspectable scenario in one pass (now automated by 6.0):
   ```bash
   P=sleap-roots-pipeline.yaml; G=sleap-roots-exit-gate-template.yaml
   yq '.spec.templates[0].dag.tasks | length' $P                                     # 5
@@ -207,16 +210,30 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 - [ ] 7.5 **Crash-injection scenario — the load-bearing test**, since silently greening real crashes
   is this design's failure mode. Submit with `scan-ids=not-an-int`, which `parse_scan_ids_flag`
   surfaces as a `ClickException` → **exit 1**.
+  ⚠️ **Run this against a scratch input directory, not the default `a4_poc` paths.** Production
+  dispatches the vendored copy of this Workflow with the same `hostPath`s, so the default paths are
+  production's own working directory. A crash exit happens *before* `write_run_manifest`, leaving
+  the previous run's manifest in place — so downstream stages would be scoped by another run's scan
+  set and write-back would record per-scan outcomes under this workflow's name. Either point the
+  volumes at a scratch path for this run, or clear `run_manifest.json` first.
   **Do not use an empty or comma-only value**: `[p.strip() for p in value.split(",") if p.strip()]`
   yields `[]`, which hits "No scan_ids given; nothing to stage" and exits **0** — the test would
   pass while proving the opposite of what it claims.
   **Validate:** images-downloader's `Retry` node shows `outputs.exitCode: 1`; the gate's resolved
-  `inputs.parameters` contain `1` (**not** an empty string — this is the only direct evidence that
-  exit codes survive retry nodes on this cluster); the gate is `Failed`; the Workflow is `Failed`.
-- [ ] 7.6 **Negative control:** submit with `scan-ids=""`. Expect `Succeeded` — a zero-scan no-op is
-  green and the gate cannot detect it.
-  **Validate:** record this explicitly as a known, accepted limitation rather than discovering it
-  later.
+  `inputs.parameters` contain `1` (**not** an empty string — direct confirmation that exit codes
+  survive retry nodes here, alongside the `sleap-roots-pipeline-p8j6c` evidence); the gate is
+  `Failed`; the Workflow is `Failed`.
+  **Also assert the Bloom-side effects nobody has looked at**, since `continueOn` makes them newly
+  reachable: no unexpected `cyl_trait_sources` rows, and record exactly which
+  `cyl_pipeline_run_scans` rows moved and what `failed_count` became. A `Failed` Workflow does not
+  mean nothing was written — capture what was.
+- [ ] 7.6 **Characterise the zero-scan case — a measurement, not a confirmation.** Submit with
+  `scan-ids=""`. The outcome is input-directory-state-dependent and is deliberately *not* asserted
+  anywhere: on a fresh directory predict discovers nothing and exits `1` (gate rejects → `Failed`);
+  on the shared directory it scopes to the leftover `run_manifest.json`, skips everything and exits
+  `0` (gate accepts → `Succeeded`). Run it **both** ways — scratch dir and shared dir.
+  **Validate:** record the actual phase for each, then update the spec, README and design doc to
+  state what was measured. Until then no document may claim either outcome as fact.
 - [ ] 7.7 **Idempotent re-delivery:** re-submit 7.4's exact batch.
   **Validate:** Workflow `Succeeded`, 0 GPU pods scheduled, every `.result.json` mtime unchanged —
   confirming `continueOn` did not disturb skip-if-done. This is the standing A4 batch-oracle signal.
@@ -278,6 +295,6 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 - [ ] 10.1 `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml`
 - [x] 10.2 `bash -n runai_run_pipeline.sh`
 - [x] 10.3 `openspec validate add-partial-success-exit-gate --strict`
-- [x] 10.4 Re-run task 6.1's static assertions against the final tree.
+- [x] 10.4 `python scripts/check_manifests.py` against the final tree.
 - [ ] 10.5 Open the PR with `/pr-description`, referencing this change-id, `Closes #56`, and
   linking #58 (this adds a fifth un-drift-checked object), bloom#857, bloom#859 and predict#44.

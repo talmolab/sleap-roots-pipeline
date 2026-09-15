@@ -83,12 +83,20 @@ gate sees an unsubstituted placeholder in that case, and rejects it.
 
 ## Decision 4: `failed: true` only, never `error: true`
 
-`Failed` means the container ran and exited non-zero — covering exit `3` and RunAI eviction. `Error`
-means the stage never ran: image pull failure, wait-container death, pod deleted
-(`markNodeError("pod deleted")`). A stage that never expressed an opinion should stop the DAG rather
-than let it proceed on data that was never produced. The `Omitted` path is clean — Argo creates a
-real `NodeOmitted` node and propagates the upstream failure, so nothing hangs and the gate is simply
-never reached.
+`Failed` means the container ran and exited non-zero — exit `3`, or a graceful `SIGTERM`-to-`143`.
+`Error` means the stage never produced a verdict, chiefly a pod **deleted** out from under Argo
+(`markNodeError("pod deleted")`), which is how scheduler-driven preemption typically surfaces here
+per this repo's own recorded observation. (Both eviction routes exist at v3.6.7 — a kubelet
+eviction sets `pod.Status.Message` and yields `Failed` — so do not assume one; an earlier draft
+asserted `Failed` unconditionally and was wrong.) A stage that never expressed an opinion should
+stop the DAG rather than let it proceed on data that was never produced, so `error: true` stays
+off. Both routes end red; they differ only in whether write-back runs first. The `Omitted` path is
+clean — Argo creates a real `NodeOmitted` node and propagates the upstream failure.
+
+Neither covers a pod that is never **scheduled**: at v3.6.7 `assessNodeStatus` maps `PodPending`
+unconditionally to `NodePending` and there is no `ImagePullBackOff`/`FailedMount` handling, so such
+a pod hangs rather than failing. Since the gate is the only leaf, it is the new single point where
+that can strand a Workflow whose work is already done.
 
 ## Decision 5: write-back keeps its existing wiring
 
@@ -106,6 +114,15 @@ consult the manifest.
 A partial `predict`/`trait_extractor` does *not* have this property — those scans are in the
 manifest, so write-back reports them missing, marks them **retriable**, and exits `1`. Out of scope
 here and it does not affect the poison-scan target; tracked as bloom#859.
+
+**Narrower than it first looks.** `write_run_manifest` merges with whatever is already on disk
+(`merged = existing | this_run`) in a directory shared across runs *and environments*. So the
+safety condition is not "failed scans are excluded" but "this scan_key was never successfully
+staged into this shared directory by any prior run". True for scenario 3's never-uploadable poison
+scan; not true in general. Two consequences now recorded in the full design doc: a zero-staged
+batch can report `Succeeded`, and a crash path can run write-back scoped by another run's manifest.
+`ARGO_WORKFLOW_NAME` is added to predictor and trait-extractor here (inert) so a producer-side
+run-scope check becomes possible.
 
 The gate sits *after* write-back rather than before it. That means a crash-class run still performs
 its write-back before being declared `Failed`. Deliberate: write-back is idempotent, and on a

@@ -45,6 +45,14 @@ spec:
         args:
           - "/workspace/input"
           - "/workspace/output"
+        env:
+          # #56: inert today — trait_extractor does not read it yet. Carried for the same reason as
+          # the predictor template: the stage directories are fixed, shared hostPaths and
+          # run_manifest.json accumulates scan_keys across every run (and every environment) that
+          # writes into them, so a manifest this stage is scoped by may belong to a different run.
+          # Prerequisite for validating that; see sleap-roots-pipeline#56.
+          - name: ARGO_WORKFLOW_NAME
+            value: "{{workflow.name}}"
         volumeMounts:
           - name: predictions-output-dir
             mountPath: /workspace/input

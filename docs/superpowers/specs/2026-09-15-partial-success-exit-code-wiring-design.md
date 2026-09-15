@@ -72,16 +72,26 @@ trips a known upstream bug
 #13501 unmerged for over a year).
 
 **`failed: true` only — deliberately not `error: true`.** Argo distinguishes `Failed` (the
-container ran and exited non-zero) from `Error` (infrastructure — the pod never started, an image
-pull failed, the wait container died). A producer's exit `3` is always `Failed`, and so is
-RunAI eviction/preemption (`inferFailedReason` returns `Failed`, not `Error`, when
-`pod.Status.Message` is set). An `Error` means the stage never got to express an opinion, so the
-DAG should stop rather than continue on data that was never produced. Omitting `error: true` is
-the choice, not an oversight.
+container ran and exited non-zero) from `Error` (the stage never produced a verdict). A producer's
+exit `3` is always `Failed`, as is a graceful `SIGTERM`-to-`143`.
+
+**Eviction is not one answer, and an earlier draft of this document got it wrong.** Verified at
+v3.6.7, both routes exist: `case apiv1.PodFailed` → `inferFailedReason` → `NodeFailed` when
+`pod.Status.Message` is set (the kubelet-eviction shape), *but* a pod **deleted** out from under
+Argo goes to `markNodeError("pod deleted")` → `NodeError`. This repo's own recorded observation —
+`sleap-roots-images-downloader-template.yaml`'s note that RunAI eviction under CPU-pool contention
+"typically surfaces as an Error-phase node" — is empirical for this cluster and outranks the
+theoretical reading, so assume preemption usually yields `Error` here.
+
+That is fine, and is why `error: true` is still omitted: an `Error` means the stage never expressed
+an opinion, so the DAG should stop rather than continue on data that was never produced. Both
+routes end red — `Failed` flows through `continueOn` to the gate, which rejects `143`; `Error`
+stops the DAG, the gate is `Omitted` and inherits `Failed`. What differs is only whether write-back
+runs first. Omitting `error: true` is the choice, not an oversight.
 
 `dependencies:` is retained throughout — **not** converted to `depends:`. Conversion is
 all-or-nothing per DAG template and would forbid `continueOn` on every task in it
-(`workflow/validate/validate.go:1472/1476`), and buys nothing since `depends` swallows final
+(`workflow/validate/validate.go:1326/1327` at v3.6.7), and buys nothing since `depends` swallows final
 status the same way (#12530).
 
 ### The `exit-gate` task
@@ -182,10 +192,16 @@ gated on `batch_result.needs_retry`. It keeps its existing `retryStrategy` and g
 `continueOn`. If it fails, the gate is `Omitted`, inherits `Failed`, and the workflow fails —
 correct without extra wiring.
 
-This is safe for the scenario #56 targets, but for a non-obvious reason worth recording.
-`write_run_manifest` builds from
+This is safe for the scenario #56 targets, but for a narrower reason than an earlier draft claimed.
+`write_run_manifest` builds `this_run_scan_keys` from
 `{s.scan_key for s in result.scans if s.status in ("ok", "skipped")}`
-(`download_for_predict.py:472`) — it **excludes failed scans**. So after a partial
+(`download_for_predict.py:472`) — it **excludes failed scans** — but the next lines merge that with
+whatever is already on disk (`merged = existing_scan_keys | this_run_scan_keys`) in a directory
+shared across runs *and environments*. So the real safety condition is not "failed scans are
+excluded" but **"this scan_key was never successfully staged into this shared directory by any
+prior run"**. That holds for scenario 3's never-uploadable poison scan, which is why the target
+case is safe — but it does not generalise: a scan that staged fine last week and fails transiently
+today re-enters the manifest from the earlier run. So after a partial
 `images-downloader`, the failed scan never enters the manifest, write-back never looks for its
 result, `missing_scan_keys` stays empty, and write-back exits `0`. The scan is still marked
 `failed` at the run level, via `fail_cyl_pipeline_run_scans_without_result` keyed on
@@ -277,14 +293,56 @@ non-zero code that happens via `continueOn`, and the final phase is then decided
 | `2` | CLI usage error | yes, to limit | yes, via `continueOn` | **`Failed`** — gate rejects |
 | `143` | `SIGTERM` (preemption) | yes, to limit | yes, via `continueOn` | **`Failed`** — gate rejects |
 
-A pod-level `Error` (image pull failure, wait-container death) is **not** covered by
-`continueOn: {failed: true}`, so the DAG stops there and the gate is `Omitted`, inheriting
-`Failed`. Intended — see "`continueOn` on the three producers".
+A pod-level `Error` — a pod **deleted** out from under Argo (`markNodeError("pod deleted")`), which
+is how scheduler-driven preemption typically surfaces on this cluster — is **not** covered by
+`continueOn: {failed: true}`, so the DAG stops there and the gate is `Omitted`, inheriting `Failed`.
+Intended.
 
-**Empty stage-in needs no special guard.** If *every* scan fails to stage, bloomctl still exits
-`3`, `continueOn` proceeds, and predict hits an empty input directory and exits `1` — which the
-gate rejects, failing the workflow. A batch that staged nothing should fail, so this is the right
-outcome. The cost is some wasted downstream retries before the gate concludes.
+**Correction to an earlier draft:** it listed image-pull failure and wait-container death as `Error`
+cases. At v3.6.7 `assessNodeStatus` maps `PodPending` unconditionally to `NodePending`, and there is
+no `ImagePullBackOff`/`FailedMount` handling anywhere in `operator.go`. A pod that never gets
+*scheduled* therefore sits **`Pending` indefinitely** — never `Failed`, never `Error` — so neither
+`retryStrategy` nor `continueOn` applies and nothing times it out (this repo sets no
+`activeDeadlineSeconds`). Two consequences: `hostPath type: Directory` does **not** "fail loudly" as
+`sleap-roots-pipeline.yaml` claims — it hangs; and because the gate is the only leaf, it is now the
+single point at which that hang can strand a Workflow whose real work is already complete.
+
+**Empty stage-in — CORRECTED.** An earlier draft of this document claimed: *"If every scan fails to
+stage, bloomctl still exits 3, `continueOn` proceeds, and predict hits an empty input directory and
+exits 1 — which the gate rejects, failing the workflow."* **That reasoning only holds for a fresh
+input directory, and this pipeline never has one.**
+
+The three stage directories are fixed, shared `hostPath`s, deliberately so (cluster-side dedup
+depends on the sharing). Worse, they are shared *across environments*: production dispatches the
+vendored copy of this Workflow, which is byte-identical on the `hostPath` block, so prod, staging
+and every manual test read and write
+`/hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/{input,predictions,traits}`.
+
+And `run_manifest.json` is cumulative: `write_run_manifest` computes
+`merged = existing_scan_keys | this_run_scan_keys` and writes whenever the merge is non-empty. So:
+
+- **Every scan fails to stage** → `this_run_scan_keys` is empty, but the merge is not, so a
+  manifest is written containing *prior runs'* `scan_keys` stamped with *this* run's
+  `pipeline_run_id`. predict scopes to those, finds them already on disk, skips them all, and exits
+  **`0`** (`BatchResult.ok` is `all(s.status != "failed")`, and skipped is not failed). Traits `0`,
+  write-back `0`, gate sees `(3,0,0)` → **Workflow `Succeeded` for a batch that staged nothing.**
+- **A crash-class exit** (e.g. a malformed `--scan-ids` raising `ClickException`) happens *before*
+  `write_run_manifest` runs at all, so the previous run's manifest is consumed verbatim.
+
+Consequences to hold onto:
+
+1. **The outcome is input-directory-state-dependent**, not fixed. On a fresh directory predict
+   raises and the gate correctly fails the run; on the shared one it does not. Neither outcome
+   should be asserted as fact until measured — see the open question below.
+2. **`Workflow: Failed` no longer implies "nothing was written".** `continueOn` lets write-back run
+   on crash paths, where `reconcile_unresolved_scans` closes out every scan dispatched under this
+   `ARGO_WORKFLOW_NAME` as `failed`. Before this change the DAG stopped at the failing producer and
+   nothing reached Bloom. The Known-Gaps section documents the converse (a green Workflow does not
+   mean every scan succeeded); this is the more dangerous direction and is now documented too.
+3. **Run-scoping via `run_manifest.json` is not sufficient** to keep a stage acting on its own run,
+   because no consumer validates `pipeline_run_id` — and predict/traits were not even given their
+   workflow identity. This change adds `ARGO_WORKFLOW_NAME` to both (inert today) as the
+   prerequisite for that check; the check itself is producer-side work.
 
 The stages disagree on empty input, which is why the gate reads producers' codes rather than
 assuming uniformity: bloomctl exits `0` on zero requested scans, predict exits `1`, and traits

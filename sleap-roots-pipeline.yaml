@@ -101,10 +101,16 @@ spec:
             # succeeded. It goes on the task that FAILS (Argo appends `|| <dep>.Failed` to each
             # dependent's compiled depends) — never on a downstream task, which does nothing useful
             # and trips argoproj/argo-workflows#13498.
-            # `failed` only, deliberately not `error`: a Failed node means the container ran and
-            # exited non-zero (covers exit 3 and RunAI eviction), while an Error node means the
-            # stage never ran at all (image pull failure, wait-container death) — the DAG should
-            # stop there rather than continue on data that was never produced.
+            # `failed` only, deliberately not `error`. A Failed node means the container ran and
+            # exited non-zero — exit 3, or a graceful SIGTERM-to-143. An Error node means the stage
+            # never produced a verdict: `markNodeError("pod deleted")` when a pod is deleted out
+            # from under Argo, which is how scheduler-driven preemption typically surfaces here
+            # (see sleap-roots-images-downloader-template.yaml's own note). The DAG should stop on
+            # Error rather than continue on data that was never produced — and both routes still
+            # end red, since an Error stops the DAG, the gate is Omitted, and it inherits Failed.
+            # Note this does NOT cover a pod that never gets scheduled: at v3.6.7 `assessNodeStatus`
+            # maps PodPending unconditionally to NodePending, so an ImagePullBackOff or a failed
+            # hostPath mount sits Pending, where neither retryStrategy nor continueOn applies.
             continueOn:
               failed: true
           - name: predictor

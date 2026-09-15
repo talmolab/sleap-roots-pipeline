@@ -71,6 +71,14 @@ spec:
           - "/workspace/images_input"
           - "/workspace/output"
         env:
+          # #56: inert today — predict does not read it yet. Carried because the stage directories
+          # are fixed, shared hostPaths and run_manifest.json accumulates scan_keys across every
+          # run (and every environment) that writes into them. Now that continueOn can carry the
+          # DAG past an upstream failure, the manifest this stage is scoped by may belong to a
+          # different run, and predict has no way to detect that without knowing its own workflow
+          # identity. This is the prerequisite for that check; see sleap-roots-predict#44.
+          - name: ARGO_WORKFLOW_NAME
+            value: "{{workflow.name}}"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
