@@ -163,8 +163,20 @@ trailing `true` is `allowUnresolved` — so the literal string `{{tasks.<name>.e
 through to the container unchanged. `grep -i requeue` over that file returns nothing. (The claim
 came from a read of `main`, post-4.1.3, where the code has since changed.)
 
-That correction changes what protects us, and it is why two details of the gate are load-bearing
-rather than cosmetic:
+**Second correction, from actually running it.** The above is true of *runtime* substitution, but a
+non-ancestor reference never gets that far: Argo's `validateDAGTaskArgumentDependency` rejects it at
+**both `argo lint` and submission** with `missing dependency '<task>' for parameter '<name>'`.
+Verified on this cluster by deliberately breaking the ancestry — both the lint and the submit
+refused. So "restructure the DAG and it silently hangs" was wrong in the safe direction; that
+mistake cannot reach the cluster.
+
+The allowlist still earns its place, for a case the validator cannot see: a task that **is** a valid
+ancestor but produced no `outputs.exitCode`, reachable when a node is `Failed` without its main
+container terminating. There the empty or literal value does reach the container at runtime.
+
+Net: three layers, each catching something the others do not — the static ancestry assertion in
+`scripts/check_manifests.py` (no cluster needed), Argo's validator at lint and submit, and the
+allowlist at runtime. Two details of the gate remain load-bearing rather than cosmetic:
 
 - **The comparison is an allowlist, never a denylist.** There is no runtime error to rely on, so
   the only thing that makes a broken reference visible is the gate rejecting anything that is not

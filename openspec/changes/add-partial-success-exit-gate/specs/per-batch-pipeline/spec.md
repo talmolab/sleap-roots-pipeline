@@ -157,13 +157,20 @@ rather than expr, so integer-coercion helpers are unavailable and a mixed string
 is a parse error.
 
 The gate SHALL reject any value that is not exactly one of the accepted codes — including an empty
-value and an unsubstituted `{{tasks.<name>.exitCode}}` placeholder. This strictness is
-load-bearing: the gate references producer tasks that are not its direct dependencies, and such
-references resolve only via a task's ancestors. If a referenced producer ever ceases to be an
-ancestor, Argo neither fails nor hangs — it substitutes task arguments permitting unresolved
-references, so the literal placeholder string arrives at the gate unchanged. The allowlist is
-therefore the only mechanism that makes a broken reference visible. Accordingly, every producer the
-gate references SHALL remain an ancestor of the gate.
+value and an unsubstituted `{{tasks.<name>.exitCode}}` placeholder.
+
+Every producer the gate references SHALL remain an ancestor of the gate, since task-scope references
+resolve only through a task's ancestry. That constraint is enforced at three independent layers, each
+catching something the others do not: a static ancestry assertion over the manifests; Argo's own
+`validateDAGTaskArgumentDependency`, which rejects a non-ancestor reference at **both** lint and
+submission time (verified — it reports `missing dependency '<task>' for parameter '<name>'`, so a
+broken ancestry cannot reach the cluster silently); and the gate's allowlist.
+
+The allowlist remains necessary because it covers a case the validator cannot: a task that *is* a
+valid ancestor but produced no `outputs.exitCode` — reachable when a node is `Failed` without its
+main container having terminated. There the gate receives an empty or unsubstituted value at
+runtime, and rejecting anything outside the accepted set is what converts it into a visible
+failure.
 
 #### Scenario: Gate accepts success and partial success
 
