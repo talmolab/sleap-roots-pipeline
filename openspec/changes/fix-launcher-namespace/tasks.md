@@ -51,7 +51,7 @@ submits a real Workflow), so the launcher's default is verified by field asserti
 
 ## 4. Validate and close out
 
-- [ ] 4.1 `openspec validate fix-launcher-namespace --strict` → valid.
+- [x] 4.1 `openspec validate fix-launcher-namespace --strict` → valid.
 - [ ] 4.2 `/pr-description`; open the PR referencing this change-id. State in the body that the
   behaviour change affects hand-run launches only, citing `k8s_client.py:48-49` and `:227` as the
   evidence that Bloom's dispatch path resolves and overwrites the namespace itself.
