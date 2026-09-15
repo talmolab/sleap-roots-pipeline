@@ -549,6 +549,16 @@ Adversarial 4-lens review. Resolutions:
     attempt: an unrelated leftover scan's `result.json` mtime stays frozen, not rewritten.
 - **2026-09-15** — **bloom#772's driver-side fix merged; #56's Argo-side wiring is still the
   blocker, so scenario 3's poison-scan symptom is unchanged in practice today.**
+  - **⚠️ Correction (2026-09-15, later): #56's Argo-side wiring has since been written and opened as
+    [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60)**, so the "still the blocker"
+    framing below and the "none of the **4** registered `WorkflowTemplate`s" count (now five, with
+    the new `exit-gate`) are both superseded. Merging that PR does **not** change cluster behaviour
+    until `argo template update` runs, and the live batch-oracle re-runs have **not** been done — so
+    do not read this correction as "poison-scan scenario fixed" either. The full record, with what
+    was actually observed, is deferred to the entry written on the day those runs happen (PR #60's
+    tasks 9.1/9.2). Known limitations carried by that PR: a run reads `complete` with
+    `failed_count > 0` rather than `partial` (bloom#857); a partial predict/traits still fails the
+    Workflow at write-back (bloom#859); and `Workflow: Failed` no longer implies nothing was written.
   - `salk-bloom` [PR #830](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/830)
     merged to `staging` (merge commit `623414f7`): `bloomctl cyl batch-download-for-predict` now
     exits `0`/`3` (`ctx.exit(0 if result.ok else 3)`) instead of `0`/`1`, mirroring

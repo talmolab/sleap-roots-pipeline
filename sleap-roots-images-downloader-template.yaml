@@ -8,6 +8,15 @@
 # Bumped 2026-07-30: sha-61959bd (#532) -> sha-c21d11b (bloom #556, fixes #555 — build_sidecar()
 # now writes image_ids as str via sleap_roots_contracts.InputRef; scan_is_already_staged() now
 # rejects pre-fix int-typed sidecars so already-staged scans re-stage cleanly).
+# Bumped 2026-09-15 (#56): sha-3659705 (2026-08-24) -> sha-0614889. Carries BOTH driver-side halves
+# #56 needs: bloom#830 (`ctx.exit(0 if result.ok else 3)` — before this, batch-download-for-predict
+# had only ctx.exit(1), so there was no partial-success code for the Argo wiring to read) and
+# bloom#774 (per-scan status marking + done_count/failed_count, which is what records the
+# isolated-failed scan as `failed` at the run level). Digest
+# sha256:e39b4746e68b4405d1d91899e358aee5a2badf1a9b8f103cd6971d28881a7cc5.
+# NOTE the tag is 7 chars: bloomcli's CI tags `sha-$(git rev-parse --short HEAD)` and its runner
+# abbreviates shorter than a local checkout does — `sha-0614889` resolves, `sha-06148896` 404s.
+# Verify a bump against GHCR directly; do not derive the tag from a local `git rev-parse --short`.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -27,7 +36,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-3659705
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-0614889
         imagePullPolicy: Always
         args:
           - "cyl"

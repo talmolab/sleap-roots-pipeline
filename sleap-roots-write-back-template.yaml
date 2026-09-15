@@ -3,6 +3,16 @@
 # tag-mutability caveat) as sleap-roots-images-downloader-template.yaml.
 # Bumped 2026-07-30: sha-61959bd (#532) -> sha-c21d11b (bloom #556, fixes #555 — see
 # sleap-roots-images-downloader-template.yaml for details).
+# Bumped 2026-09-15 (#56): sha-3659705 -> sha-0614889, same build as images-downloader. Not just
+# for consistency — bloom#774 changed THIS stage's code (`cyl/ingest.py`, `cyl/_batch.py`), adding
+# the per-scan status marking (`fail_cyl_pipeline_run_scans_without_result`, keyed on
+# ARGO_WORKFLOW_NAME) that records an isolated-failed scan as `failed`. Without this bump the
+# poison scan would stay `queued` and the run's failed_count would never move.
+# Known gap, deferred: a manifest scan_key with no result is built as a *retriable* failure
+# (ScanResult's `retriable` defaults True), so `needs_retry` fires and this stage exits 1. That
+# does not affect a partial images-downloader — write_run_manifest excludes failed scans, so the
+# poison scan never enters the manifest — but a partial predict/traits will fail the Workflow here.
+# Tracked as bloom#859.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -19,7 +29,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-3659705
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-0614889
         imagePullPolicy: Always
         args:
           - "cyl"
