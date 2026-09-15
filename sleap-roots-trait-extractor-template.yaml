@@ -13,10 +13,21 @@ spec:
       # NonPreemptibleOverQuota stall; the `preemptible` annotation above is inert.
       priorityClassName: interactive-preemptible
       retryStrategy:
-        # ⚠️ sleap-roots#259 (reconcile at wiring time): the driver exits non-zero if ANY scan
-        # fails, so limit:2 retries the WHOLE batch, not a partial run; and an empty /in exits 0
-        # (silent-green node). Resolve via distinct exit codes / continueOn / per-scan fan-out +
-        # an empty-input guard. (Graceful preemption also needs a driver SIGTERM handler — no tini.)
+        # sleap-roots#259 is RESOLVED, on both sides, as of #56:
+        #  - driver half (sleap-roots#266, merged 2026-08-21): the driver now exits 0/3/1/143, and
+        #    the empty-input hole is closed. The previous note here — "an empty /in exits 0
+        #    (silent-green node)" — is no longer true: an empty input dir exits 1 with no manifest,
+        #    or 3 with one (every manifest-declared scan_key with no matching file is a per-scan
+        #    failure). #266 also added the SIGTERM handler this note used to say was missing.
+        #  - Argo half (#56, this change): exit 3 no longer retries-then-kills the whole DAG. The
+        #    `continueOn` on this task in sleap-roots-pipeline.yaml lets the DAG proceed, and the
+        #    terminal exit-gate re-derives the Workflow phase from the real exit codes.
+        # These limits are deliberately UNCHANGED and carry no retryStrategy.expression. Argo's
+        # whole-step retry is currently the only scan-level retry that exists anywhere in the
+        # producers (MAX_SCAN_ATTEMPTS is unimplemented in every repo), and skip-if-done here is
+        # idempotency-key-based, so a retry re-attempts only the scans that actually failed.
+        # Suppressing retries on exit 3 would permanently isolate a scan a second attempt would
+        # have completed. See docs/superpowers/specs/2026-09-15-partial-success-exit-code-wiring-design.md.
         limit: 2
         retryPolicy: Always
       container:

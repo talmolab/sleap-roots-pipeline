@@ -6,12 +6,16 @@ set -euo pipefail
 # way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig, which is
 # also how the real four-stage end-to-end run (2026-07-30) was submitted:
 #   export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
+#   argo template create sleap-roots-exit-gate-template.yaml         -n runai-busch-lab
 #   argo template update sleap-roots-images-downloader-template.yaml -n runai-busch-lab
 #   argo template update sleap-roots-predictor-template.yaml         -n runai-busch-lab
 #   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-busch-lab
 #   argo template update sleap-roots-write-back-template.yaml        -n runai-busch-lab
 #   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-busch-lab
 # Use that path if gpu-master:8888 is unreachable from your box.
+# `create`, not `update`, for the exit-gate (#56) the first time: `update` errors on a template
+# that does not exist yet. Register it BEFORE submitting any five-task DAG, or submission fails
+# on an unresolvable templateRef.
 #
 # NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch, distinguished only
 # by an environment label stamped on each submitted Workflow. An `argo template update` here
@@ -56,6 +60,9 @@ TEMPLATES=(
   "sleap-roots-predictor-template.yaml"
   "sleap-roots-trait-extractor-template.yaml"
   "sleap-roots-write-back-template.yaml"
+  # #56: the DAG's terminal exit-code gate. Must be registered before any five-task DAG is
+  # submitted, or submission fails on an unresolvable templateRef.
+  "sleap-roots-exit-gate-template.yaml"
 )
 
 # Log setup
