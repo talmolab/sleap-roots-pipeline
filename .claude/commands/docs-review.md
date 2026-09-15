@@ -57,7 +57,11 @@ git log --oneline -10
 git diff main...HEAD --stat
 
 # Find docs that mention a changed manifest, template name, or mount path
-grep -r "sleap-roots-predictor-template\|hostPath\|runai-talmo-lab" --include="*.md" .
+grep -r "sleap-roots-predictor-template\|hostPath\|runai-busch-lab" --include="*.md" .
+
+# Drift check: the namespace changed to runai-busch-lab on 2026-08-13, so any live
+# instruction still naming the old one is stale (historical log entries are fine).
+grep -rn "runai-talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" .
 ```
 
 ### Step 2: Update Affected Documentation
@@ -86,7 +90,7 @@ Ensure documentation covers:
 - [ ] Cluster access / RunAI login + `ARGO_TOKEN` setup
 - [ ] How to create WorkflowTemplates and submit the workflow
 - [ ] Local WSL2 testing path and its limitations (CPU-only)
-- [ ] Volume-path configuration and the `hostPath type: Directory` pre-existence requirement
+- [ ] Volume-path configuration and the `hostPath|runai-busch-lab type: Directory` pre-existence requirement
 - [ ] Troubleshooting (`argo get`/`argo logs`/`kubectl describe`)
 
 ### Step 5: Verify Consistency

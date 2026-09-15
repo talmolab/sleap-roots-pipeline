@@ -16,17 +16,17 @@ Diagnose and fix a failing run in `talmolab/sleap-roots-pipeline`.
 ### Step 1: Find the failing workflow and node
 
 ```bash
-argo list -n runai-talmo-lab
-argo get <workflow-name> -n runai-talmo-lab          # node tree + which step failed
-argo logs <workflow-name> -n runai-talmo-lab --tail 100   # or --follow to stream
+argo list -n runai-busch-lab
+argo get <workflow-name> -n runai-busch-lab          # node tree + which step failed
+argo logs <workflow-name> -n runai-busch-lab --tail 100   # or --follow to stream
 ```
 
 ### Step 2: Drop to pod/Kubernetes level if needed
 
 ```bash
-kubectl get pods -n runai-talmo-lab
-kubectl logs <pod-name> -n runai-talmo-lab
-kubectl describe pod <pod-name> -n runai-talmo-lab   # scheduling / volume / GPU events
+kubectl get pods -n runai-busch-lab
+kubectl logs <pod-name> -n runai-busch-lab
+kubectl describe pod <pod-name> -n runai-busch-lab   # scheduling / volume / GPU events
 ```
 
 ### Step 3: Reproduce / fix by failure class
