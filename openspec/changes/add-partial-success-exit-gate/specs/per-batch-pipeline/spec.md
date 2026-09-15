@@ -4,7 +4,7 @@
 - TO: `### Requirement: Per-batch DAG with a terminal exit-code gate`
 
 - FROM: `### Requirement: Launcher registers all four templates`
-- TO: `### Requirement: Launcher registers every stage template`
+- TO: `### Requirement: Launcher registers every workflow template`
 
 ## MODIFIED Requirements
 
@@ -13,23 +13,23 @@
 The pipeline Workflow SHALL define a five-task DAG: four processing stages — `images-downloader`
 (root) → `predictor` → `trait-extractor` → `write-back` — followed by a terminal `exit-gate` task
 depending on `write-back`. Each task SHALL depend on the one before it, and `exit-gate` SHALL be
-the DAG's only leaf, so the Workflow's final phase is determined by the gate rather than by any
-stage's own node phase. The Workflow SHALL declare a `scan-ids` argument parameter that
-`images-downloader` consumes, so the batch a run processes is a caller-supplied input rather than a
-hardcoded scan. The Workflow SHALL set `spec.serviceAccountName: bloom-workflow` so every step's
-pod can report its results back to Argo. Its `hostPath` volumes SHALL use `type: Directory`, not
-`type: DirectoryOrCreate`, so a down NFS mount fails the pod loudly instead of silently writing
-output to the node's local disk. The DAG SHALL use `dependencies:`, never `depends:`, since the
-latter is all-or-nothing per DAG template and would forbid `continueOn` on every task in it.
-Because this file is the only canonical, correctly-complete definition of this Workflow's shape —
-and is independently reconstructed programmatically elsewhere (`salk-bloom`'s dispatch worker) with
-no built-in mechanism to detect drift between the two — the file SHALL carry a header comment
-stating plainly that it is vendored (pinned to a commit SHA, CI-checked for drift) by `salk-bloom`
-for programmatic dispatch, so an editor of its `volumes`/`entrypoint`/`serviceAccountName`/DAG
-structure is warned at the point of editing rather than discovering the drift only when a real
-batch dispatch fails.
+the only task that no other task depends on, so the Workflow's final phase is determined by the
+gate rather than by any stage's own node phase. The Workflow SHALL declare a `scan-ids` argument
+parameter that `images-downloader` consumes, so the batch a run processes is a caller-supplied
+input rather than a hardcoded scan. The Workflow SHALL set `spec.serviceAccountName:
+bloom-workflow` so every step's pod can report its results back to Argo. Its `hostPath` volumes
+SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS mount fails the pod
+loudly instead of silently writing output to the node's local disk. The DAG SHALL use
+`dependencies:`, never `depends:`, since the latter is all-or-nothing per DAG template and would
+forbid `continueOn` on every task in it. Because this file is the only canonical,
+correctly-complete definition of this Workflow's shape — and is independently reconstructed
+programmatically elsewhere (`salk-bloom`'s dispatch worker) with no built-in mechanism to detect
+drift between the two — the file SHALL carry a header comment stating plainly that it is vendored
+(pinned to a commit SHA, CI-checked for drift) by `salk-bloom` for programmatic dispatch, so an
+editor of its `volumes`/`entrypoint`/`serviceAccountName`/DAG structure is warned at the point of
+editing rather than discovering the drift only when a real batch dispatch fails.
 
-#### Scenario: Workflow runs all four stages in order, then the gate
+#### Scenario: Workflow runs the four processing stages in order, then the gate
 
 - **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
 - **THEN** its DAG has exactly five tasks: `images-downloader`, `predictor`, `trait-extractor`,
@@ -38,7 +38,7 @@ batch dispatch fails.
 - **AND** `trait-extractor` lists `predictor` in its `dependencies`
 - **AND** `write-back` lists `trait-extractor` in its `dependencies`
 - **AND** `exit-gate` lists `write-back` in its `dependencies`
-- **AND** no task lists `exit-gate` in its `dependencies`, so the gate is the DAG's only leaf
+- **AND** `exit-gate` is the only task that no other task lists in its `dependencies`
 - **AND** the Workflow declares a `scan-ids` entry under `arguments.parameters`
 
 #### Scenario: DAG uses dependencies, not depends
@@ -51,7 +51,7 @@ batch dispatch fails.
 
 - **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
 - **THEN** `spec.serviceAccountName` is `bloom-workflow`
-- **AND** none of the five stage templates override `serviceAccountName` at the template level
+- **AND** none of the five workflow templates override `serviceAccountName` at the template level
 
 #### Scenario: hostPath volumes fail loudly on a down NFS mount
 
@@ -71,12 +71,12 @@ batch dispatch fails.
   `serviceAccountName`, or DAG structure requires updating the vendored copy and its pinned
   reference in `salk-bloom`
 
-### Requirement: Launcher registers every stage template
+### Requirement: Launcher registers every workflow template
 
 The cluster launcher (`runai_run_pipeline.sh`) SHALL register the `images-downloader`, `predictor`,
 `trait-extractor`, `write-back`, and `exit-gate` templates.
 
-#### Scenario: Launcher's TEMPLATES list contains every stage template
+#### Scenario: Launcher's TEMPLATES list contains every workflow template
 
 - **WHEN** `runai_run_pipeline.sh` is inspected
 - **THEN** its registered `TEMPLATES` list contains all five template files: the images-downloader,
@@ -94,11 +94,14 @@ running on the scans that succeeded.
 `continueOn` SHALL declare `failed` only, and SHALL NOT declare `error`. A `Failed` node means the
 container ran and exited non-zero, which covers both the partial-success exit code and RunAI
 eviction; an `Error` node means the stage never ran at all (image pull failure, wait-container
-death), and the DAG must stop rather than continue on data that was never produced.
+death, pod deleted), and the DAG must stop rather than continue on data that was never produced.
 
 `continueOn` SHALL be declared on the failing task itself, never on a downstream task, since Argo
 applies it to that task's dependents and placing it downstream both fails to have the intended
 effect and triggers a known upstream defect.
+
+`write-back` SHALL NOT declare `continueOn`, since `bloomctl cyl batch-ingest-result` has no
+partial-success exit code and there is nothing to let through.
 
 The producer templates' `retryStrategy` blocks SHALL retain `retryPolicy: Always` with their
 existing limits, and SHALL NOT declare a `retryStrategy.expression`. Argo's whole-step retry is
@@ -128,6 +131,13 @@ completed.
 - **AND** the scans that succeeded reach `write-back` and are ingested
 - **AND** the failed scan is recorded as `failed` at the run level
 
+#### Scenario: A stage that never ran stops the DAG
+
+- **WHEN** a producer's pod fails to start at all, producing an `Error` rather than a `Failed` node
+- **THEN** the DAG does not proceed past that stage
+- **AND** `exit-gate` is `Omitted` and inherits the failure
+- **AND** the Workflow's final phase is `Failed`
+
 ### Requirement: An exit-code gate determines the Workflow's final phase
 
 The DAG SHALL include a terminal `exit-gate` task, backed by
@@ -137,27 +147,42 @@ non-zero unless every one of them is either `0` (all scans succeeded) or the par
 an exhausted-retry crash would be indistinguishable from a partial success and would report the
 Workflow `Succeeded`.
 
-The gate SHALL receive the exit codes as template arguments and perform the comparison inside its
-container. It SHALL NOT use a `when:` expression for this, because `when:` is evaluated by
-govaluate rather than expr — so integer-coercion helpers are unavailable and a mixed
-string/number comparison is a parse error — and because an unresolvable task reference in `when:`
-causes the controller to requeue the task indefinitely rather than fail it.
+The gate SHALL receive the exit codes as **three separately-named** input parameters, one per
+producer, and SHALL NOT receive them as a single delimiter-joined value — splitting a joined value
+in a shell silently collapses an empty field, so a missing code would pass undetected.
 
-Because the gate references producer tasks that are not its direct dependencies, and such
-references resolve only via a task's ancestors, every referenced producer SHALL remain an ancestor
-of the gate. Restructuring the DAG such that a referenced producer is no longer an ancestor would
-cause the Workflow to hang on an unresolvable reference rather than fail.
+The gate SHALL perform the comparison inside its container against an explicit allowlist of the
+accepted values, and SHALL NOT use a `when:` expression, because `when:` is evaluated by govaluate
+rather than expr, so integer-coercion helpers are unavailable and a mixed string/number comparison
+is a parse error.
+
+The gate SHALL reject any value that is not exactly one of the accepted codes — including an empty
+value and an unsubstituted `{{tasks.<name>.exitCode}}` placeholder. This strictness is
+load-bearing: the gate references producer tasks that are not its direct dependencies, and such
+references resolve only via a task's ancestors. If a referenced producer ever ceases to be an
+ancestor, Argo neither fails nor hangs — it substitutes task arguments permitting unresolved
+references, so the literal placeholder string arrives at the gate unchanged. The allowlist is
+therefore the only mechanism that makes a broken reference visible. Accordingly, every producer the
+gate references SHALL remain an ancestor of the gate.
 
 #### Scenario: Gate accepts success and partial success
 
 - **WHEN** every producer exits either `0` or `3`
+- **AND** `write-back` exits `0`
 - **THEN** the `exit-gate` task exits `0`
 - **AND** the Workflow's final phase is `Succeeded`
 
 #### Scenario: Gate rejects a crash-class exit
 
 - **WHEN** any producer exits with a code other than `0` or `3` after exhausting its retries — for
-  example `1` (crash), `2` (usage error) or `143` (`SIGTERM`)
+  example `1` (crash), `2` (usage error) or `143` (`SIGTERM`, once retries are spent)
+- **THEN** the `exit-gate` task exits non-zero
+- **AND** the Workflow's final phase is `Failed`
+
+#### Scenario: Gate rejects an empty or unresolved exit code
+
+- **WHEN** the value the gate receives for any producer is empty, absent, a literal
+  `{{tasks.<name>.exitCode}}` placeholder, or anything else outside the accepted set
 - **THEN** the `exit-gate` task exits non-zero
 - **AND** the Workflow's final phase is `Failed`
 
@@ -167,14 +192,68 @@ cause the Workflow to hang on an unresolvable reference rather than fail.
 - **THEN** the value the gate receives for that producer is that final attempt's exit code, not an
   empty string
 
-#### Scenario: Gate receives codes as arguments, not via a when expression
+#### Scenario: Gate receives three named parameters, not a joined value or a when expression
 
 - **WHEN** the `exit-gate` DAG task is inspected
-- **THEN** it passes the producers' `exitCode` values via `arguments.parameters`
+- **THEN** it passes three separately-named `arguments.parameters`, one per producer, each carrying
+  that producer's `exitCode`
 - **AND** it declares no `when` field
 
-#### Scenario: A stage that never ran stops the DAG
+#### Scenario: Every producer the gate references is an ancestor of it
 
-- **WHEN** a producer's pod fails to start at all, producing an `Error` rather than a `Failed` node
-- **THEN** the DAG does not proceed past that stage
-- **AND** the Workflow's final phase is not `Succeeded`
+- **WHEN** the Workflow's DAG is inspected
+- **THEN** every task named in a `{{tasks.<name>.exitCode}}` reference in the `exit-gate` task's
+  `arguments.parameters` is reachable from `exit-gate` by transitively following `dependencies`
+
+#### Scenario: A failing write-back fails the Workflow through the gate
+
+- **WHEN** `write-back` fails after exhausting its retries
+- **THEN** `exit-gate` is `Omitted` and inherits the failure
+- **AND** the Workflow's final phase is `Failed`
+
+#### Scenario: A zero-scan batch passes the gate
+
+- **WHEN** a batch is submitted with no scan ids, so `images-downloader` exits `0` having staged
+  nothing
+- **THEN** the gate accepts and the Workflow's final phase is `Succeeded`
+- **AND** this is an accepted limitation: the gate reports whether the pipeline machinery ran
+  correctly, not whether any scan was processed
+
+### Requirement: The exit-gate template runs without data or credential access
+
+`sleap-roots-exit-gate-template.yaml` SHALL pin its container image by immutable tag or digest
+(never `:latest`), and SHALL override `command`, because the reused image's `ENTRYPOINT` is the
+`bloomctl` CLI with no `CMD` — an args-only template would run `bloomctl <script>` and fail every
+Workflow, including successful ones.
+
+The template SHALL declare no `volumeMounts`, so Argo attaches neither the `hostPath` data volumes
+nor the credentials Secret to its pod, and SHALL NOT set `HOME`: the gate reads no data and makes
+no Bloom API call.
+
+The template SHALL declare an explicit `priorityClassName`, since an Argo pod with none lands at
+very-high priority on this cluster — above the predictor's own class. It SHALL declare a
+`retryStrategy` with `retryPolicy: Always`, since it is the DAG's only leaf and a transient
+gate-pod failure would otherwise report a fully-successful batch as `Failed`. It SHALL declare
+`resources` requests, so the pod is not BestEffort QoS. It SHALL carry the same `project` label the
+other stage templates carry.
+
+#### Scenario: Gate template overrides the image entrypoint and pins its image
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** its container declares a `command`
+- **AND** its image is pinned by an immutable `sha-<sha>` tag or digest, not `:latest`
+
+#### Scenario: Gate template reaches no data and no credentials
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** its container declares no `volumeMounts`
+- **AND** it sets no `HOME` environment variable
+- **AND** it declares no `serviceAccountName` at the template level
+
+#### Scenario: Gate template declares its scheduling and resilience fields
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** it declares an explicit `priorityClassName`
+- **AND** it declares a `retryStrategy` whose `retryPolicy` is `Always`
+- **AND** it declares `resources.requests`
+- **AND** it carries a `project` label matching the other stage templates

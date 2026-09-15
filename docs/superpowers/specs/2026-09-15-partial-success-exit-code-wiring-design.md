@@ -99,9 +99,33 @@ and the referenced template declares the matching `inputs.parameters`:
     template: exit-gate
   arguments:
     parameters:
-      - name: codes
-        value: "{{tasks.images-downloader.exitCode}},{{tasks.predictor.exitCode}},{{tasks.trait-extractor.exitCode}}"
+      - name: images-downloader-code
+        value: "{{tasks.images-downloader.exitCode}}"
+      - name: predictor-code
+        value: "{{tasks.predictor.exitCode}}"
+      - name: trait-extractor-code
+        value: "{{tasks.trait-extractor.exitCode}}"
 ```
+
+The gate template itself carries four things `argo lint` will not check, each of which is a real
+hazard if omitted:
+
+- **`command: ["/bin/sh","-c"]`** — mandatory. The reused `bloomctl` image sets
+  `ENTRYPOINT ["bloomctl"]` and no `CMD`, so the args-only convention the other four templates
+  follow would run `bloomctl <script>` and exit 2, failing **every** workflow including successful
+  ones. This is the one place the "containers are not modified" decision is deliberately inverted —
+  the gate is ours, not a producer.
+- **an explicit `priorityClassName`** — an Argo pod with none lands at very-high (150) on this
+  cluster, *above* the GPU predictor's `high` (125), which would make a trivial `sh` pod the
+  highest-priority thing in the pipeline.
+- **a `retryStrategy` with `retryPolicy: Always`** — the gate is the only leaf, so a single
+  image-pull blip or preemption would otherwise report a fully-successful batch as `Failed`.
+- **`resources.requests`** — otherwise the pod is BestEffort QoS and is first evicted under node
+  pressure, at the one point in the DAG where all the real work is already done.
+
+It deliberately declares **no** `volumeMounts` and no `HOME`: Argo only attaches volumes a mount
+names, so neither the NFS `hostPath` volumes nor the credentials Secret reach this pod. The gate
+reads no data and makes no Bloom call.
 
 Because the gate is the sole target task — leaves are the default targets and no `dag.targets` is
 set — `assessDAGPhase` computes the DAG phase from it alone; intermediate `Failed` nodes are not
@@ -114,19 +138,42 @@ cluster — a real failed run (`sleap-roots-pipeline-p8j6c`) shows `write-back` 
 with `phase: Failed` and `outputs.exitCode: 1` after three attempts.
 
 **Constraint: the gate references tasks it does not directly depend on, which works only because
-this DAG is linear.** Task-scope resolution draws on a task's *ancestors*, and in a linear chain
-(`images-downloader` → `predictor` → `trait-extractor` → `write-back` → `exit-gate`) all three
-producers are ancestors of the gate. If the DAG is ever parallelized so a producer is no longer an
-ancestor, the reference does not merely break — an unresolvable `{{tasks...}}` reference causes
-the controller to **requeue the task indefinitely**, hanging the workflow rather than failing it.
-Anyone restructuring this DAG must either keep every referenced producer an ancestor of the gate
-or add the gate to their dependency list.
+this DAG is linear.** Task-scope resolution draws on a task's *ancestors*
+(`workflow/common/ancestry.go::GetTaskAncestry` recurses through dependencies), and in a linear
+chain (`images-downloader` → `predictor` → `trait-extractor` → `write-back` → `exit-gate`) all
+three producers are ancestors of the gate.
 
-The codes are passed as an **argument**, and the comparison is done in the gate container, rather
-than via `when:`. `when:` is evaluated by **govaluate**, not expr, so `asInt`/`in`/`matches` are
-unavailable there and mixed string/number comparison is a parse error; and the same
-unresolvable-reference requeue applies to `when:` too
-(`dag.go::resolveDependencyReferences`). Keeping the logic in the container avoids both.
+**What happens if that is ever broken is the opposite of what an earlier draft of this document
+claimed.** It said an unresolvable `{{tasks...}}` reference "requeues the task indefinitely",
+hanging the workflow. That is **false at v3.6.7** — the version this cluster actually runs, read
+off the `argoexec` wait-container image tag on live Argo pods. In `workflow/controller/dag.go` at
+that tag, task arguments are substituted with
+`template.Replace(string(taskBytes), woc.globalParams.Merge(scope.getParameters()), true)` — the
+trailing `true` is `allowUnresolved` — so the literal string `{{tasks.<name>.exitCode}}` passes
+through to the container unchanged. `grep -i requeue` over that file returns nothing. (The claim
+came from a read of `main`, post-4.1.3, where the code has since changed.)
+
+That correction changes what protects us, and it is why two details of the gate are load-bearing
+rather than cosmetic:
+
+- **The comparison is an allowlist, never a denylist.** There is no runtime error to rely on, so
+  the only thing that makes a broken reference visible is the gate rejecting anything that is not
+  exactly `0` or `3`. A denylist of `{1, 2, 143}` would silently pass a literal placeholder, an
+  empty string, and any future exit code.
+- **The codes arrive as three separately-named parameters, not one joined string.** Shell
+  word-splitting collapses an empty field, so a joined `"0,,0"` would iterate twice over `0` and
+  pass — defeating the very case the test vectors exist to catch.
+
+The comparison lives in the gate container rather than in `when:` because `when:` is evaluated by
+**govaluate**, not expr, so `asInt`/`in`/`matches` are unavailable and a mixed string/number
+comparison is a parse error; hyphenated task names are additionally hostile to it. (An unresolved
+reference in `when:` does fail rather than hang — `shouldExecute` errors and the node is marked
+`Error` — but the govaluate limitations stand on their own.)
+
+A related reachable state: a node can be `Failed` with **no** `outputs.exitCode` at all.
+`inferFailedReason` returns `Failed` as soon as `pod.Status.Message` is set — the kubelet-eviction
+path — while `exitCode` is only recorded when the main container actually terminated. The gate
+receives an unsubstituted placeholder in that case, and the allowlist rejects it.
 
 ### Write-back is untouched — and why that is safe *here*
 
@@ -311,7 +358,15 @@ Real defects found while designing this, each deliberately out of scope:
   shift. This design depends only on the well-tested `continueOn`-on-the-failing-task shape
   (`TestContinueOnFailDag`), not on the buggy downstream-task variant.
 
-## Open questions
+## Resolved: which image the gate runs
 
-- Which image does the `exit-gate` run? Reusing an already-pinned image avoids adding a supply
-  chain dependency; a small public base is simpler but new. To settle at implementation time.
+The already-pinned `bloomctl` image, reused purely for its shell (`python:3.11-slim` base, so
+`/bin/sh` exists), not to run `bloomctl`. Reusing an image this repo already pins avoids adding a
+fifth un-drift-checked object on top of #58. The costs, both recorded in the template: `command`
+must be overridden (above), and this pin now has to move in lockstep with the two other bloomctl
+templates — a 2-file bump becomes a 3-file bump, in a repo whose recurring failure mode
+(#51/#52/#54/#55) is precisely stale pins. The gate uses `imagePullPolicy: IfNotPresent` rather
+than the `Always` the other bloomctl templates use: those pull every run to catch a silently
+overwritten `sha-` tag, which matters for code that actually executes, whereas the gate uses only
+`/bin/sh` and is the terminal single point of failure — a registry round-trip there is pure added
+failure surface.
