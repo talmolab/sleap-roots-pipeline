@@ -1,6 +1,8 @@
 # Tasks
 
-Ships as **one PR**.
+Ships as **one PR**. `argo` is in the **Ubuntu WSL distro** at `/usr/local/bin/argo` (v3.6.5 CLI
+against a v3.6.7 cluster), not on the Windows PATH — run it as
+`wsl -e bash /mnt/c/<repo>/scripts/lint_manifests.sh`.
 
 > **Status:** everything local is done and verified (19/36). What remains is the live-cluster
 > work (§7), the cross-repo lockstep (§8), the roadmap record (§9), and the two `argo lint`
@@ -89,14 +91,20 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   allowlist is what makes it visible. Also correct `serviceAccountName`'s comment: "four stage
   templates" → five.
   **Validate:** `grep -c 'four' sleap-roots-pipeline.yaml` → `0`.
-- [ ] 3.4 Lint the DAG together with every template it references — this is the **only** form that
-  mechanically proves 3.2 did not land without 2.1, and it matches the `--offline` precedent from
-  PRs #53/#57:
+- [x] 3.4 Lint the DAG together with every template it references — the **only** check that
+  cross-resolves `templateRef`, i.e. the only one that proves 3.2 did not land without 2.1:
   ```bash
-  argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml
+  bash scripts/lint_manifests.sh        # from WSL; see the header for why the wrapper exists
   ```
-  Plain `argo lint sleap-roots-pipeline.yaml` resolves `templateRef` against *registered* cluster
-  objects and will fail here until section 7 runs — do not use it.
+  ⚠️ **The bare command does not work on this repo's manifests**, and it is not the manifests' fault:
+  `argo lint --offline` resolves a `templateRef` by *(namespace, name)*. `sleap-roots-pipeline.yaml`
+  declares `namespace: runai-busch-lab`; the templates deliberately declare none (they are registered
+  with an explicit `-n`). So the lookup searches `runai-busch-lab` while the supplied templates sit in
+  `""` and never matches — it fails identically on a perfectly valid tree. `scripts/lint_manifests.sh`
+  lints a temp copy with the Workflow's namespace stripped so both sides agree.
+  **Validate:** exits 0 with "no linting errors found!" — done, 6 manifests.
+  **Negative control also run:** renaming the gate's `templateRef` to a nonexistent template makes it
+  exit 1 with `couldn't find workflow template`, proving the check can actually fail.
 
 ## 4. Launcher
 
@@ -292,7 +300,7 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
 ## 10. Final sweep
 
-- [ ] 10.1 `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml`
+- [x] 10.1 `bash scripts/lint_manifests.sh` (from WSL) — 6 manifests, no linting errors.
 - [x] 10.2 `bash -n runai_run_pipeline.sh`
 - [x] 10.3 `openspec validate add-partial-success-exit-gate --strict`
 - [x] 10.4 `python scripts/check_manifests.py` against the final tree.
