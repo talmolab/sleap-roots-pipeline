@@ -204,7 +204,17 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   is a hard prerequisite for anything that dispatches the five-task DAG.
   **Validate:** `argo template get` each; compare against the local file ignoring server-injected
   metadata (`resourceVersion`, `uid`, `creationTimestamp`, `generation`, `managedFields`).
-- [ ] 7.3 **Gate truth-table probe** — proves the gate's semantics directly, without producers, GPU
+- [x] 7.3 **Gate truth-table probe** — RUN 2026-09-15 in `runai-talmo-lab` (these credentials
+  cannot write to `runai-busch-lab` at all, so production was unreachable by construction). Scratch
+  template name, no producers, no GPU, no volumes, no credentials; all objects deleted afterwards.
+  **Result — 7/7 vectors matched:** `(0,0,0)`, `(0,3,0)`, `(3,3,3)` → `Succeeded`; `(0,1,0)`,
+  `(0,2,0)`, `(0,143,0)`, `(0,"",0)` → `Failed`. The partial-success row is the one #56 exists for,
+  and it now holds on the real controller. Gate stderr confirmed the operator warning prints.
+  **Non-ancestor case, tested separately and the result corrected the design:** a DAG whose gate
+  references a non-ancestor task is *rejected by Argo* at both `argo lint` and submission
+  (`missing dependency '<task>' for parameter '<name>'`) — it does **not** silently pass a literal
+  through, as an earlier draft claimed. Docs updated accordingly.
+  Original instructions follow. **Gate truth-table probe** — proves the gate's semantics directly, without producers, GPU
   or NFS, in ~2 minutes. Submit a throwaway Workflow that calls only the gate template, once per
   vector: `(0,0,0)`, `(0,3,0)`, `(3,3,3)`, `(0,1,0)`, `(0,2,0)`, `(0,143,0)`, `(0,,0)`, `(0,-1,0)`.
   **Validate:** `Succeeded` for the first three, `Failed` for the rest. This is the cheapest proof

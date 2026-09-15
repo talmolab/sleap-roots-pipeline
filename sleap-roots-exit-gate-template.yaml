@@ -15,15 +15,19 @@
 # WHY THE STRICT `0|3` ALLOWLIST IS LOAD-BEARING. This task references producers it does not
 # directly depend on. That resolves only because the DAG is linear and all three are its
 # *ancestors* (`workflow/common/ancestry.go::GetTaskAncestry` recurses through dependencies).
-# If the DAG is ever restructured so a referenced producer is no longer an ancestor, Argo does NOT
-# fail and does NOT hang: verified against v3.6.7 (the version this cluster runs — read off the
-# `argoexec` image tag on live Argo pods), `workflow/controller/dag.go` substitutes task arguments
-# with `template.Replace(..., allowUnresolved=true)`, so the literal string
-# `{{tasks.<name>.exitCode}}` would arrive here unchanged. `grep -i requeue` in that file returns
-# nothing at v3.6.7. The `case` allowlist below is therefore the ONLY thing that turns a broken
-# reference into a visible failure — it rejects a stray placeholder exactly as it rejects `1`.
-# Do not relax it to a denylist (e.g. "fail if in {1,2,143}"): that would pass a placeholder,
-# an empty string, and any future exit code silently.
+#
+# Restructuring the DAG so a referenced producer is no longer an ancestor is caught early and
+# loudly — verified on this cluster (argo v3.6.5 CLI, v3.6.7 controller): Argo's
+# `validateDAGTaskArgumentDependency` rejects it at BOTH `argo lint` and submission with
+# `missing dependency '<task>' for parameter '<name>'`. So that mistake cannot reach the cluster.
+#
+# The allowlist below covers what the validator cannot: a task that IS a valid ancestor but
+# produced no `outputs.exitCode` — reachable when a node is `Failed` without its main container
+# terminating (`inferFailedReason` returns Failed as soon as pod.Status.Message is set). At runtime
+# `dag.go` substitutes task arguments with `template.Replace(..., allowUnresolved=true)`, so an
+# empty or literal `{{tasks.<name>.exitCode}}` reaches this container instead of raising.
+# Do NOT relax this to a denylist (e.g. "fail if in {1,2,143}"): that would pass a placeholder, an
+# empty string, and any future exit code silently. Both rejections are verified live.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
