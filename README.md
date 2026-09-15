@@ -16,45 +16,97 @@ It is designed for reproducible, containerized execution using Kubernetes.
 
 ## 🧰 Requirements
 
-- Kubernetes cluster with GPU support (e.g., Run:AI GPU cluster)
-- [`argo` CLI](https://argo-workflows.readthedocs.io/en/stable/cli/) installed
-- A valid Argo Bearer token exported to your shell (`ARGO_TOKEN`)
-- Storage volumes mounted or available via `hostPath`
-- (Optional for local testing) Docker Desktop with WSL2 integration
+Three separate CLIs with three different auth mechanisms. You don't need all three for every
+task — see the table.
+
+| Tool | Docs | Auth | Use it for |
+|---|---|---|---|
+| `argo` | [Argo CLI reference](https://argo-workflows.readthedocs.io/en/latest/cli/argo/) | `ARGO_TOKEN` + `ARGO_SERVER`, **or** `KUBECONFIG` (Kubernetes mode) | the production path: template registration, `argo submit`, `argo lint`, `argo logs` |
+| `runai` | [Run:AI docs](https://run-ai-docs.nvidia.com/) | interactive SSO — `runai login remote-browser` | interactive/ad-hoc work: `runai workspace submit` / `logs` / `exec` |
+| `kubectl` | [kubectl install](https://kubernetes.io/docs/tasks/tools/) | `KUBECONFIG` | pod inspection, `kubectl auth can-i`, diagnosing failures |
+
+Also required:
+
+- **Salk VPN** (or on-campus network). The cluster API and Argo Server are unreachable from
+  outside.
+- **A POSIX shell, not PowerShell.** Every cluster command here assumes an explicit `KUBECONFIG`
+  export. On this project's workstation `argo` is installed in WSL only, so `argo` commands run
+  through WSL; `kubectl` is available both in WSL and from Docker Desktop on the Windows PATH. See
+  [the runai skill](.claude/skills/runai/SKILL.md) for exact locations. In Git Bash, prefix
+  cluster-path commands with `MSYS_NO_PATHCONV=1` so `/hpi/...` isn't rewritten into a Windows
+  path.
+- A GPU-capable Kubernetes cluster and storage available via `hostPath`.
+- (Optional, local testing only) Docker Desktop with WSL2 integration — CPU-only, see
+  [Local Testing](#-local-testing-docker-desktop--wsl2).
+
+**Which identity does each tool use?** `runai` uses your own SSO login; `argo` and `kubectl` use
+the shared project `argo-user` kubeconfig. Bloom's backend submits as a third identity you don't
+hold. See [Cluster identities](docs/cluster-identities.md) before wiring anything new — picking the
+wrong one produces failures that don't look like permission errors.
 
 ---
 
 ## 🛠️ Setup and Cluster Access
 
-### ✅ Run:AI login and kubernetes context
+> This section covers the **operator** path (`argo-user`). If you're wiring Bloom-side dispatch
+> instead, you likely need no new credential at all — see
+> [Cluster identities → Getting access](docs/cluster-identities.md#getting-access-new-bloom-side-developer).
+
+### ✅ Run:AI login (interactive path)
+
 ```bash
-runai login remote-browser 
+runai login remote-browser
 runai whoami
 ```
 
+### ⚙️ Argo CLI — Kubernetes mode (what the launcher uses)
+
+Point `KUBECONFIG` at the `argo-user` kubeconfig. No `ARGO_TOKEN` is needed in this mode, and
+`templateRef`s resolve against the registered templates:
+
 ```bash
-kubectl config use-context system:node:gpu-master@kubernetes
+export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
 kubectl config get-contexts
+argo list -n runai-busch-lab
+argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 ```
+
+> `argo lint --offline` reports a `couldn't find workflow template ...` error on
+> `sleap-roots-pipeline.yaml` and exits non-zero. That's an offline-lint artifact — the DAG
+> references its stages by `templateRef`, which needs a cluster to resolve. Lint without
+> `--offline` for the real answer.
 
 ### 🔑 Token check
 
 ```bash
 kubectl --server=https://10.7.30.173:6443 \
+  --certificate-authority=/path/to/ca.crt \
   --token="<your-token>" \
-  --insecure-skip-tls-verify \
-  --namespace=runai-talmo-lab \
+  --namespace=runai-busch-lab \
   get pods
 ```
 
-### ⚙️ Argo CLI Configuration
+Prefer `--certificate-authority` over `--insecure-skip-tls-verify`: skipping verification removes
+the protection that makes sending a bearer token safe. Never commit the token or the CA file —
+both are covered by `.gitignore`.
+
+If you need the endpoint for a different cluster or context, read it from your own kubeconfig
+rather than copying it, since it travels with the credential:
+
+```bash
+kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+```
+
+### ⚙️ Argo CLI — Argo Server mode
+
+Use this only if `gpu-master:8888` is reachable from your machine. Never commit a token value:
 
 ```bash
 # Argo Server running in HTTP mode
 export ARGO_SERVER=gpu-master:8888
 export ARGO_HTTP1=true
 export ARGO_SECURE=false
-export ARGO_NAMESPACE=runai-talmo-lab
+export ARGO_NAMESPACE=runai-busch-lab
 export ARGO_TOKEN="Bearer <your-token>"
 
 echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
@@ -71,7 +123,7 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 ├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
 ├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
 ├── sleap-roots-write-back-template.yaml         # WorkflowTemplate: writes traits back via bloomctl
-├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-talmo-lab)
+├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-busch-lab)
 ├── local_run_pipeline_first_time.sh             # Local WSL2/Docker Desktop test runner
 ├── local-WSL2-*.yaml                            # Local-only templates and workflow configs
 └── workflow_logs_<timestamp>.txt                # Log output saved per run
@@ -79,9 +131,17 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 
 ---
 
-## 🚀 Running on the GPU Cluster (`runai-talmo-lab`)
+## 🚀 Running on the GPU Cluster (`runai-busch-lab`)
 
 You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed at `gpu-master:8888`.
+
+> `runai-talmo-lab` remains live on the cluster but is no longer this pipeline's target (changed
+> 2026-08-13). `runai_run_pipeline.sh` defaults to `runai-busch-lab`; override with
+> `NAMESPACE=runai-talmo-lab ./runai_run_pipeline.sh` only if you genuinely need it.
+>
+> ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
+> `argo template create`/`update` here affects both environments' future runs — see
+> [Cluster identities](docs/cluster-identities.md).
 
 ### ▶️ One-Time Setup
 
@@ -163,16 +223,16 @@ kubectl describe node docker-desktop | grep -A 5 "Capacity"
 ## 📋 Creating WorkflowTemplates (One-Time per Namespace)
 
 ```bash
-argo template create sleap-roots-images-downloader-template.yaml -n runai-talmo-lab
-argo template create sleap-roots-predictor-template.yaml -n runai-talmo-lab
-argo template create sleap-roots-trait-extractor-template.yaml -n runai-talmo-lab
-argo template create sleap-roots-write-back-template.yaml -n runai-talmo-lab
+argo template create sleap-roots-images-downloader-template.yaml -n runai-busch-lab
+argo template create sleap-roots-predictor-template.yaml -n runai-busch-lab
+argo template create sleap-roots-trait-extractor-template.yaml -n runai-busch-lab
+argo template create sleap-roots-write-back-template.yaml -n runai-busch-lab
 ```
 
 Check with:
 
 ```bash
-argo template list -n runai-talmo-lab
+argo template list -n runai-busch-lab
 ```
 
 ---
@@ -189,17 +249,17 @@ argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 ## 🐛 Troubleshooting
 
 ```bash
-argo list -n runai-talmo-lab
-argo get <workflow-name> -n runai-talmo-lab
-argo logs <workflow-name> -n runai-talmo-lab --tail 100
+argo list -n runai-busch-lab
+argo get <workflow-name> -n runai-busch-lab
+argo logs <workflow-name> -n runai-busch-lab --tail 100
 ```
 
 Check pod logs:
 
 ```bash
-kubectl get pods -n runai-talmo-lab
-kubectl logs <pod-name> -n runai-talmo-lab
-kubectl describe pod <pod-name> -n runai-talmo-lab
+kubectl get pods -n runai-busch-lab
+kubectl logs <pod-name> -n runai-busch-lab
+kubectl describe pod <pod-name> -n runai-busch-lab
 ```
 
 ---
@@ -247,7 +307,7 @@ annotations:
 
 ```yaml
 labels:
-  project: talmo-lab
+  project: busch-lab
 ```
 
 - **`project`**: Used by Run:AI for usage tracking and quota enforcement. Should match a defined project name on the cluster.
@@ -287,7 +347,7 @@ Argo’s `DAG` execution has these key properties:
 - **Retries** are configured per step using `retryStrategy`. This is necessary for handling failures like preemptions or transient errors.
 - If a task fails and `retryStrategy` is exhausted:
   - The **entire workflow fails**.
-  - When resubmitting the workflow, **Argo does not resume from the failed step by default** — it starts fresh unless you manually skip steps or use [artifacts/results to track progress](https://argo-workflows.readthedocs.io/en/latest/retry-failed-steps/).
+  - When resubmitting the workflow, **Argo does not resume from the failed step by default** — it starts fresh unless you manually skip steps or use artifacts/results to track progress (see [retries](https://argo-workflows.readthedocs.io/en/latest/retries/) and [retrying failed or errored steps](https://argo-workflows.readthedocs.io/en/latest/walk-through/retrying-failed-or-errored-steps/)).
 
 > For full resumability between steps, consider writing success markers to disk or using `workflow.taskResults` to detect completed stages.
 

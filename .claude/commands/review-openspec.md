@@ -161,7 +161,7 @@ do not rely on summaries.
 > 2. **Template wiring**: `templateRef` name/template, `entrypoint`, DAG `dependencies`,
 >    inter-stage data via shared volume mounts (not Argo params/artifacts).
 > 3. **Scheduling & resources**: `gpu-fraction`; `nvidia.com/gpu` on the predictor step only;
->    `namespace` (`runai-talmo-lab`) / `project` (`talmo-lab`) quota; preemptibility via
+>    `namespace` (`runai-busch-lab`) / `project` (`busch-lab`) quota; preemptibility via
 >    `priorityClassName` (`interactive-preemptible`), not the `preemptible` annotation.
 > 4. **Storage**: `hostPath type: Directory` pre-existence (cluster `/hpi/hpi_dev/...`);
 >    inter-stage mount-path agreement; cluster ↔ local-WSL2 *path* parity (PV/PVC is
