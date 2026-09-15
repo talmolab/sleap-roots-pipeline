@@ -198,14 +198,29 @@ pod), mark that scan `failed` and continue the batch → run ends `partial` (e.g
 rather than blocking. Distinguish **scan-level error** (mark failed, continue) from **pod-level
 death** (Argo retry + resume-skip).
 
-**Producer Argo-readiness — reconcile *both* producers uniformly.** The predict batch runner and the
-traits driver share the same three behaviours that need one A4-wiring decision: (a) **empty input →
-exit 0** (a silent-green node if stage-in produced nothing), (b) **exit non-zero if *any* scan fails →
-`retryStrategy` retries the whole batch** (not a partial run), and (c) **no init / SIGTERM handler** for
-graceful preemption. Tracked for traits as [sleap-roots #259](https://github.com/talmolab/sleap-roots/issues/259);
-**predict has the identical behaviour** (`run_batch` returns `ok=True` on empty input, exits non-zero on
-any failed scan). Resolve the exit-code / empty-input / SIGTERM policy the *same way for both* at wiring
-time — else you fix traits and leave predict silently green on an empty stage-in. (Also: the PoC's
+**Producer Argo-readiness — reconcile *both* producers uniformly.** ⚠️ **DISCHARGED 2026-09-15, and
+the specifics below are now stale — kept for provenance.** As originally written: the predict batch
+runner and the traits driver shared three behaviours needing one A4-wiring decision: (a) empty input →
+exit 0 (a silent-green node if stage-in produced nothing), (b) exit non-zero if *any* scan fails →
+`retryStrategy` retries the whole batch, and (c) no init / SIGTERM handler for graceful preemption.
+
+**What actually happened.** The driver halves shipped 2026-08-21
+([sleap-roots #266](https://github.com/talmolab/sleap-roots/pull/266),
+[predict #36](https://github.com/talmolab/sleap-roots-predict/pull/36)), and the Argo half —
+the "resolve at wiring time" instruction above — shipped as
+[sleap-roots-pipeline #56](https://github.com/talmolab/sleap-roots-pipeline/issues/56).
+Two claims here are false as of those changes:
+
+- **Empty input no longer exits 0 anywhere, and the producers deliberately disagree.** traits exits
+  `1` with no manifest and `3` with one; predict exits `1`; bloomctl exits `0` only when *zero scans
+  were requested*. The uniformity this section asked for was not achieved and is not wanted — #56's
+  exit-code gate reads each producer's own code precisely so it need not assume uniformity.
+- **"predict has the identical behaviour" is no longer true** (predict never returned `ok=True` on
+  empty input after #36; it raises).
+
+All three producers now emit `0` = all scans succeeded, `3` = batch completed with isolated per-scan
+failures, and ship SIGTERM handlers. See
+`docs/superpowers/specs/2026-09-15-partial-success-exit-code-wiring-design.md`. (Also: the PoC's
 **existence-only** skip is only safe once writes are **atomic** (temp→rename) — land those two together,
 or a truncated manifest is skipped as done.)
 

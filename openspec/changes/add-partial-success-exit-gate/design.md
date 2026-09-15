@@ -1,32 +1,36 @@
 # Design notes
 
-The full design — including the upstream Argo research this rests on, the rejected alternatives,
-and the per-stage retry-safety analysis — lives at
-`docs/superpowers/specs/2026-09-15-partial-success-exit-code-wiring-design.md`. This file records
-only the decisions a reviewer needs in order to judge the spec deltas, and does not restate it.
+The full design — the upstream Argo research this rests on, the rejected alternatives, and the
+per-stage retry-safety analysis — is
+`docs/superpowers/specs/2026-09-15-partial-success-exit-code-wiring-design.md`. This file covers
+only the three decisions a reviewer needs in order to judge the spec deltas.
 
-## Decision 1: why `continueOn` alone is not the fix
+All Argo behaviour below is stated for **v3.6.7**, the version this cluster actually runs (read off
+the `argoexec` wait-container image tag on live Argo pods). Earlier drafts of this design cited
+v3.5.11 and `main`; where they disagree, v3.6.7 governs.
 
-Argo cannot express "continue on exit 3 but not on exit 1", and this is not a matter of finding
-the right field:
+## Decision 1: why the gate exists
 
-- `retryStrategy.expression` (v3.2+) can stop the retry loop, but a node whose expression
-  evaluates false is still `Failed`. It cannot turn a failure into a success.
+Argo cannot express "continue on exit 3 but not on exit 1", and this is not a matter of finding the
+right field:
+
+- `retryStrategy.expression` can stop the retry loop, but a node whose expression evaluates false
+  is still `Failed`. It cannot turn a failure into a success.
 - `continueOn` is two booleans on node *phase* (`error`, `failed`) with no exit-code field.
-  Exit-code support was requested upstream (argo-workflows#6396); its implementation PR (#6702)
-  was closed unmerged.
+  Exit-code support was requested upstream (argo-workflows#6396); its implementation PR (#6702) was
+  closed unmerged.
 
 A maintainer ran exactly this shape — `retryStrategy` + `continueOn` + `dependencies` — in
 argo-workflows#2798 and got workflow `Succeeded` with a "No more retries left" node inside. The
-`depends` variant behaves the same way (argo-workflows#12530, open since 2024-01).
+`depends` variant behaves the same (argo-workflows#12530, open since 2024-01).
 
-So a `continueOn`-only change would convert genuine crashes into green workflows. The `exit-gate`
-exists to undo precisely that, by re-deriving the final phase from the real exit codes.
+So a `continueOn`-only change would report genuine crashes as green. The `exit-gate` re-derives the
+final phase from the real exit codes, which is the only way to get it back.
 
 ## Decision 2: no `expression`, retries left intact
 
-There is no per-scan retry anywhere in the producers. `stage_one_scan` has no retry loop,
-`bloomcli` has no transport-level retry, and `MAX_SCAN_ATTEMPTS` — the per-scan attempt cap A4 §8's
+There is no per-scan retry anywhere in the producers. `stage_one_scan` has no retry loop, `bloomcli`
+has no transport-level retry, and `MAX_SCAN_ATTEMPTS` — the per-scan attempt cap A4 §8's
 retry-then-isolate is written against — is unimplemented in every repo.
 
 Argo's whole-step retry is therefore the only scan-level retry that exists, and it works because
@@ -37,52 +41,81 @@ Adding `expression: 'lastRetry.exitCode != "3"'` would delete it: a scan that fa
 blip and would have succeeded on attempt 2 gets permanently isolated on attempt 1. Leaving retries
 in place makes the retry budget the de-facto `MAX_SCAN_ATTEMPTS`.
 
-Cost, stated plainly: a permanently-poison scan burns its stage's retry budget first. The
+Cost, stated plainly: a permanently-poison scan burns its stage's retry budget first, and the
 predictor's `backoff: {duration: 2m, factor: 2}` at `limit: 3` dominates — roughly 14 minutes of
 wall-clock before the DAG proceeds. Accepted.
 
-## Decision 3: the gate reads exit codes, and this constrains the DAG's shape
+## Decision 3: the gate's strictness is the safety mechanism, not a DAG-shape plea
 
-`{{tasks.<NAME>.exitCode}}` resolves through retry nodes on any v3.x (`buildLocalScope` calls
+`{{tasks.<NAME>.exitCode}}` resolves through retry nodes (`buildLocalScope` calls
 `possiblyGetRetryChildNode`), confirmed empirically on this cluster against a real failed run.
+Ancestor scope is transitive (`workflow/common/ancestry.go::GetTaskAncestry` recurses), so the gate
+can reference producers it does not directly depend on — which is what makes a terminal gate
+possible at all in a linear DAG.
 
-The gate references producers it does not directly depend on, which resolves only because the DAG
-is linear and they are all its *ancestors*. **If the DAG is ever parallelized so a referenced
-producer is no longer an ancestor of the gate, the workflow hangs rather than fails** — an
-unresolvable `{{tasks...}}` reference causes the controller to requeue indefinitely. The spec
-delta pins this as a requirement so it is checked rather than remembered.
+**Correction to an earlier draft of this design.** It claimed an unresolvable `{{tasks...}}`
+reference "requeues the task indefinitely and hangs the workflow". That is **false at v3.6.7**:
+`workflow/controller/dag.go` substitutes task arguments with
+`template.Replace(..., allowUnresolved=true)`, so the literal string `{{tasks.<name>.exitCode}}`
+passes through to the container unchanged, and `grep -i requeue` over that file returns nothing.
+(For `when:`, an unresolved reference makes `shouldExecute` error and the node is marked `Error` —
+also a deterministic failure, not a hang.) The claim came from a read of `main`, post-4.1.3, where
+the code has since changed.
 
-The comparison lives in the gate container, not in `when:`. `when:` is evaluated by govaluate, not
-expr, so `asInt`/`in`/`matches` are unavailable and mixed string/number comparison is a parse
-error; and the same requeue-on-unresolvable behaviour applies there too.
+This correction matters because it changes what protects us. There is no runtime error to rely on;
+the only thing that turns a broken reference into a visible failure is the gate rejecting anything
+outside `{0, 3}`. Hence two spec requirements that would otherwise look like style:
+
+- the gate compares against an explicit **allowlist**, never a denylist — a denylist of
+  `{1, 2, 143}` would pass a literal placeholder, an empty string, and any future exit code;
+- the codes arrive as **three separately-named parameters**, not one delimiter-joined value —
+  shell word-splitting silently collapses an empty field, so a joined `"0,,0"` would iterate twice
+  over `0` and pass.
+
+The comparison lives in the gate container rather than in `when:` because `when:` is evaluated by
+govaluate, not expr, so integer-coercion helpers are unavailable and mixed string/number comparison
+is a parse error. Hyphenated task names are additionally hostile to govaluate.
+
+A related reachable state the spec now covers: a node can be `Failed` with **no** `outputs.exitCode`
+at all — `inferFailedReason` returns `Failed` as soon as `pod.Status.Message` is set (the kubelet
+eviction path), while `exitCode` is only recorded when the main container actually terminated. The
+gate sees an unsubstituted placeholder in that case, and rejects it.
 
 ## Decision 4: `failed: true` only, never `error: true`
 
-`Failed` means the container ran and exited non-zero — which covers exit `3` and also RunAI
-eviction (`inferFailedReason` returns `Failed`, not `Error`, when `pod.Status.Message` is set).
-`Error` means the stage never ran at all: image pull failure, wait-container death. A stage that
-never expressed an opinion should stop the DAG, not be continued past on data that was never
-produced.
+`Failed` means the container ran and exited non-zero — covering exit `3` and RunAI eviction. `Error`
+means the stage never ran: image pull failure, wait-container death, pod deleted
+(`markNodeError("pod deleted")`). A stage that never expressed an opinion should stop the DAG rather
+than let it proceed on data that was never produced. The `Omitted` path is clean — Argo creates a
+real `NodeOmitted` node and propagates the upstream failure, so nothing hangs and the gate is simply
+never reached.
 
 ## Decision 5: write-back keeps its existing wiring
 
-`bloomctl cyl batch-ingest-result` has no partial-success code — both exits are `ctx.exit(1)`,
-gated on `needs_retry`. It gets no `continueOn`: if it fails, the gate is `Omitted`, inherits
-`Failed`, and the workflow fails. Correct without extra wiring.
+`bloomctl cyl batch-ingest-result` has no partial-success code — both exits are `ctx.exit(1)`, gated
+on `needs_retry`. It gets no `continueOn`: if it fails, the gate is `Omitted`, inherits `Failed`, and
+the Workflow fails.
 
 This is safe for the targeted scenario for a non-obvious reason. `write_run_manifest` builds from
-`{s.scan_key for s in result.scans if s.status in ("ok", "skipped")}` — it excludes failed scans.
-After a partial `images-downloader` the failed scan never enters the manifest, so write-back never
-looks for its result and exits `0`. The scan is still marked `failed` at the run level via
+`{s.scan_key for s in result.scans if s.status in ("ok", "skipped")}` — it excludes failed scans. So
+after a partial `images-downloader` the failed scan never enters the manifest, write-back never
+looks for its result, and it exits `0`. The scan is still marked `failed` at the run level via
 `fail_cyl_pipeline_run_scans_without_result`, which is keyed on `ARGO_WORKFLOW_NAME` and does not
 consult the manifest.
 
 A partial `predict`/`trait_extractor` does *not* have this property — those scans are in the
-manifest — and will fail the workflow at write-back until bloom#859 lands. Out of scope here, and
-it does not affect the poison-scan target.
+manifest, so write-back reports them missing, marks them **retriable**, and exits `1`. Out of scope
+here and it does not affect the poison-scan target; tracked as bloom#859.
 
-## Open question
+The gate sits *after* write-back rather than before it. That means a crash-class run still performs
+its write-back before being declared `Failed`. Deliberate: write-back is idempotent, and on a
+`143` or a manifest-write failure the downstream results are genuine — discarding their ingestion
+would throw away good work in exactly the case where retries were exhausted, which contradicts the
+principle motivating #56.
 
-Which image the `exit-gate` runs. Reusing an already-pinned image avoids adding a supply-chain
-dependency and a further drift-prone object (#58); a minimal public base is simpler but new.
-Settled at implementation time in favour of reusing the already-pinned `bloomctl` image.
+## Resolved: which image the gate runs
+
+The already-pinned `bloomctl` image, reused purely for its shell (`python:3.11-slim` base). Avoids
+adding a further un-drift-checked object (#58). Two consequences the template records: its
+`ENTRYPOINT` is `["bloomctl"]` with no `CMD`, so `command` **must** be overridden or every Workflow
+fails; and this pin must move in lockstep with the two other bloomctl templates.
