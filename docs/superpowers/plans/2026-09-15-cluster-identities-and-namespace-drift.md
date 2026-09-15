@@ -63,9 +63,23 @@ The verified facts to document:
 
 | Identity | Who authenticates as it | Can | Cannot | Credential |
 |---|---|---|---|---|
-| `bloom-pipeline` | Bloom's backend, from outside the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `argoproj.io/workflows`; `get`/`list` on `workflowtemplates` | create or update WorkflowTemplates; `delete`/`update` workflows; anything on `pods`, `pods/log`, `secrets`, `configmaps`, `nodes`; anything outside its namespace | `~/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml`; deployed as `WORKFLOWS_K8S_TOKEN`/`_CA_CERT`/`_API_URL` |
+| `bloom-pipeline` | Bloom's backend, from outside the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `argoproj.io/workflows`; `get`/`list` on `workflowtemplates`; **`get`/`list`/`watch` on `pods` and `get pods/log`** | `create`/`update workflowtemplates`; `delete`/`update workflows`; `create pods/exec`; `create workflowtaskresults`; `secrets`, `configmaps`, `nodes`; anything outside its namespace | `~/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml`; deployed as `WORKFLOWS_K8S_TOKEN`/`_CA_CERT`/`_API_URL` |
 | `bloom-workflow` | Each DAG step's own pod (set via `spec.serviceAccountName`) | `workflowtaskresults` `create`/`patch` | not used for submission; nobody holds a kubeconfig for it | none — set on the Workflow, Argo does the rest |
 | `argo-user` (busch-lab, namespace-scoped) | Operators, shared project identity | `get pods`, `get pods/log`, `create pods/exec`; `create`+`update workflowtemplates`; `create`+`delete workflows` | `get serviceaccounts`, `get secrets`, `create workflowtaskresults` | `~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml` |
+
+**⚠️ The applied `bloom-pipeline` does not match this repo's drafted manifest.** Verified
+2026-09-15 by running `kubectl auth can-i` under its *own* kubeconfig, not inferred from
+`bloom-pipeline-serviceaccount.yaml`. The manifest's comment says `pods` / `pods/log` were "NOT
+requested for v1 (intentionally omitted, least-privilege)" — but the identity the cluster admin
+actually applied **can** `get`/`list`/`watch` pods and `get pods/log`. It cannot `create pods/exec`.
+Everything else in the manifest held exactly: workflows `create`/`get`/`list`/`watch` yes,
+`delete`/`update` no; workflowtemplates `get`/`list` yes, `create`/`update` no; secrets,
+configmaps, nodes, serviceaccounts all no.
+
+The manifest describes what was *requested*; the cluster holds what was *granted*. The doc must
+state the granted set and say where it came from, and `bloom-pipeline-serviceaccount.yaml`'s
+"intentionally omitted" comment needs a correction noting it no longer describes reality
+(fold into Task 6).
 
 One caveat that must appear in the doc:
 
