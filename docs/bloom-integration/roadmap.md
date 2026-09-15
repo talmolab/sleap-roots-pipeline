@@ -505,6 +505,48 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-15 (later)** — **sleap-roots-predict#39 fixed and merged (PR #42): predict now forwards
+  `run_manifest.json` to its own output — the real reason #54/#55's fix alone didn't stop leftover-scan
+  contamination.** Separate thread from the bloom#772/#56 entry directly below (same day, unrelated).
+  - `sleap-roots-predict` [PR #42](https://github.com/talmolab/sleap-roots-predict/pull/42) merged
+    (`e025e309`): new `sleap_roots_predict/run_manifest.py::copy_run_manifest_forward` copies the
+    manifest from `input_dir` to `output_dir` after `discover_scans`, mirroring
+    `trait_extractor/run_manifest.py`'s existing pattern — predict's own scoping already worked
+    (confirmed live on 2026-09-01: `scan_1009`'s *predictions* were correctly left untouched), the
+    gap was purely that trait-extraction never received a manifest to scope against in the first
+    place. OpenSpec archived via the CLI (`archive/2026-09-15-forward-run-manifest-to-output/`),
+    deltas promoted into `predict-container`'s live baseline spec, verified directly (not just the
+    CLI's summary) that the promoted spec carries the round-3 work (single-read requirement + all
+    3 scenarios), not a stale round-1 version.
+  - **Code review posted** on PR #42 (8-angle pass): the most notable surviving finding is a real,
+    production-reachable race — `run_manifest.json` is read twice with no shared snapshot
+    (`discover_scans` scopes predict's own work from one read; the forward-copy independently
+    re-reads the same path later), so a concurrent bloomctl write between the two reads can make
+    predict forward a manifest containing scan_keys it never predicted, causing spurious
+    `result.failed` entries and wasted retries downstream — acknowledged in the PR's own
+    `design.md` as a deferred Open Question, not fixed in this round. Two smaller code-level
+    findings (a presence-check outside the PR's own new error-logging block; a possible
+    empty-directory left behind if the copy fails after `mkdir`) posted inline; not blocking.
+    Follow-ups already filed independently by the implementing session:
+    [sleap-roots-predict#40](https://github.com/talmolab/sleap-roots-predict/issues/40) (move the
+    copy-forward primitive into `sleap-roots-contracts`, shared with `sleap-roots`' own copy) and
+    [#43](https://github.com/talmolab/sleap-roots-predict/issues/43) (unique vs. fixed temp names
+    across the sibling implementations) — same architectural themes the review surfaced
+    independently, good convergence.
+  - **Corrected stale state on [sleap-roots-predict#41](https://github.com/talmolab/sleap-roots-predict/issues/41)**
+    (the post-merge deployment tracker for #39): its own checklist text said "#54 and #55 are
+    still open" and described landing `sleap-roots-pipeline#57` as not-yet-done — both were
+    already true as of 2026-09-11 (PR #57 merged, closing #52/#54/#55, applied in-cluster the same
+    day), just not known to the session working on #39/#41. Corrected via a comment rather than
+    silently editing the checklist.
+  - **Genuinely remaining, not yet done**: #57's own predictor pin (`sha-f974632`) predates #42 by
+    definition (#42 wasn't merged when #57 was opened), so it's stale again — a predict image build
+    from `e025e309` (the #42 merge commit) was in progress as of this entry
+    (`docker-build.yml` run 34996531228). Once it completes: bump
+    `sleap-roots-predictor-template.yaml`'s pin (a *fourth* bump for this template — verify the tag
+    against that repo's own build-run history, don't assume), apply in-cluster, then re-run the
+    2026-09-01 dedup batch-oracle scenario once more. Pass signal, unchanged from every prior
+    attempt: an unrelated leftover scan's `result.json` mtime stays frozen, not rewritten.
 - **2026-09-15** — **bloom#772's driver-side fix merged; #56's Argo-side wiring is still the
   blocker, so scenario 3's poison-scan symptom is unchanged in practice today.**
   - `salk-bloom` [PR #830](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/830)
