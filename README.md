@@ -80,15 +80,20 @@ argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 > and this Workflow declares `metadata.namespace` while the templates declare none, so the lookup
 > misses. Strip that line from a **temp copy** and all five resolve with no cluster and no VPN:
 >
+> `scripts/lint_manifests.sh` does exactly that — it lints a temp copy with the namespace stripped,
+> never touching the tracked files:
+>
 > ```bash
-> T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"
-> sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"
-> argo lint --offline "$T"/sleap-roots-*.yaml     # → no linting errors found!
+> bash scripts/lint_manifests.sh      # from WSL, where argo is installed → no linting errors found!
 > ```
 >
 > **Never strip that line from the real file** — Bloom's dispatch reads the manifest and the
 > launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` also passes
-> clean, but needs VPN; prefer the temp-copy recipe for a gate that works anywhere.
+> clean, but needs VPN; prefer the script for a gate that works anywhere.
+>
+> This is the only check that cross-resolves `templateRef` — i.e. the only one that catches a DAG
+> task pointing at a template nobody registered. There is no CI in this repo, so it runs only when
+> you run it.
 
 ### 🔑 Token check
 
