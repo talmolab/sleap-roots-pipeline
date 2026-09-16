@@ -13,9 +13,31 @@ Thumbs.db
 .kube/
 .kubectl/
 
-# Ignore Kubernetes secrets and service account tokens
+# Local git worktrees. `git add -A` otherwise records these as gitlinks (mode 160000), i.e. a
+# bogus submodule pointing at a commit no clone can resolve. Happened once; hence this line.
+.worktrees/
+
+# Kubernetes / cluster credentials — this repo is PUBLIC, keep these out.
+# Covers the real filenames this program produces:
+#   kubeconfig-bloom-pipeline-busch-lab.yaml, kubeconfig-runai-busch-lab-argo-user.yaml,
+#   bloom-staging-k8s-secrets.txt, credentials.pipeline-staging.txt
 secrets.yaml
 service-account.json
+*kubeconfig*
+*secrets*.txt
+credentials*.txt
+credentials*.yaml
+credentials*.json
+*token*.txt
+*token*.json
+*.token
+*.pem
+*.crt
+*.key
+.env.*
+!.env.example
+!.env.template
+!.env.sample
 
 # Docker related
 .dockerignore
@@ -29,6 +51,9 @@ argo_cache/
 workflow_cache/
 *.argo.run
 workflow_templates/*.yaml
+# runai_run_pipeline.sh writes one of these per run (see README folder structure).
+# They hold streamed `argo logs` output, so keep them out of the repo.
+workflow_logs_*.txt
 
 # Ignore compiled code or bytecode
 *.o

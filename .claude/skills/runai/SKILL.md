@@ -32,6 +32,31 @@ wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.y
 - In **Git Bash** (not WSL), prefix cluster-path commands with `MSYS_NO_PATHCONV=1` to stop
   `/hpi/...` from being mangled into a Windows path.
 
+### 1a. Where the three CLIs actually live
+
+Verified on this workstation **2026-09-15** — re-check before trusting, these are
+operator-specific. Several of this repo's slash commands (`/ci-debug`, `/docs-review`,
+`/new-feature`, `/pr-description`, `/review-openspec`, `/review-pr`) invoke `argo lint` without
+saying where `argo` is; this table is the answer.
+
+| Tool | Location | On PATH? |
+|---|---|---|
+| `argo` | `/usr/local/bin/argo` (WSL), v3.6.5 | ✅ in WSL. **Not installed on Windows at all** — no `scoop`/`choco` shim, nothing under `Program Files`, so it is absent from Git Bash and PowerShell. |
+| `kubectl` | `/home/<user>/bin/kubectl` (WSL) **and** Docker Desktop's `/c/Program Files/Docker/Docker/resources/bin/kubectl`, v1.34.1 | ⚠️ WSL copy needs `export PATH=$HOME/bin:$PATH` — `$HOME/bin` is **not** on the non-login WSL PATH. Docker Desktop's copy *is* already on the Git Bash PATH. |
+| `runai` | `/mnt/c/Users/<user>/runai` is on the WSL PATH | ✅ |
+
+Because `argo` is WSL-only, every `argo` command must go through WSL, and the repo path
+translates to `/mnt/c/repos/sleap-roots-pipeline`:
+
+```bash
+wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; \
+  cd /mnt/c/repos/sleap-roots-pipeline && argo lint --offline sleap-roots-pipeline.yaml'
+```
+
+> A non-login WSL shell (`wsl -e bash -c`) does **not** source `.profile`, so `$HOME/bin` is
+> missing from `PATH`. Checking only `$HOME/.local/bin` and concluding a tool is uninstalled is
+> a mistake that has actually been made here — search `$HOME/bin` too, or use `bash -lc`.
+
 ## 2. Path mapping (Windows ↔ WSL ↔ cluster)
 
 | Context | Path |
@@ -169,6 +194,10 @@ set the priority class:
 | `ImagePullBackOff` | confirm the `registry.gitlab.com/salk-tm/...` tag exists; test `docker pull` of the same tag |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
+| `argo: command not found` | `argo` is WSL-only here — see §1a. Not installed on Windows. |
+| `argo lint --offline` "fails" on `sleap-roots-pipeline.yaml` | **The manifest is fine, and there IS a cluster-free way to lint it.** Offline lint *does* index sibling files passed on the same command line — it matches `templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while the four templates declare none, so the lookup searches a namespace no template is indexed under and reports `couldn't find workflow template … in namespace "runai-busch-lab"` (exit **1**). Strip `metadata.namespace` from a **temp copy** and all five resolve clean with no cluster: `T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml` → `✔ no linting errors found!` (verified 2026-09-15). Non-offline lint against `runai-busch-lab` with the `argo-user` kubeconfig also passes clean, but needs VPN — prefer the offline recipe for a gate that works anywhere. **Never delete that namespace line from the real file**: Bloom's dispatch depends on the manifest, and `runai_run_pipeline.sh` keeps its default equal to it. Credit: mechanism identified by the `#56`/PR #60 session; an earlier note here claimed offline lint ignored sibling files, which was wrong. |
+| `kubectl auth can-i` returns a deprecation warning instead of `yes`/`no` | `kubectl` writes `Warning: Use tokens from the TokenRequest API...` to stderr, which interleaves with the verdict — a bare `\| head -1` captures the warning. Always filter: `kubectl auth can-i <verb> <resource> -n runai-busch-lab 2>/dev/null \| grep -E '^(yes\|no)'` |
+| Need to know what an identity can do | `kubectl auth can-i` under that identity's kubeconfig. Note `argo-user` returns **no** for `get serviceaccounts`/`get secrets`, so you cannot read another ServiceAccount's Role from it — `bloom-workflow`'s RBAC is not verifiable this way (verified 2026-09-15). |
 
 ## 9. CLI v1 → v2 migration
 

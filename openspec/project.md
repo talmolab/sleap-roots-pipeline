@@ -31,7 +31,7 @@ change-breakdown table for the full remaining list.
 - **Argo Workflows** — DAG orchestration (`sleap-roots-pipeline.yaml` entrypoint +
   `*-template.yaml` `WorkflowTemplate`s referenced via `templateRef`)
 - **Argo Events** — (planned, A4) scan-ingest → workflow trigger
-- **RunAI** — GPU scheduling on the `runai-talmo-lab` namespace (fractional GPU via a pod-level
+- **RunAI** — GPU scheduling on the `runai-busch-lab` namespace (fractional GPU via a pod-level
   `gpu-memory` annotation — absolute MiB, not the relative `gpu-fraction` annotation, which must
   also live at `spec.templates[].metadata.annotations`, not the WorkflowTemplate object's own
   metadata, or Argo never copies it to the pod — see issue #25; `preemptible`, `project` labels
@@ -140,7 +140,7 @@ git/GitHub/OpenSpec/docs commands.
 
 ## External Dependencies
 
-- **RunAI GPU cluster** (`gpu-master:8888` Argo server, `runai-talmo-lab` namespace);
+- **RunAI GPU cluster** (`gpu-master:8888` Argo server, `runai-busch-lab` namespace);
   requires `runai login` + an exported `ARGO_TOKEN`.
 - **Stage container images** (currently `registry.gitlab.com/salk-tm/...`; GHCR is the A0
   target), built/published by sibling repos: `models-downloader`, `sleap-roots-predict`,

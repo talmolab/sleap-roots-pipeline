@@ -5,13 +5,17 @@ set -euo pipefail
 # exported — it only works from a machine on the internal cluster LAN. The A4 PoC was NOT run this
 # way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig, which is
 # also how the real four-stage end-to-end run (2026-07-30) was submitted:
-#   export KUBECONFIG=~/.kube/kubeconfig-runai-talmo-lab.yaml
-#   argo template update sleap-roots-images-downloader-template.yaml -n runai-talmo-lab
-#   argo template update sleap-roots-predictor-template.yaml         -n runai-talmo-lab
-#   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-talmo-lab
-#   argo template update sleap-roots-write-back-template.yaml        -n runai-talmo-lab
-#   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-talmo-lab
+#   export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
+#   argo template update sleap-roots-images-downloader-template.yaml -n runai-busch-lab
+#   argo template update sleap-roots-predictor-template.yaml         -n runai-busch-lab
+#   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-busch-lab
+#   argo template update sleap-roots-write-back-template.yaml        -n runai-busch-lab
+#   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-busch-lab
 # Use that path if gpu-master:8888 is unreachable from your box.
+#
+# NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch, distinguished only
+# by an environment label stamped on each submitted Workflow. An `argo template update` here
+# therefore affects both environments' future dispatches, not just your own next run.
 
 # Color output
 YELLOW='\033[1;33m'
@@ -19,8 +23,19 @@ GREEN='\033[1;32m'
 RED='\033[1;31m'
 NC='\033[0m'
 
-# Namespace for the GPU cluster
-NAMESPACE="runai-talmo-lab"
+# Namespace for the GPU cluster. Keep this equal to sleap-roots-pipeline.yaml's
+# metadata.namespace — if they disagree, this script registers templates into one namespace while
+# the Workflow still lands in the other.
+#
+# Deliberately NOT overridable by an environment variable. An earlier revision offered
+# NAMESPACE=<other> and it could not work: verified 2026-09-15 that `argo submit -n <other>` does
+# NOT redirect the submission — the manifest's metadata.namespace wins (`argo submit
+# --server-dry-run -n runai-talmo-lab -o json` → metadata.namespace = runai-busch-lab). All an
+# override changed was the -n on `argo template create/update`, i.e. it would publish this
+# pipeline's templates into a different project than the one the Workflow runs in. To target
+# another project, edit metadata.namespace in the manifest too, and register the templates and
+# secrets there first.
+NAMESPACE="runai-busch-lab"
 
 # Argo Server in HTTP mode
 export ARGO_SERVER=gpu-master:8888

@@ -26,7 +26,7 @@ application code, no test suite — see `openspec/project.md`). Use these 5 doma
    Argo parameters/artifacts** — verify output-mount(stage N) == input-mount(stage N+1)
    rather than hunting for param wiring.
 2. **RunAI / Kubernetes Scheduling & Resources** — `gpu-fraction`, `nvidia.com/gpu` on the
-   predictor only; `namespace` (`runai-talmo-lab`) / `project` (`talmo-lab`) quota. NB:
+   predictor only; `namespace` (`runai-busch-lab`) / `project` (`busch-lab`) quota. NB:
    preemptibility is governed by `priorityClassName` (`interactive-preemptible` < 100 =
    preemptible), **not** the `preemptible: "true"` annotation the templates carry.
 3. **Storage & Volume Integrity** — `hostPath type: Directory` paths that must pre-exist
@@ -121,8 +121,8 @@ Subagent 1: Argo Workflow & Template Correctness
     retryStrategy; would `argo lint` pass on every changed manifest?
 
 Subagent 2: RunAI / Kubernetes Scheduling & Resources
-  - gpu-fraction; nvidia.com/gpu limits on the right step; namespace (runai-talmo-lab) /
-    project (talmo-lab) quota; preemptibility via priorityClassName (interactive-preemptible),
+  - gpu-fraction; nvidia.com/gpu limits on the right step; namespace (runai-busch-lab) /
+    project (busch-lab) quota; preemptibility via priorityClassName (interactive-preemptible),
     NOT the preemptible annotation; nothing requesting GPU that shouldn't.
 
 Subagent 3: Storage & Volume Integrity

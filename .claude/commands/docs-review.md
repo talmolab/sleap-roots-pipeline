@@ -57,7 +57,14 @@ git log --oneline -10
 git diff main...HEAD --stat
 
 # Find docs that mention a changed manifest, template name, or mount path
-grep -r "sleap-roots-predictor-template\|hostPath\|runai-talmo-lab" --include="*.md" .
+grep -r "sleap-roots-predictor-template\|hostPath\|runai-busch-lab" --include="*.md" .
+
+# Drift check: the target changed to runai-busch-lab / project busch-lab on 2026-08-13, so any
+# live instruction still naming the old one is stale (historical log entries are fine).
+# Match bare `talmo-lab` too, NOT just `runai-talmo-lab` — the project-label form
+# (`project: talmo-lab`) is the one that hid in openspec/specs/ through a whole sweep.
+# `talmolab` is the GitHub org and is always correct, hence the -w style exclusion.
+grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" . | grep -v talmolab
 ```
 
 ### Step 2: Update Affected Documentation
@@ -133,7 +140,7 @@ How to run it (`argo submit ...`) with an example.
 
 ### Configuration
 
-Available parameters, annotations (`gpu-fraction`, `preemptible`), and env vars (`ARGO_TOKEN`).
+Available parameters, annotations (`gpu-memory` pod-level; `preemptible` is inert), and env vars (`ARGO_TOKEN`).
 
 ### Troubleshooting
 

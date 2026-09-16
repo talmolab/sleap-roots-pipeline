@@ -1,5 +1,20 @@
 # Busch-lab RBAC investigation + argo-user stopgap credential — design
 
+> **⚠️ Superseded in part (2026-08-12 / 2026-09-15).** This document describes `argo-user` as
+> Elizabeth's own ServiceAccount with cluster-wide Workflow access, and the dedicated
+> `bloom-pipeline` ServiceAccount as blocked on a cluster admin. All three statements were true
+> when written and are no longer:
+>
+> - The cluster admin created a **namespace-scoped, shared project `argo-user`** for
+>   `runai-busch-lab` on 2026-08-12. It is not a personal identity, and it is not cluster-wide.
+> - `bloom-pipeline` was applied on 2026-08-07 and is what Bloom's backend authenticates as today.
+> - The `argo-user` stopgap this document plans for was never needed.
+>
+> For the verified, current permissions of all three identities — measured with
+> `kubectl auth can-i`, not inferred — see [Cluster identities](../../cluster-identities.md).
+>
+> The investigation's method and its point-in-time findings are retained as a record.
+
 ## Context
 
 A4's K8s-side credential gap ([bloom-pipeline-serviceaccount.yaml](../../../bloom-pipeline-serviceaccount.yaml), drafted 2026-07-22) has been blocked on a cluster admin applying it so Bloom's backend can submit Argo Workflows unattended. The admin has been unresponsive for ~12 days (since the 2026-07-22 request). Elizabeth considered reusing her own local `argo-user` kubeconfig as a stopgap, initially theorizing the blocker was that it lacked access to the `busch-lab` project (the project name that appears to have superseded `talmo-lab` in ops conversations — the manifest already ships two variants, "Variant A: runai-talmo-lab" and a **guessed** "Variant B: runai-busch-lab", because nobody had confirmed the real namespace name).

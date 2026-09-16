@@ -126,10 +126,10 @@ smoke-tested, 2026-08-05). This session never switched.
 
 - **busch-lab GPU capacity / preemption**: busch-lab is at 2/2 of its deserved quota; one of
   those GPUs is on a node currently cordoned for maintenance. A non-preemptible run there would
-  evict `linwang@salk.edu`'s active session on `gpu-node13` (confirmed by Bryan directly — this
+  evict another user's active session on `gpu-node13` (confirmed by Bryan directly — this
   matches something this session had already flagged as a live possibility before he confirmed
-  it). **Decision made this session: talk to Lin first**, before submitting anything
-  non-preemptible into busch-lab. This is a manual/social step for Elizabeth, not something an
+  it). **Decision made this session: talk to the affected user first**, before submitting
+  anything non-preemptible into busch-lab. This is a manual/social step for Elizabeth, not something an
   AI session can do. Bryan noted talmo-lab currently has ~1 GPU of non-preemptible headroom with
   zero contention, as a fallback that avoids this entirely if wanted.
 
@@ -165,6 +165,6 @@ but NOT yet resolved") has everything needed to reconstruct it, now also incorpo
   as a SAN).
 - Two RunAI projects/namespaces in play: `talmo-lab`/`runai-talmo-lab` (20 GPU quota, A40s) and
   `busch-lab`/`runai-busch-lab` (2 GPU quota, A40s, currently contended — see above).
-- **Do not repeat, anywhere written/shared, any characterization of Lin Wang beyond neutral
-  scheduling facts** (per explicit user instruction earlier this program — this is a durable
-  constraint, not specific to this handoff).
+- **Do not put any characterization of a named colleague into written or shared output** —
+  neutral scheduling and technical facts only (per explicit user instruction earlier this
+  program — this is a durable constraint, not specific to this handoff).
