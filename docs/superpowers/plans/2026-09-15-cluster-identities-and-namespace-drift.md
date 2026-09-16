@@ -597,7 +597,7 @@ The document has five sections, in this order:
    - Your WorkflowTemplates must be registered in the namespace first. `bloom-pipeline` cannot do this — it has `get`/`list` on `workflowtemplates` only. Use the shared project `argo-user` kubeconfig.
    - Any Argo DAG you submit needs `spec.serviceAccountName: bloom-workflow` or every step fails on results reporting.
    - You will not get pod logs through the Bloom path: `bloom-pipeline` has no `pods`/`pods/log` and the status poller only surfaces Workflow phases. For a new ServiceAccount with log access, copy `bloom-pipeline-serviceaccount.yaml` and ask the cluster admin.
-   - There is no per-person RunAI console access; work is driven from the `argo`/`runai` CLI against a kubeconfig.
+   - **⚠️ SUPERSEDED — do not write this (note added 2026-09-15).** ~~There is no per-person RunAI console access; work is driven from the `argo`/`runai` CLI against a kubeconfig.~~ Both halves are false. Per-person RunAI console access exists via SSO, and `runai` needs that SSO session *in addition to* the shared kubeconfig, while `argo`/`kubectl` need only the kubeconfig. This bullet was an unsourced assertion that shipped into `docs/cluster-identities.md` and was corrected on 2026-09-15 — see `docs/superpowers/specs/2026-09-15-cluster-access-model-audit-design.md`.
    - The cluster API endpoint is not published in this repo. Read it from your own kubeconfig with `kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'` — it travels with the credential. The Argo Server endpoint (`gpu-master:8888`) is in `runai_run_pipeline.sh`. Neither is reachable off the Salk VPN.
 
 5. **`## Namespace facts that bite`** —
