@@ -13,21 +13,21 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   "https://ghcr.io/v2/talmolab/<img>/manifests/<tag-or-digest>" | grep -i docker-content-digest
 ```
 
-- [ ] 1.1 Resolve the **predictor** pin `sha-e025e309230de52cef0ccffa199048fe1dbd1b24`.
+- [x] 1.1 Resolve the **predictor** pin `sha-e025e309230de52cef0ccffa199048fe1dbd1b24`.
   **Validate:** the tag resolves to a digest; requesting the manifest *by that digest* returns
   HTTP 200 with a matching `Docker-Content-Digest`; and the image config's
   `org.opencontainers.image.revision` starts with `e025e309`. The value recorded in
   `openspec/changes/add-partial-success-exit-gate/tasks.md:35` is a **cross-check, not the source
   of truth** — if the two disagree, the registry wins and the discrepancy gets recorded.
 
-- [ ] 1.2 Resolve the **trait-extractor** pin `sha-689cffb`, same three criteria, with
+- [x] 1.2 Resolve the **trait-extractor** pin `sha-689cffb`, same three criteria, with
   `org.opencontainers.image.revision` starting with `689cffb`. This digest is **not recorded
   anywhere in this repo** and must be looked up. Note predict tags the full 40-char sha while
   `bloomctl` tags 7 — do not pattern-match one pin from another.
   ⚠️ **Do not reuse `sha256:e39b4746…`**: that is `bloomctl`'s digest, and a comment on #70
   misattributes it to the trait-extractor.
 
-- [ ] 1.3 **Pull both literal references locally, before any manifest edit or cluster write** —
+- [x] 1.3 **Pull both literal references locally, before any manifest edit or cluster write** —
   `docker pull ghcr.io/talmolab/sleap-roots-predict:sha-e025e309…@sha256:<d1>` and the
   trait-extractor equivalent. This is the step that retires the `ImagePullBackOff` risk without
   exposing production to it.
@@ -37,7 +37,7 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
 
 ## 2. Add the failing assertions first (TDD)
 
-- [ ] 2.1 In `scripts/check_manifests.py`, add a `DIGEST_ENV_BY_STAGE` mapping
+- [x] 2.1 In `scripts/check_manifests.py`, add a `DIGEST_ENV_BY_STAGE` mapping
   (`predictor` → `SRP_PREDICT_CONTAINER_DIGEST`, `trait-extractor` → `SRT_TRAITS_CONTAINER_DIGEST`
   — deliberately **not** named `PRODUCER_*`, since `PRODUCERS` in the same file means three stages)
   and a requirement block asserting, per stage: the `image:` reference matches
@@ -56,19 +56,19 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
     second check behind `if entry:`; copying that shape would make the assertion count differ
     between the red and green states, and task 5.1 unevaluable.
 
-  **Validate:** `python scripts/check_manifests.py` exits non-zero with **58 passing and 9 failing**,
+  **Validate:** `python scripts/check_manifests.py` exits non-zero with **62 passing and 9 failing**,
   and the equality assertions appear among the `FAIL` lines rather than passing vacuously. Note the
   negative assertion (no `SRP_` in trait-extractor) passes both before and after — fail-first cannot
   cover it; task 2.3 mutation 6 is what proves it wired.
 
-- [ ] 2.2 Add assertions that each producer's `image:` repository path equals its expected
+- [x] 2.2 Add assertions that each producer's `image:` repository path equals its expected
   `ghcr.io/talmolab/<repo>`, and that the two producer digests differ from each other and from every
   `bloomctl` digest in the repo. Without these, a cross-wired reference
   (`sleap-roots-predict:…@sha256:<the traits digest>`) passes every consistency check — and pasting
   bloomctl's digest onto a producer is the exact error already made in #70's comment thread.
   **Validate:** swapping the two producers' digests makes the check fail.
 
-- [ ] 2.3 **Mutation matrix** — run after task 3 is green, against a scratch copy of the two
+- [x] 2.3 **Mutation matrix** — run after task 3 is green, against a scratch copy of the two
   templates, reverting after each. This is what proves the new assertions *can* fail; fail-first
   alone does not, and the delta spec's central scenario ("a one-sided bump fails the check") is
   otherwise never observed. Each mutation must make `check_manifests.py` exit non-zero and name the
@@ -85,21 +85,22 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   **Validate:** all eight mutations fail the checker; the tree is byte-identical to `HEAD`
   afterwards (`git status --porcelain` empty).
 
-- [ ] 2.4 **Validate:** `grep -cE 'sha256:[0-9a-f]{64}' scripts/check_manifests.py` returns 0 — the
+- [x] 2.4 **Validate:** `grep -cE 'sha256:[0-9a-f]{64}' scripts/check_manifests.py` returns 0 — the
   "no literal digest in the checker" claim, made runnable.
 
 ## 3. Make the assertions pass
 
-- [ ] 3.1 `sleap-roots-predictor-template.yaml`: append the verified digest to the `image:`
+- [x] 3.1 `sleap-roots-predictor-template.yaml`: append the verified digest to the `image:`
   reference as `:sha-e025e309…@sha256:4d4064c6…`, and add the `SRP_PREDICT_CONTAINER_DIGEST` env
   entry with that same digest. Leave the existing `ARGO_WORKFLOW_NAME` entry and its
   "inert today" comment untouched — that comment is accurate and belongs to sleap-roots#268.
 
-- [ ] 3.2 `sleap-roots-trait-extractor-template.yaml`: same two edits with the digest from 1.2.
-  **Validate:** `python scripts/check_manifests.py` prints `=== ALL 67 ASSERTIONS PASS ===`
-  (58 + 9). State the literal total, so a silently-skipped assertion cannot satisfy the check.
+- [x] 3.2 `sleap-roots-trait-extractor-template.yaml`: same two edits with the digest from 1.2.
+  **Validate:** `python scripts/check_manifests.py` prints `=== ALL 71 ASSERTIONS PASS ===`
+  (58 + 9 from 2.1 + 4 from 2.2). State the literal total, so a silently-skipped assertion cannot
+  satisfy the check.
 
-- [ ] 3.3 Comment both the new `image:` digest and the new env entry. Both templates carry dense
+- [x] 3.3 Comment both the new `image:` digest and the new env entry. Both templates carry dense
   pin-history comment blocks; a digest appearing with no note breaks that convention. The `image:`
   comment records the digest-pin date and #70; the env comment records that the value must equal the
   digest in this file's own `image:` line, that `check_manifests.py` enforces it, that **the
@@ -111,20 +112,20 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   and the `689cffb` equivalent in `C:\repos\sleap-roots`. Line numbers will move at the next bump;
   the command is what stays true.
 
-- [ ] 3.4 `bash scripts/lint_manifests.sh` from WSL (`argo lint` is not on the Windows PATH).
+- [x] 3.4 `bash scripts/lint_manifests.sh` from WSL (`argo lint` is not on the Windows PATH).
   **Validate:** both edited templates lint clean — i.e. the manifests still parse against the
   Workflow schema and `templateRef`s still resolve. This is **not** a check on the reference form or
   the digest: `argo lint` treats `image` as an opaque string and accepts both `tag@digest` and a
   syntactically-valid but nonexistent digest. Reference validity is proven by 1.3 and §7, nowhere
   else.
 
-- [ ] 3.5 Re-resolve the reference **exactly as written in each file** after the edits, closing the
+- [x] 3.5 Re-resolve the reference **exactly as written in each file** after the edits, closing the
   transcription gap between §1 and §3.
   **Validate:** both succeed against the registry.
 
 ## 4. Correct the falsified documentation claim
 
-- [ ] 4.1 Rewrite the mechanism at `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md:190`,
+- [x] 4.1 Rewrite the mechanism at `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md:190`,
   the only site that states the wrong mechanism explicitly. Keep the requirement; correct why. The
   digest is not hashed; the image bakes `SRP_PREDICT_CODE_SHA`/`SRT_TRAITS_CODE_SHA`, which *are*
   key inputs, and a `sha-<gitsha>` tag can be silently overwritten by a rebuild of the same commit —
@@ -133,7 +134,7 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   provenance-only, and cites lines 30-33 and 155-156 of the same file, which already state the
   correct position.
 
-- [ ] 4.2 Apply the **terminology-only** correction at the other four sites — they list the
+- [x] 4.2 Apply the **terminology-only** correction at the other four sites — they list the
   requirement without asserting a mechanism, so they need a different edit from 4.1, not a
   find-and-replace:
   - same file:76 (resume list)
@@ -177,11 +178,11 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
 
 ## 5. Pre-merge verification
 
-- [ ] 5.1 `python scripts/check_manifests.py` → `=== ALL 67 ASSERTIONS PASS ===`.
+- [x] 5.1 `python scripts/check_manifests.py` → `=== ALL 71 ASSERTIONS PASS ===`.
 
-- [ ] 5.2 `openspec validate add-container-digest-provenance --strict` passes.
+- [x] 5.2 `openspec validate add-container-digest-provenance --strict` passes.
 
-- [ ] 5.3 Re-read `compute_idempotency_key`'s signature in `sleap-roots-contracts` and confirm no
+- [x] 5.3 Re-read `compute_idempotency_key`'s signature in `sleap-roots-contracts` and confirm no
   container digest is among its inputs.
   **Validate:** the signature matches what `proposal.md` states (note it is keyword-only).
 
