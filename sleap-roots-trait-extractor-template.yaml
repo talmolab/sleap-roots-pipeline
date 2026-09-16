@@ -40,7 +40,12 @@ spec:
         # 2026-09-08) by weeks. Confirmed causing real leftover-scan contamination live
         # (2026-09-01 batch-oracle testing). bloom#685 is now genuinely deployed and verified —
         # this image's a7-emitting envelopes will be accepted, not silently rejected.
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-689cffb
+        # Digest-pinned 2026-09-16 (#70), for the same reason as the predictor template: the tag
+        # names a commit, only the digest names bytes, and a `sha-<gitsha>` tag can be silently
+        # overwritten by a rebuild of the same commit. This digest is the source of truth for
+        # SRT_TRAITS_CONTAINER_DIGEST in `env:`; `scripts/check_manifests.py` fails if they drift.
+        # Verified against GHCR: resolves to org.opencontainers.image.revision 689cffb8143594e…
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-689cffb@sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369
         imagePullPolicy: Always
         args:
           - "/workspace/input"
@@ -53,6 +58,19 @@ spec:
           # Prerequisite for validating that; see sleap-roots-pipeline#56.
           - name: ARGO_WORKFLOW_NAME
             value: "{{workflow.name}}"
+          # #70: NOT inert -- trait_extractor reads this today (`trait_extractor/envelope.py`,
+          # _resolve_identity(..., "SRT_TRAITS_CONTAINER_DIGEST")), falling back to "" when unset.
+          # The value MUST equal the digest pinned on this file's own `image:` line;
+          # check_manifests.py enforces that, parsing the expected value out of that line.
+          # At every future pin bump, re-verify against the registry before editing either line:
+          #   TOK=$(curl -s "https://ghcr.io/token?scope=repository:talmolab/sleap-roots-trait-extractor:pull&service=ghcr.io" | python -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json" \
+          #     https://ghcr.io/v2/talmolab/sleap-roots-trait-extractor/manifests/<tag> | grep -i docker-content-digest
+          # Only the traits digest belongs here: predict_container_digest reaches this stage's
+          # envelope threaded through predict's own manifest, so setting SRP_* here would fabricate
+          # rather than record. Not an idempotency-key input, so changing it forces no recompute.
+          - name: SRT_TRAITS_CONTAINER_DIGEST
+            value: "sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369"
         volumeMounts:
           - name: predictions-output-dir
             mountPath: /workspace/input
