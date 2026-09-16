@@ -33,16 +33,24 @@ spec:
       # eviction-triggered whole-batch recomputation matters more right now than bursting above
       # deserved quota. Cluster admin set this live first; this file was synced to match so a
       # future `argo template update` from this repo doesn't silently revert it. Never remove
-      # this field outright — an Argo pod with no priorityClassName lands at very-high (150) on
-      # this cluster, which is worse than either named tier here.
+      # this field outright — the default is unverifiable with this repo's credentials
+      # (`priorityclasses` is cluster-scoped and Forbidden to argo-user), and pods observed with
+      # none resolved to priority 0, the lowest tier. This file previously recorded "very-high
+      # (150)"; that was never verified and is very likely wrong — see the exit-gate template.
       priorityClassName: high
       retryStrategy:
         # Preemptible GPU stage — can be evicted mid-run when over-quota, so allow several
         # retries with backoff (don't slam straight back into a still-full cluster).
-        # ⚠️ Resume caveat (predict #26 / sleap-roots #259): predict's existence-only skip + a
-        # non-atomic manifest write means a mid-write eviction can leave a truncated
-        # {scan}.predictions.json that a retry trusts as "done". More retries widen that window —
-        # gate this limit on atomic-write + checksum-verified skip before wiring in write-back.
+        # Resume behaviour (corrected 2026-09-16 — this comment previously claimed predict's skip
+        # was "existence-only", so a mid-write eviction could leave a truncated
+        # {scan}.predictions.json that a retry trusts as "done". That is FALSE since predict #35:
+        # `_previous_identity_key` recomputes an idempotency key from the on-disk sidecar and
+        # PredictionManifest and returns None on OSError/JSONDecodeError/ValidationError, so a
+        # truncated manifest is treated as CHANGED and re-predicted, never as done.)
+        # The real consequence to know about: that key includes `predict_code_sha`, baked into this
+        # image as SRP_PREDICT_CODE_SHA. So bumping the pin below legitimately invalidates every
+        # already-computed scan's key and the next run recomputes them all — expected, not a bug,
+        # but it means a "were leftovers left untouched?" check cannot be run across a pin bump.
         limit: 3
         retryPolicy: Always
         backoff:
@@ -56,12 +64,29 @@ spec:
         # Bumped 2026-09-10 (#54): the previous pin (4a70e599, 2026-07-07) predated predict's own
         # RunManifest consumption (predict#35, merged 08-18) and Argo exit-semantics hardening
         # (predict#36/#38) by 6 weeks — same class of bug as #51/#55.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-f974632332a2a7c6126af57837ec80df7393640f
+        # Bumped 2026-09-15 (#56): sha-f974632... -> sha-e025e309..., the fourth bump for this
+        # template. Carries predict#42 (`copy_run_manifest_forward`), which forwards
+        # run_manifest.json into predict's own output so trait-extraction is run-scoped — the real
+        # reason #54/#55's fix alone did not stop leftover-scan contamination. #57's pin predated
+        # #42 by definition. NOTE predict tags the FULL 40-char sha, unlike bloomctl's 7 —
+        # verify against GHCR, don't pattern-match the other templates.
+        # Watch out (predict#44): predict still forwards the manifest unchanged rather than
+        # narrowing it to `ok ∪ skipped`. Now that #56 lets the DAG reach traits after a partial
+        # predict, a predict-failed scan becomes a misattributed *trait-extraction* failure.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"
           - "/workspace/output"
         env:
+          # #56: inert today — predict does not read it yet. Carried because the stage directories
+          # are fixed, shared hostPaths and run_manifest.json accumulates scan_keys across every
+          # run (and every environment) that writes into them. Now that continueOn can carry the
+          # DAG past an upstream failure, the manifest this stage is scoped by may belong to a
+          # different run, and predict has no way to detect that without knowing its own workflow
+          # identity. This is the prerequisite for that check; see sleap-roots-predict#44.
+          - name: ARGO_WORKFLOW_NAME
+            value: "{{workflow.name}}"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:

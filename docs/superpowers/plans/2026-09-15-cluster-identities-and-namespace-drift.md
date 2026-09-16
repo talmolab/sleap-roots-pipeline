@@ -602,7 +602,7 @@ The document has five sections, in this order:
 
 5. **`## Namespace facts that bite`** —
    - `runai-busch-lab` is shared by Bloom staging *and* production, disambiguated only by an env label stamped on each submitted Workflow. An `argo template update` therefore affects both environments' future dispatches. A production dispatch deployment is live in that namespace.
-   - Deserved GPU quota is 2. An unset `priorityClassName` lands at `very-high` (150), which is non-preemptible and can evict others' running sessions — set `interactive-preemptible` explicitly unless you have a reason not to.
+   - Deserved GPU quota is 2. Set `priorityClassName` explicitly unless you have a reason not to — `interactive-preemptible` for CPU stages. ⚠️ **Corrected 2026-09-16 (PR #60's review):** this line said an unset value "lands at `very-high` (150), which is non-preemptible and can evict others' running sessions". That was never verified and is very likely wrong — pods observed with no class resolved to priority **0** (lowest tier), and `priorityclasses` is Forbidden to our credentials. The risk of omitting the field is starvation, not evicting others.
    - `metadata.namespace` in `sleap-roots-pipeline.yaml` only affects hand-run `argo submit`. Bloom's `k8s_client.py` overwrites it from `WORKFLOWS_K8S_NAMESPACE` (line 227) so the body matches the URL segment.
 
 - [ ] **Step 2: Verify every claim in the file traces to a citation**

@@ -1,0 +1,171 @@
+# https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
+# A4 (sleap-roots-pipeline#56): the DAG's terminal gate. Reads the three producer stages' real exit
+# codes and fails unless every one is 0 (all scans succeeded) or 3 (batch completed, some scans
+# isolated-failed).
+#
+# WHY THIS EXISTS — it is not belt-and-braces. Argo's `continueOn` keys only on a node's *phase*,
+# not its exit code (`ContinueOn` is two booleans, `error`/`failed`; exit-code support is
+# argoproj/argo-workflows#6396, open, its PR #6702 closed unmerged). So `continueOn` alone cannot
+# tell "exit 3, partial success" from "exit 1, crashed after exhausting retries" — it would let
+# BOTH through and report the Workflow `Succeeded`, which is strictly worse than the pre-#56
+# behaviour where a crash at least failed the run. This task re-derives the final phase from the
+# codes themselves. Because it is the DAG's only leaf, `assessDAGPhase` computes the Workflow's
+# phase from this task alone; the intermediate `Failed` producer nodes are not consulted.
+#
+# WHY THE STRICT `0|3` ALLOWLIST IS LOAD-BEARING. This task references producers it does not
+# directly depend on. That resolves only because the DAG is linear and all three are its
+# *ancestors* (`workflow/common/ancestry.go::GetTaskAncestry` recurses through dependencies).
+#
+# Restructuring the DAG so a referenced producer is no longer an ancestor is caught early and
+# loudly — verified on this cluster (argo v3.6.5 CLI, v3.6.7 controller): Argo's
+# `validateDAGTaskArgumentDependency` rejects it at BOTH `argo lint` and submission with
+# `missing dependency '<task>' for parameter '<name>'`. So that mistake cannot reach the cluster.
+#
+# The allowlist below covers what the validator cannot: a task that IS a valid ancestor but
+# produced no `outputs.exitCode` — reachable when a node is `Failed` without its main container
+# terminating (`inferFailedReason` returns Failed as soon as pod.Status.Message is set). At runtime
+# `dag.go` substitutes task arguments with `template.Replace(..., allowUnresolved=true)`, so an
+# empty or literal `{{tasks.<name>.exitCode}}` reaches this container instead of raising.
+# Do NOT relax this to a denylist (e.g. "fail if in {1,2,143}"): that would pass a placeholder, an
+# empty string, and any future exit code silently. Both rejections are verified live.
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: sleap-roots-exit-gate-template
+  labels:
+    # Same `project` label the other four stage templates carry. For CONSISTENCY only:
+    # this is object-level metadata, which Argo does not copy onto the pod, so it is inert
+    # for quota exactly like the `preemptible` annotation the predictor template documents.
+    # RunAI attributes quota by namespace, not by this label. Kept so all five agree.
+    project: busch-lab
+spec:
+  templates:
+    - name: exit-gate
+      # Never omit this field — but not for the reason this repo used to record. The claim that an
+      # unset priorityClassName "lands at very-high (150), above the predictor's high (125)" was
+      # never verified and is very likely wrong: Argo pods observed with no priorityClassName
+      # resolved to priority 0 (three pods, runai-talmo-lab, 2026-09-16), i.e. the LOWEST tier,
+      # below `train` (50). The cluster-scoped `priorityclasses` API is Forbidden to the argo-user
+      # identities, so neither a globalDefault nor its value can be confirmed from this repo's
+      # credentials — which is itself the reason to always state the class explicitly rather than
+      # rely on any default. Corrected direction of the risk: omitting this field starves the gate,
+      # it does not let it preempt GPU work. `interactive-preemptible` matches the other CPU-only
+      # stages and is the right value; see also I2 in PR #60's review on why a NON-preemptible gate
+      # would be actively dangerous (it must fit deserved quota or sit Pending forever).
+      priorityClassName: interactive-preemptible
+      # Bounds the one failure mode this template introduces that nothing else can catch.
+      # Because exit-gate is the DAG's ONLY leaf, assessDAGPhase takes the Workflow's phase from
+      # it — and at v3.6.7 assessNodeStatus maps PodPending UNCONDITIONALLY to NodePending (there
+      # is no ImagePullBackOff / FailedMount handling). So a gate pod that cannot start — GHCR
+      # blip on a node with no cached layer, unschedulable, over quota — is never Failed and never
+      # Error, which means neither retryStrategy nor continueOn applies, and a batch whose real
+      # work is COMPLETE (write-back already committed to Bloom) sits Running forever while
+      # Bloom's status poller never resolves the run.
+      #
+      # `timeout` is the field that fixes this and `activeDeadlineSeconds` is NOT: the controller
+      # checks `node.Phase == wfv1.NodePending && time.Now().After(node.StartedAt.Add(tmplTimeout))`
+      # — an explicit Pending check — whereas the workflow-level deadline's Pending path
+      # (failNodesWithoutCreatedPodsAfterDeadlineOrShutdown) only covers nodes with no pod created,
+      # and setting it at Workflow scope would also bound the GPU predictor, which we must not do.
+      #
+      # Value does NOT scale with batch size: this node is only created once write-back completes,
+      # so every per-scan cost is upstream of the window, and the script itself is three string
+      # compares. What 600s must absorb is scheduling latency on a contended cluster plus a cold
+      # image pull. It applies per attempt, so with limit: 2 the worst case is ~3x this plus
+      # backoff. Deliberately generous — the win is converting "hangs forever" into "fails in
+      # minutes", not tight enforcement.
+      timeout: 600s
+      retryStrategy:
+        # This task is the DAG's only leaf, so it alone determines the Workflow phase — without a
+        # retry, a single image-pull blip or a preemption would report a fully-successful batch as
+        # `Failed`. retryPolicy Always (not the default OnFailure) because eviction can surface as
+        # an Error-phase node, which OnFailure does not retry (see the images-downloader template's
+        # own note on that).
+        limit: 2
+        retryPolicy: Always
+        # Backoff matters more here than for the other CPU stages. Those retry to recover their own
+        # work; this one retries to avoid mislabelling a batch whose work is already complete. With
+        # no backoff, `limit: 2` spends all three attempts within seconds — effectively one attempt
+        # against exactly the transient cluster-wide contention it exists to survive. Costs nothing
+        # on the happy path, which has no retries. See the predictor template for the same
+        # reasoning ("don't slam straight back into a still-full cluster").
+        backoff:
+          duration: "30s"
+          factor: 2
+      inputs:
+        parameters:
+          # One named parameter per producer — deliberately NOT a single comma-joined string.
+          # A joined value would be split in the shell, and word-splitting silently collapses an
+          # empty field, so "0,,0" would iterate twice over "0" and pass. Named parameters remove
+          # both the splitting and the empty-field ambiguity.
+          - name: images-downloader-code
+          - name: predictor-code
+          - name: trait-extractor-code
+      container:
+        # Reused purely for its shell (python:3.11-slim base — /bin/sh present), NOT to run
+        # bloomctl. Reusing an image this repo already pins avoids adding a further un-drift-checked
+        # object (#58). Cost: this pin must move in lockstep with
+        # sleap-roots-images-downloader-template.yaml and sleap-roots-write-back-template.yaml —
+        # bump all three together.
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-0614889
+        # IfNotPresent, not the Always the other bloomctl templates use: those pull every run to
+        # catch a silently-overwritten sha- tag, which matters for code that actually runs. This
+        # task uses only /bin/sh, and it is the terminal single-point-of-failure — a registry
+        # round-trip here is pure added failure surface.
+        imagePullPolicy: IfNotPresent
+        # MANDATORY override. The bloomctl image sets ENTRYPOINT ["bloomctl"] and no CMD, so the
+        # args-only convention the other four templates follow would run `bloomctl <script>` and
+        # exit 2 — failing EVERY workflow, including fully successful ones.
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -u
+            rc=0
+            fail() {
+              echo "exit-gate: stage '$1' reported exit code '$2' (expected 0 or 3)" >&2
+              rc=1
+            }
+            case "${CODE_IMAGES_DOWNLOADER}" in
+              0|3) ;;
+              *) fail images-downloader "${CODE_IMAGES_DOWNLOADER}" ;;
+            esac
+            case "${CODE_PREDICTOR}" in
+              0|3) ;;
+              *) fail predictor "${CODE_PREDICTOR}" ;;
+            esac
+            case "${CODE_TRAIT_EXTRACTOR}" in
+              0|3) ;;
+              *) fail trait-extractor "${CODE_TRAIT_EXTRACTOR}" ;;
+            esac
+            if [ "$rc" -eq 0 ]; then
+              echo "exit-gate: all producers in {0,3}. Partial-success runs pass here by design:"
+              echo "exit-gate: a green Workflow does NOT mean every scan succeeded. Check"
+              echo "exit-gate: cyl_pipeline_runs.failed_count (see sleap-roots-pipeline#56)."
+            fi
+            exit "$rc"
+            # Note on the comparison: it is a string match, so a zero-padded "03" is REJECTED.
+            # Deliberate: the producers emit bare "0"/"3", and anything else is unexpected input
+            # that should be surfaced rather than silently normalised.
+        env:
+          # Passed via env rather than interpolated into the script body, so a substituted value
+          # can never break out of the shell script. An unresolved reference arrives as the
+          # literal `{{tasks.<name>.exitCode}}` and is rejected by the `case` allowlist above.
+          - name: CODE_IMAGES_DOWNLOADER
+            value: "{{inputs.parameters.images-downloader-code}}"
+          - name: CODE_PREDICTOR
+            value: "{{inputs.parameters.predictor-code}}"
+          - name: CODE_TRAIT_EXTRACTOR
+            value: "{{inputs.parameters.trait-extractor-code}}"
+        # Deliberately NO volumeMounts and NO HOME: this task reads no data and makes no Bloom API
+        # call. Argo's addVolumeReferences only attaches volumes that a mount actually names, so
+        # neither the /hpi/hpi_dev hostPath volumes nor the bloom-credentials Secret reach this
+        # pod. Do not copy the write-back template's mounts here.
+        resources:
+          # Set explicitly so the pod is not BestEffort QoS — a BestEffort gate would be first
+          # evicted under node pressure, at the one point in the DAG where all real work is done.
+          requests:
+            cpu: "50m"
+            memory: 64Mi
+          limits:
+            cpu: "200m"
+            memory: 128Mi

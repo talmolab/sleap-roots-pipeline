@@ -3,8 +3,8 @@
 ## Purpose
 
 `sleap-roots-pipeline` is the **orchestration layer** for the sleap-roots plant-root
-phenotyping pipeline. It declares how four containerized stages are wired together and
-scheduled on a GPU cluster:
+phenotyping pipeline. It declares how four containerized stages — plus a terminal exit-code gate
+— are wired together and scheduled on a GPU cluster:
 
 1. **images-downloader** — stages a batch of scans in from Bloom via `bloomctl` (batch-capable, A4)
 2. **predictor** — runs SLEAP predictions on the staged image sets (GPU)
@@ -19,7 +19,7 @@ trait-extractor, `salk-bloom`'s `bloomctl`).
 The roadmap target (see `docs/bloom-integration/roadmap.md`, tier **A4**) is
 **event-driven, per-batch orchestration**: a scan ingested into Bloom eventually triggers
 this per-batch Argo workflow (stage-in → predict → traits → write-back with provenance).
-**A4 is in progress, not out of scope** — the four-stage batch DAG above landed via
+**A4 is in progress, not out of scope** — the batch DAG above landed via
 `add-per-batch-argo-workflow` and was validated end-to-end on the real RunAI cluster
 (2026-07-30). Still open: the Bloom-side trigger route/dispatch worker (so a UI click
 submits this workflow instead of a manual `argo submit`), the Argo semaphore for
@@ -68,9 +68,13 @@ are YAML manifests and shell scripts.
 
 ### Architecture Patterns
 
-- **Four-stage per-batch DAG**: images-downloader → predictor → trait-extractor →
-  write-back, with `dependencies:` enforcing order and `retryStrategy` handling
-  preemption/transient failures. Data passes between stages **via shared volume mounts,
+- **Per-batch DAG with a terminal exit-code gate**: images-downloader → predictor →
+  trait-extractor → write-back → exit-gate, with `dependencies:` enforcing order and
+  `retryStrategy` handling preemption/transient failures. The three producers carry
+  `continueOn: {failed: true}` so a partial batch does not kill the run, and `exit-gate` — the
+  DAG's only leaf — re-derives the Workflow phase from their real exit codes (`0`/`3` pass,
+  anything else fails). See `openspec/changes/add-partial-success-exit-gate/`.
+  Data passes between stages **via shared volume mounts,
   not Argo parameters/artifacts** — one stage's output mount is the next stage's input
   mount, so inter-stage coupling is mount-path agreement, not parameter wiring. (The one
   exception is the `scan-ids` Workflow parameter, which `images-downloader` consumes to
@@ -94,9 +98,32 @@ are YAML manifests and shell scripts.
 
 There is no unit-test harness (no application code). Validation is **operational**:
 
-- `argo lint <file>.yaml` to check manifest validity before submit
-- local dry-runs via `local_run_pipeline_first_time.sh` (Docker Desktop + WSL2, CPU)
-- a real submission on the cluster (`argo submit … --watch`) against a reference scan set
+- `bash scripts/lint_manifests.sh` (from WSL, where `argo` lives) — lints the Workflow **together
+  with every template it references**, in one invocation. Use the script, **not** the bare command:
+  `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml` **fails on this tree**
+  even though the tree is valid. Offline lint does resolve `templateRef` from the files you pass,
+  but it matches on **(namespace, name)**, and `sleap-roots-pipeline.yaml` declares
+  `metadata.namespace` while the templates declare none — so the lookup always misses. The script
+  lints a temp copy with that one line stripped and never touches the tracked files. Never strip it
+  from the real file. What this catches is a `templateRef` with **no matching file in this repo**;
+  it says nothing about what is *registered in the cluster* — that is
+  `scripts/check_cluster_drift.sh`'s job (it reports `NOT REGISTERED`), and it matters because a
+  template must be `argo template create`d before any Workflow referencing it can be submitted.
+- `python scripts/check_manifests.py` — executable assertions for this repo's own conventions,
+  which `argo lint` knows nothing about (priority classes, quota labels, credential isolation,
+  retry shape, pin hygiene, mount agreement). Includes the exit-gate's allowlist, asserted by
+  **executing** the shipped script over a vector table rather than inspecting its text.
+- field assertions on the manifests (`yq`) for anything `argo lint` does not check — it validates
+  Argo schema, not whether a pod carries a `priorityClassName`, a quota label, or a `retryStrategy`
+- local dry-runs via `local_run_pipeline_first_time.sh` (Docker Desktop + WSL2, CPU). ⚠️ Currently
+  broken for the A4 DAG, and for two reasons in this order: it applies its four templates into
+  namespace `argo` but submits the *cluster* manifest, whose `metadata.namespace`
+  (`runai-busch-lab`) wins over `--namespace` — so it fails on the missing namespace first; and if
+  it got past that, **all** of its `templateRef`s would be unresolvable (the templates are in
+  `argo`), not only the new `exit-gate`. Tracked by #21.
+- a real submission on the cluster (`argo submit … --watch`) against a reference scan set —
+  including the **failure** paths, not just the happy one: a partial batch should end `Succeeded`
+  with the good scans written back, and a crash-class exit should end `Failed`
 - (A4, later) end-to-end on a reference scan: idempotent re-delivery + notification on
   success **and** failure
 
@@ -121,7 +148,7 @@ git/GitHub/OpenSpec/docs commands.
 - The broader program is tracked in `docs/bloom-integration/roadmap.md` (canonical for
   scope/sequencing) and Bloom EPIC #9 (canonical for Bloom-side implementation detail).
   This repo is the orchestration component slated to **deliver** roadmap tier **A4 —
-  event-driven orchestration**; A4 is **in progress** — the four-stage batch DAG is built
+  event-driven orchestration**; A4 is **in progress** — the batch DAG is built
   and cluster-validated, but the Bloom-side trigger route (so a UI click submits it,
   rather than a manual `argo submit`) is not yet built.
 - **Vocabulary:** a *scan* is one imaging run of a plant; the pipeline runs per scan (A4),

@@ -3,12 +3,15 @@ Container orchestration for sleap-roots inference pipeline.
 
 This repository defines a modular, GPU-accelerated image processing pipeline for plant root phenotyping using [SLEAP](https://sleap.ai), orchestrated via [Argo Workflows](https://argo-workflows.readthedocs.io).
 
-The pipeline consists of four stages (A4, updated 2026-07-30 — `models-downloader` was dropped
-earlier; models load in-process from the wandb registry):
+The pipeline consists of four processing stages followed by a terminal gate task (A4, updated
+2026-09-15 — `models-downloader` was dropped earlier; models load in-process from the wandb
+registry):
 1. **images-downloader** – Stages a batch of scans in from Bloom via `bloomctl`
 2. **predictor** – Runs SLEAP predictions on the staged image sets (GPU)
 3. **trait-extractor** – Extracts phenotypic traits from predictions
 4. **write-back** – Writes the resulting traits back into Bloom via `bloomctl`
+5. **exit-gate** – Re-derives the Workflow's final phase from the producers' real exit codes
+   (see *DAG Behavior and Step Failures* below)
 
 It is designed for reproducible, containerized execution using Kubernetes.
 
@@ -75,17 +78,27 @@ argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 > `sleap-roots-pipeline.yaml` and exits non-zero — but **not because it needs a cluster**. Offline
 > lint *does* resolve `templateRef` from the files you pass it; it matches on **(namespace, name)**,
 > and this Workflow declares `metadata.namespace` while the templates declare none, so the lookup
-> misses. Strip that line from a **temp copy** and all five resolve with no cluster and no VPN:
+> misses. Strip that line from a **temp copy** and all six manifests resolve with no cluster and no
+> VPN:
+>
+> `scripts/lint_manifests.sh` does exactly that — it lints a temp copy with the namespace stripped,
+> never touching the tracked files:
 >
 > ```bash
-> T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"
-> sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"
-> argo lint --offline "$T"/sleap-roots-*.yaml     # → no linting errors found!
+> bash scripts/lint_manifests.sh      # from WSL, where argo is installed → no linting errors found!
 > ```
 >
 > **Never strip that line from the real file** — Bloom's dispatch reads the manifest and the
-> launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` also passes
-> clean, but needs VPN; prefer the temp-copy recipe for a gate that works anywhere.
+> launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` needs VPN
+> **and** every referenced template to be registered there already, so it will fail until
+> `sleap-roots-exit-gate-template` is `argo template create`d; prefer the script for a gate that
+> works anywhere. Note what offline lint can and cannot see: it catches a `templateRef` with no
+> matching **file in this repo**, and says nothing about what is registered in the **cluster** —
+> that is `scripts/check_cluster_drift.sh`'s job.
+>
+> This is the only check that cross-resolves `templateRef` — i.e. the only one that catches a DAG
+> task pointing at a template nobody registered. There is no CI in this repo, so it runs only when
+> you run it.
 
 ### 🔑 Token check
 
@@ -138,6 +151,7 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 ├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
 ├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
 ├── sleap-roots-write-back-template.yaml         # WorkflowTemplate: writes traits back via bloomctl
+├── sleap-roots-exit-gate-template.yaml          # WorkflowTemplate: fails the run on a crash-class exit
 ├── runai_run_pipeline.sh                        # GPU cluster launcher for Run:AI (runai-busch-lab)
 ├── local_run_pipeline_first_time.sh             # Local WSL2/Docker Desktop test runner
 ├── local-WSL2-*.yaml                            # Local-only templates and workflow configs
@@ -242,11 +256,16 @@ kubectl describe node docker-desktop | grep -A 5 "Capacity"
 ## 📋 Creating WorkflowTemplates (One-Time per Namespace)
 
 ```bash
+argo template create sleap-roots-exit-gate-template.yaml -n runai-busch-lab
 argo template create sleap-roots-images-downloader-template.yaml -n runai-busch-lab
 argo template create sleap-roots-predictor-template.yaml -n runai-busch-lab
 argo template create sleap-roots-trait-extractor-template.yaml -n runai-busch-lab
 argo template create sleap-roots-write-back-template.yaml -n runai-busch-lab
 ```
+
+> Register `sleap-roots-exit-gate-template.yaml` **before** submitting the workflow: the DAG
+> references it, so submission fails on an unresolvable `templateRef` if it is missing. `create`
+> rather than `update` the first time — `update` errors on a template that does not exist yet.
 
 Check with:
 
@@ -364,7 +383,15 @@ Argo’s `DAG` execution has these key properties:
 - **Task dependencies** are enforced using the `dependencies:` field.
 - **All steps run in parallel** where possible, unless blocked by a dependency.
 - **Retries** are configured per step using `retryStrategy`. This is necessary for handling failures like preemptions or transient errors.
-- If a task fails and `retryStrategy` is exhausted:
+- **A partially-failing images-downloader no longer kills the run** (`sleap-roots-pipeline-#56`). The three producer stages — images-downloader, predictor, trait-extractor — carry `continueOn: {failed: true}`, so a stage that completes its batch while isolating per-scan failures does not stop the DAG.
+  - ⚠️ **This currently delivers the intended end-to-end outcome for images-downloader only.** A partial *predictor* or *trait-extractor* leaves the failed scans listed in `run_manifest.json`, so write-back reports them as missing, marks them retriable, exits non-zero and retries to exhaustion — the Workflow still ends `Failed` and the gate never runs. Tracked as [bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859); until it lands, read #56 as fixing the stage-in case.
+  - ⚠️ **bloom#859 is a latch, not a per-run inconvenience.** `write_run_manifest` unions this run's `ok`/`skipped` keys into any existing `run_manifest.json` and **never prunes** (`download_for_predict.py`), and the three `a4_poc` directories are fixed, shared by prod/staging/manual, and have nothing that cleans them ([#63](https://github.com/talmolab/sleap-roots-pipeline/issues/63)). So a scan that stages in fine and then fails at predict or traits stays in the manifest **permanently** with no `result.json` — and write-back reports a manifest key with no envelope as a batch failure. Consequence: **every subsequent run over those directories exits non-zero at write-back and ends `Failed`, including runs whose own scans all succeeded**, after having already ingested them. This PR is what makes it reachable: previously a partial producer killed the DAG so write-back never ran. Manual remedy until bloom#859 lands: prune or delete `run_manifest.json` in all three directories. Root cause is shared with [#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37) and bloom#703 — per-run path isolation was deliberately rejected (it would break the skip-if-done dedup the whole program relies on), so the manifest, not the path, is what needs per-run identity.
+  - Producers signal this with a distinct exit code: **`0`** = every scan succeeded, **`3`** = the batch ran to completion but some scans isolated-failed. Anything else (`1` crash, `2` usage error, `143` SIGTERM) is crash-class.
+  - The terminal **`exit-gate`** task re-derives the Workflow's final phase from those real exit codes: it passes only if every producer reported `0` or `3`, and fails the Workflow otherwise. This is what stops `continueOn` from silently reporting an exhausted-retry crash as success — `continueOn` keys only on a node's *phase*, not its exit code.
+  - A stage whose pod is **deleted out from under Argo** (preemption — `markNodeError`, "pod deleted") produces an `Error` node, which `continueOn` deliberately does **not** cover, so the DAG stops there and the Workflow ends `Failed`. A pod that **never starts** is a different and worse case: at v3.6.7 `assessNodeStatus` maps `PodPending` unconditionally to `NodePending`, so `ImagePullBackOff` or a failed `hostPath` mount stays `Pending` — not `Error`, not `Failed` — and neither `retryStrategy` nor `continueOn` applies, so the workflow **hangs** rather than failing. The `exit-gate` template carries a `timeout` for exactly this reason, since as the DAG's only leaf it is where such a hang would strand an otherwise-complete batch; the four stage templates do not, so a `Pending` producer still hangs indefinitely.
+- **A crash does not stop the DAG either.** `continueOn` keys on node phase, not exit code, so a crashed images-downloader still schedules the GPU predictor, trait-extraction and write-back before the gate concludes. Downstream stages are scoped by `run_manifest.json`, which is **cumulative across every run that shares the stage directories** — so on a crash path they may act on a previous run's scan set, and write-back may record per-scan outcomes, before the Workflow is declared `Failed`. A `Failed` Workflow therefore does not imply nothing was written.
+- ⚠️ **A green Workflow does not mean every scan succeeded.** A partial run is `Succeeded` by design. Check `cyl_pipeline_runs.done_count` / `failed_count` for the real per-scan outcome. (The run's own status reads `complete` rather than `partial` until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands.) The gate reports whether the machinery ran, not whether any scan was processed: it mounts no volumes, so it cannot observe whether output landed. The outcome for a zero-scan or zero-staged batch depends on what is already present in the shared input directory and is **not yet characterised** — do not rely on it either way until it is measured.
+- If write-back fails, or the gate rejects a crash-class exit:
   - The **entire workflow fails**.
   - When resubmitting the workflow, **Argo does not resume from the failed step by default** — it starts fresh unless you manually skip steps or use artifacts/results to track progress (see [retries](https://argo-workflows.readthedocs.io/en/latest/retries/) and [retrying failed or errored steps](https://argo-workflows.readthedocs.io/en/latest/walk-through/retrying-failed-or-errored-steps/)).
 
