@@ -76,11 +76,31 @@ editing rather than discovering the drift only when a real batch dispatch fails.
 The cluster launcher (`runai_run_pipeline.sh`) SHALL register the `images-downloader`, `predictor`,
 `trait-extractor`, `write-back`, and `exit-gate` templates.
 
+Its target namespace SHALL equal `sleap-roots-pipeline.yaml`'s own `metadata.namespace`
+(`runai-busch-lab`), so that the namespace it registers templates into is the namespace the Workflow
+it submits actually runs in.
+
+That value SHALL NOT be overridable by an environment variable. `argo submit -n <ns>` does not
+redirect a submission — the manifest's `metadata.namespace` wins — so an override could only move
+the template registrations away from the namespace the Workflow still lands in.
+
 #### Scenario: Launcher's TEMPLATES list contains every workflow template
 
 - **WHEN** `runai_run_pipeline.sh` is inspected
 - **THEN** its registered `TEMPLATES` list contains all five template files: the images-downloader,
   predictor, trait-extractor, write-back, and exit-gate templates
+
+#### Scenario: Launcher registers into the namespace the Workflow runs in
+
+- **WHEN** `runai_run_pipeline.sh` and `sleap-roots-pipeline.yaml` are inspected
+- **THEN** the launcher's `NAMESPACE` value equals the Workflow's `metadata.namespace`
+
+#### Scenario: The launcher's namespace is a literal, not an environment-variable expansion
+
+- **WHEN** `runai_run_pipeline.sh`'s `NAMESPACE` assignment is inspected
+- **THEN** it is a plain literal value
+- **AND** it contains no parameter expansion or default-value syntax that would let an environment
+  variable redirect where templates are registered
 
 ## ADDED Requirements
 

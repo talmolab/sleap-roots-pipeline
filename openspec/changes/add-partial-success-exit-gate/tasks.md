@@ -275,6 +275,43 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   (the standing leftover-contamination signal from #54/#55, which also discharges the predictor-pin
   re-run the roadmap lists as outstanding).
 
+## 7b. Rebase onto PR #62 (merges FIRST — this PR rebases onto it)
+
+Merge order was reversed: #62 (namespace drift) lands first. That is the safer direction for
+OpenSpec — #62's `MODIFIED` applies while `Launcher registers all four templates` still exists, and
+this change's `RENAMED` then finds its source name intact. The reverse would have orphaned #62's
+delta.
+
+- [x] 7b.1 **Fold #62's namespace rules into the renamed requirement.** A `RENAMED` delta carries the
+  FULL replacement text, so a version of it written before #62 existed would silently delete #62's
+  two namespace paragraphs at archive time — and `openspec validate --strict` cannot detect that,
+  because renaming is a legal operation with no way to know content went missing. Done: the renamed
+  `Launcher registers every workflow template` now carries the namespace-equality rule and the
+  no-env-var-override rule, plus two scenarios (#62 is dropping its own).
+- [ ] 7b.2 **After #62 merges, diff its actual archived requirement text against what was folded in
+  above.** The text used here came from the peer session's description, not from the merged file.
+  **Validate:** every normative clause in #62's archived `Launcher registers…` requirement appears in
+  this change's renamed version. Anything missing would be deleted by this archive.
+- [ ] 7b.3 **Add the namespace assertions to `scripts/check_manifests.py`** — deferred deliberately:
+  this branch still carries `NAMESPACE="runai-talmo-lab"` because the fix belongs to #62, so the
+  assertion would fail until the rebase. After rebasing, assert (a) the launcher's `NAMESPACE` equals
+  `sleap-roots-pipeline.yaml`'s `metadata.namespace`, and (b) it is a literal with no `${...}`
+  expansion.
+  **Validate:** `python scripts/check_manifests.py` passes with both new assertions.
+- [ ] 7b.4 **Re-apply README hunks over #62's sweep.** Three overlap (main lines 71-76, 167-174,
+  285-291). #62 rewrites all 14 `runai-talmo-lab` references to `busch-lab`, so the five
+  `argo template create` commands must name `runai-busch-lab` **directly** — drop the
+  substitution blockquote added here, since the point of that sweep is that no copy-pasteable
+  command names the wrong namespace.
+  **Validate:** `grep -c "runai-talmo-lab" README.md` → 0.
+- [ ] 7b.5 Confirm `runai_run_pipeline.sh` merged cleanly: #62 rewrote lines 26-38 (literal
+  `NAMESPACE`, shared-namespace note) and deleted the ⚠️ mismatch comment added here; this change's
+  `TEMPLATES` entry and five-line header recipe are a different hunk and should survive.
+  **Validate:** `bash -n runai_run_pipeline.sh`; `TEMPLATES` lists five files; no ⚠️ mismatch comment
+  remains; `NAMESPACE` is the literal `runai-busch-lab`.
+- [ ] 7b.6 Re-run the full local gate after rebasing: `scripts/lint_manifests.sh`,
+  `scripts/check_manifests.py`, `openspec validate --strict`.
+
 ## 8. Cross-repo lockstep (after this PR merges)
 
 - [ ] 8.1 Open the companion `salk-bloom` PR: copy the merged file **byte-exact**
