@@ -100,10 +100,18 @@ it, and `get serviceaccounts` returns **no** under both other identities. The ex
    the non-login PATH, so the skill's own `wsl -e bash -c "..."` pattern fails with
    `No such file or directory` unless the path is spelled out. This cost real time during the audit.
 
-4. **Leave dated session records alone.** The 2026-08-07 handoff's "cluster-admin-only to create"
-   gloss is stale, but it quotes an admin accurately ("no *kubectl* identity of yours can create
-   secrets" — still true) and is a record of what was known then. Same for the 2026-09-15 plan that
-   seeded the false sentence. Owner's decision: fix living docs only.
+4. **Leave dated session records alone, with one exception.** The 2026-08-07 handoff's
+   "cluster-admin-only to create" gloss is stale, but it quotes an admin accurately ("no *kubectl*
+   identity of yours can create secrets" — still true) and is a record of what was known then. It
+   stays untouched. Owner's decision: fix living docs only.
+
+   The exception is `docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md:600`,
+   which seeded the false sentence. That plan is not a dead record: its work shipped in PR #62, but
+   all 55 of its checkboxes are still unticked, so it reads as unexecuted. Anyone resuming it by
+   checkbox would rewrite the false sentence — which is how it got shipped the first time. It gets a
+   one-line superseded annotation matching the one already at line 352 of the same file
+   (`⚠️ SUPERSEDED — do not execute this step as written`, added by PR #69), so this follows an
+   existing convention in this exact file rather than introducing one.
 
 5. **No OpenSpec change.** Nothing in `openspec/specs/` changes by a byte — no capability, no
    requirement, no orchestration behavior. `/new-feature` carves out docs-only work.
@@ -135,9 +143,14 @@ it, and `get serviceaccounts` returns **no** under both other identities. The ex
 - One parenthetical on `kubectl`'s WSL path. Its identity wording at `:42-43` is already correct
   and becomes the phrasing `cluster-identities.md` mirrors.
 
+**`docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md`**
+
+- A superseded annotation at line 600 only. The surrounding plan text is left exactly as written.
+
 ## Out of scope
 
-Dated plans and specs; `docs/bloom-integration/roadmap.md`; the `-staging` credential name
+Other dated plans and specs, including the 2026-08-07 handoff;
+`docs/bloom-integration/roadmap.md`; the `-staging` credential name
 hardcoded in the vendored manifest (a real gap for production dispatch, but a code change in
 `salk-bloom`, not a docs correction).
 
