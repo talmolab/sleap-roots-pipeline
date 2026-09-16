@@ -92,6 +92,14 @@ rm -f workflow_logs_*.txt   # the script writes one per run
 ## 4. Validate and close out
 
 - [x] 4.1 `openspec validate fix-launcher-namespace --strict` → valid.
-- [ ] 4.2 `/pr-description`; open the PR referencing this change-id. State in the body that the
+- [x] 4.2 `/pr-description`; open the PR referencing this change-id. State in the body that the
   behaviour change affects hand-run launches only, citing `k8s_client.py:48-49` and `:227` as the
-  evidence that Bloom's dispatch path resolves and overwrites the namespace itself.
+  evidence that Bloom's dispatch path resolves and overwrites the namespace itself. — PR
+  [#62](https://github.com/talmolab/sleap-roots-pipeline/pull/62), squash-merged 2026-09-16 as
+  `45787be`. Went through a 5-lens adversarial `/review-pr` before merge, which found 4 blocking
+  issues (all fixed) including that the `NAMESPACE` env-var override this change originally shipped
+  could not work — removed, see What Changes. Follow-ups filed rather than widening the PR:
+  [#61](https://github.com/talmolab/sleap-roots-pipeline/issues/61),
+  [#64](https://github.com/talmolab/sleap-roots-pipeline/issues/64),
+  [#65](https://github.com/talmolab/sleap-roots-pipeline/issues/65),
+  [#66](https://github.com/talmolab/sleap-roots-pipeline/issues/66).
