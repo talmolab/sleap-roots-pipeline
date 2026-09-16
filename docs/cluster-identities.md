@@ -162,6 +162,21 @@ template registrations away from the namespace the Workflow still runs in.
 Kubernetes API rejects a body whose namespace disagrees with the URL's namespace segment. So for
 Bloom-dispatched runs the manifest's value is inert; for hand-run `argo submit` it is decisive.
 
+**Storage is three hand-made directories, and a missing one hangs the run rather than failing it.**
+All three `hostPath` volumes use `type: Directory`, which requires the path to pre-exist —
+deliberately, so a down NFS mount fails loudly instead of silently writing to a node's local disk.
+Nothing in this repo creates them. The operationally important part for anyone debugging: a pod that
+cannot mount its `hostPath` sits **`Pending`**, not `Failed` or `Error`, so neither `retryStrategy`
+nor `continueOn` applies and the Workflow **hangs** instead of failing. If a run is stalled with no
+step ever starting, check `kubectl describe pod` for mount events before looking anywhere else.
+
+That these directories exist at all is a standing precondition nothing enforces — tracked as
+[#63](https://github.com/talmolab/sleap-roots-pipeline/issues/63), which is an
+operational-continuity risk rather than a documentation gap, and has a real deadline attached. Note
+that per-run directories are **not** the fix: the cluster-side skip-if-done dedup this program
+depends on only works because the paths are shared (see
+[#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)).
+
 ## Related
 
 - [`bloom-pipeline-serviceaccount.yaml`](../bloom-pipeline-serviceaccount.yaml) — the requested

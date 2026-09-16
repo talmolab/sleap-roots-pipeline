@@ -72,9 +72,20 @@ argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 ```
 
 > `argo lint --offline` reports a `couldn't find workflow template ...` error on
-> `sleap-roots-pipeline.yaml` and exits non-zero. That's an offline-lint artifact — the DAG
-> references its stages by `templateRef`, which needs a cluster to resolve. Lint without
-> `--offline` for the real answer.
+> `sleap-roots-pipeline.yaml` and exits non-zero — but **not because it needs a cluster**. Offline
+> lint *does* resolve `templateRef` from the files you pass it; it matches on **(namespace, name)**,
+> and this Workflow declares `metadata.namespace` while the templates declare none, so the lookup
+> misses. Strip that line from a **temp copy** and all five resolve with no cluster and no VPN:
+>
+> ```bash
+> T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"
+> sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"
+> argo lint --offline "$T"/sleap-roots-*.yaml     # → no linting errors found!
+> ```
+>
+> **Never strip that line from the real file** — Bloom's dispatch reads the manifest and the
+> launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` also passes
+> clean, but needs VPN; prefer the temp-copy recipe for a gate that works anywhere.
 
 ### 🔑 Token check
 
@@ -140,8 +151,12 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed at `gpu-master:8888`.
 
 > `runai-talmo-lab` remains live on the cluster but is no longer this pipeline's target (changed
-> 2026-08-13). `runai_run_pipeline.sh` defaults to `runai-busch-lab`; override with
-> `NAMESPACE=runai-talmo-lab ./runai_run_pipeline.sh` only if you genuinely need it.
+> 2026-08-13). `runai_run_pipeline.sh` hard-codes `runai-busch-lab`, and **there is no environment
+> variable to override it** — setting `NAMESPACE` has no effect. That is deliberate: `argo submit
+> -n <ns>` does not redirect a submission (the manifest's `metadata.namespace` wins), so an
+> override could only have moved the template registrations away from the namespace the Workflow
+> still runs in. Targeting another project means editing `metadata.namespace` in the manifest and
+> registering that project's templates *and* secrets first.
 >
 > ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
 > `argo template create`/`update` here affects both environments' future runs — see
