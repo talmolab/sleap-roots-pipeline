@@ -187,8 +187,19 @@ Announce before starting — this shares the 2-GPU `busch-lab` quota, the `A4-PI
 scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab` namespace**, so
 `argo template update` affects production dispatches too.
 
-- [ ] 7.1 **Capture a rollback pre-image first, before mutating anything.** There is no drift check
-  (#58), so do not assume the registered copies match `main`:
+- [x] 7.1 **Rollback pre-image captured and the drift question answered, 2026-09-15.**
+  Read-only comparison of the four registered templates in `runai-busch-lab` against `main`, using
+  the new `scripts/check_cluster_drift.sh`: **all four IN SYNC**, live pins matching `main` exactly
+  (`bloomctl:sha-3659705` ×2, `sleap-roots-predict:sha-f974632…`, `trait-extractor:sha-689cffb`).
+  So there is **no live #58 instance right now**, and the rollback pre-image is simply `main` itself:
+  to revert, `git checkout main -- sleap-roots-*-template.yaml` and `argo template update` each.
+  That is more durable than a tarball, and it is only valid because the sync was verified — do not
+  assume it again later, re-run the script.
+  The checker is semantic, not textual: the API server defaults `arguments: {}`/`inputs: {}`/
+  `outputs: {}`/`metadata: {}`, injects `namespace`, and rewrites `cpu: '0.5'` to `cpu: 500m`, all of
+  which make a naive diff report all four as drifted. Validated both ways — from `main` it reports
+  IN SYNC; from this branch it reports exactly the five pending changes and nothing else.
+  Original instructions follow. **Capture a rollback pre-image first, before mutating anything.**
   ```bash
   argo list -n runai-busch-lab --status Running     # must be empty before proceeding
   mkdir -p /tmp/tmpl-backup
@@ -204,9 +215,14 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   is a hard prerequisite for anything that dispatches the five-task DAG.
   **Validate:** `argo template get` each; compare against the local file ignoring server-injected
   metadata (`resourceVersion`, `uid`, `creationTimestamp`, `generation`, `managedFields`).
-- [x] 7.3 **Gate truth-table probe** — RUN 2026-09-15 in `runai-talmo-lab` (these credentials
-  cannot write to `runai-busch-lab` at all, so production was unreachable by construction). Scratch
-  template name, no producers, no GPU, no volumes, no credentials; all objects deleted afterwards.
+- [x] 7.3 **Gate truth-table probe** — RUN 2026-09-15 in `runai-talmo-lab`. Scratch template name,
+  no producers, no GPU, no volumes, no credentials; all objects deleted afterwards.
+  **Correction to an earlier note here:** this was first recorded as safe "by construction" because
+  the credentials could not reach `runai-busch-lab`. That overstated it. The *talmo-lab* kubeconfig
+  genuinely cannot write to busch-lab — but this workstation does hold a busch-lab credential
+  (`~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml`, in **WSL**, per the runai skill §1). The probe
+  was safe because of which kubeconfig was loaded, not because production was unreachable. Anyone
+  re-running it must check `kubectl config current-context` first.
   **Result — 7/7 vectors matched:** `(0,0,0)`, `(0,3,0)`, `(3,3,3)` → `Succeeded`; `(0,1,0)`,
   `(0,2,0)`, `(0,143,0)`, `(0,"",0)` → `Failed`. The partial-success row is the one #56 exists for,
   and it now holds on the real controller. Gate stderr confirmed the operator warning prints.
