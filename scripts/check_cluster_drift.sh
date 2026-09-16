@@ -38,6 +38,20 @@ normalise() {
   python3 - "$1" <<'PY'
 import sys, yaml
 
+# Keys injected into metadata.labels / metadata.annotations by whatever registered the object,
+# not by this repo. `argo template create` stamps `workflows.argoproj.io/creator` (a LABEL, on
+# create only -- `update` does not add it), and `kubectl apply` stamps
+# `kubectl.kubernetes.io/last-applied-configuration`. Either one makes an otherwise-identical
+# template report DRIFT forever, which is the cry-wolf behaviour this script exists to avoid.
+# Observed live 2026-09-16: registering the exit-gate template with `create` produced exactly
+# this false positive while the four `update`d templates stayed clean.
+INJECTED_PREFIXES = ("workflows.argoproj.io/", "kubectl.kubernetes.io/")
+
+
+def strip_injected(d):
+    return {k: v for k, v in d.items() if not k.startswith(INJECTED_PREFIXES)}
+
+
 def clean(o):
     if isinstance(o, dict):
         out = {}
@@ -45,6 +59,8 @@ def clean(o):
             if k in ("resourceVersion", "uid", "creationTimestamp", "generation",
                      "managedFields", "selfLink", "namespace", "status"):
                 continue
+            if k in ("labels", "annotations") and isinstance(v, dict):
+                v = strip_injected(v)
             v = clean(v)
             # API-server defaulting: empty containers and empty names are not content.
             if v in ({}, [], "", None) and k in ("arguments", "inputs", "outputs", "metadata",
