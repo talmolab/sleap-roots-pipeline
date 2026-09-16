@@ -37,6 +37,24 @@ DRIFT_CHECK = "scripts/check_cluster_drift.sh"
 PIPELINE = "sleap-roots-pipeline.yaml"
 GATE = "sleap-roots-exit-gate-template.yaml"
 PRODUCERS = ["images-downloader", "predictor", "trait-extractor"]
+
+# The two stages that emit a provenance envelope, and the digest env var each one's image reads.
+# Deliberately NOT named PRODUCER_*: `PRODUCERS` above means three stages (images-downloader runs
+# bloomctl, which emits no envelope and reads no such variable), and a near-identical name with
+# different membership sitting beside it is how a reader ends up trusting the wrong one.
+DIGEST_ENV_BY_STAGE = {
+    "predictor": "SRP_PREDICT_CONTAINER_DIGEST",
+    "trait-extractor": "SRT_TRAITS_CONTAINER_DIGEST",
+}
+# Expected repository path per provenance-emitting stage. Without this, a reference carrying the
+# *other* producer's digest -- or bloomctl's, the exact mistake made in #70's own comment thread --
+# satisfies every consistency check below.
+PRODUCER_REPO_BY_STAGE = {
+    "predictor": "ghcr.io/talmolab/sleap-roots-predict",
+    "trait-extractor": "ghcr.io/talmolab/sleap-roots-trait-extractor",
+}
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+IMAGE_DIGEST_RE = re.compile(r"@(sha256:[0-9a-f]{64})$")
 BATCH_STAGES = {
     "images-downloader": "sleap-roots-images-downloader-template.yaml",
     "predictor": "sleap-roots-predictor-template.yaml",
@@ -424,6 +442,63 @@ def main() -> int:
     # would leave two stages on one build and the gate on another with nothing complaining.
     bloomctl = {i for i in images.values() if "bloomctl" in i}
     check("all bloomctl references are identical", len(bloomctl), 1)
+
+    # --- Requirement: each provenance-emitting stage records the image that produced its results --
+    # The digest env var must agree with the digest pinned on the SAME line, so the `image:`
+    # reference is the single in-file source of truth and no literal digest lives in this file.
+    #
+    # Each comparison uses a stage-specific sentinel when a value is missing, never None. Two
+    # absent values compared with `==` would report PASS against manifests that declare neither --
+    # #60's defect (an assertion that greens against a mutation accepting everything) reproduced
+    # inside the guard written to prevent it.
+    producer_digests: dict[str, str] = {}
+    for stage, env_name in DIGEST_ENV_BY_STAGE.items():
+        container = load(BATCH_STAGES[stage])["spec"]["templates"][0]["container"]
+        image = container["image"]
+        env = container.get("env", []) or []
+
+        m = IMAGE_DIGEST_RE.search(image)
+        # A bare `@sha256:` substring test would admit `@sha256:zzz`; require the full 64 hex.
+        check(f"{stage} image is digest-pinned", bool(m), True)
+        image_digest = m.group(1) if m else f"<{stage} image: carries no @sha256 digest>"
+
+        entry = [e for e in env if e.get("name") == env_name]
+        check(f"{stage} sets {env_name} exactly once", len(entry), 1)
+        value = entry[0].get("value") if len(entry) == 1 else f"<{stage} declares no {env_name}>"
+
+        check(f"{stage} {env_name} is a well-formed digest", bool(DIGEST_RE.match(str(value))), True)
+        check(f"{stage} {env_name} matches its own image pin", value, image_digest)
+
+        if m:
+            producer_digests[stage] = m.group(1)
+        check(
+            f"{stage} image repository is {PRODUCER_REPO_BY_STAGE[stage]}",
+            image.split("@", 1)[0].rsplit(":", 1)[0],
+            PRODUCER_REPO_BY_STAGE[stage],
+        )
+
+    # Cross-wiring guard: two real, distinct digests, neither of them a bloomctl pin.
+    check(
+        "the two producer digests are real and distinct",
+        len(set(producer_digests.values())),
+        2,
+    )
+    bloomctl_digests = {
+        m.group(1) for i in bloomctl if (m := IMAGE_DIGEST_RE.search(i)) is not None
+    }
+    check(
+        "no producer digest collides with a bloomctl pin",
+        sorted(s for s, d in producer_digests.items() if d in bloomctl_digests),
+        [],
+    )
+    # predict's digest reaches the traits envelope threaded through predict's own manifest, never
+    # from the trait-extractor pod's env -- so setting it here would fabricate, not record.
+    te_env = load(BATCH_STAGES["trait-extractor"])["spec"]["templates"][0]["container"].get("env", []) or []
+    check(
+        "trait-extractor declares no SRP_PREDICT_CONTAINER_DIGEST",
+        [e["name"] for e in te_env if e.get("name") == "SRP_PREDICT_CONTAINER_DIGEST"],
+        [],
+    )
 
     print()
     if _failures:
