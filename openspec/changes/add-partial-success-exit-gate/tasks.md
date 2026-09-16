@@ -390,13 +390,64 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   reachable: no unexpected `cyl_trait_sources` rows, and record exactly which
   `cyl_pipeline_run_scans` rows moved and what `failed_count` became. A `Failed` Workflow does not
   mean nothing was written — capture what was.
-- [ ] 7.6 **Characterise the zero-scan case — a measurement, not a confirmation.** Submit with
-  `scan-ids=""`. The outcome is input-directory-state-dependent and is deliberately *not* asserted
-  anywhere: on a fresh directory predict discovers nothing and exits `1` (gate rejects → `Failed`);
-  on the shared directory it scopes to the leftover `run_manifest.json`, skips everything and exits
-  `0` (gate accepts → `Succeeded`). Run it **both** ways — scratch dir and shared dir.
-  **Validate:** record the actual phase for each, then update the spec, README and design doc to
-  state what was measured. Until then no document may claim either outcome as fact.
+- [x] 7.6 **MEASURED 2026-09-16, both ways. The prediction held exactly, and the outcome is
+  directory-state-dependent as suspected — same submission, opposite verdict.**
+
+  | run | paths | phase | gate params | duration |
+  |---|---|---|---|---|
+  | `srp-t76-zero-scratch-vdkr5` | fresh scratch | **`Failed`** | `{'0','1','1'}` | 1290 s |
+  | `srp-t76-zero-shared-hrrkz` | real `a4_poc` | **`Succeeded`** 5/5 | `{'0','0','0'}` | 199 s |
+
+  **Fresh directory → `Failed`.** `images-downloader` **Succeeded, exit 0** (zero *requested*
+  scans → "nothing to stage"), then `predictor` exit 1 and `trait-extractor` exit 1 (zero
+  *discovered*), `write-back` **Succeeded exit 0**, gate rejected the mixed vector. So the stages
+  genuinely disagree about what "empty" means — the downloader treats zero requested as success,
+  predict and traits treat zero discovered as failure — and the gate converts that disagreement
+  into a definite verdict instead of a silent green.
+  This run is also the **second** independent demonstration that the gate is load-bearing:
+  `write-back` Succeeded again, so without the gate this would have reported `Succeeded` too.
+  And it exercises a vector 7.3 and 7.5 did not — a **mixed** `{0,1,1}` — proving the gate
+  evaluates each producer independently rather than keying off the last or worst one.
+
+  **Shared directory → `Succeeded`.** predict scoped to the leftover `run_manifest.json` (8 keys)
+  rather than discovering nothing, recomputed all 8, traits followed, write-back ingested them,
+  gate `{0,0,0}` passed. **A zero-scan submission therefore reports a fully green Workflow while
+  doing substantial real work on someone else's scan set** — which is #37/#71, measured.
+
+  **Docs to update from this (7.6's own follow-through):** README currently says the zero-scan
+  outcome is "not yet characterised — do not rely on it either way". It is now characterised: both
+  outcomes above, with the mechanism. The spec and design doc carry the same hedge.
+
+- [x] 7.8 **MEASURED 2026-09-16 via `srp-t76-zero-shared-hrrkz` (the first post-bump recompute).
+  PASSES.** Against the pre-run baseline:
+
+  | group | mtime changed | `idempotency_key` changed | `predict_code_sha` after |
+  |---|---|---|---|
+  | the **8 in-manifest** scans | **yes** | **yes** | `e025e309…` (the new pin) |
+  | the **4 out-of-manifest** leftovers (`scan_1009`, `scan_289`, `scan_577`, `scan_6791737`) | **no** | **no** | `4a70e59978cf` (unchanged) |
+
+  So every changed mtime has a changed key explained solely by `predict_code_sha`, and **nothing
+  outside the manifest's `scan_keys` was touched**. No leftover contamination — the #54/#55 signal
+  is clean, and manifest scoping demonstrably bounds the blast radius.
+
+  ⚠️ **Correction to this section's own restatement rationale.** The note below claims 7.8's
+  original criterion ("an unrelated leftover scan's `result.json` mtime is unchanged") was
+  "guaranteed to be violated" by the pin bump. **That was wrong.** The leftovers sit *outside*
+  predict's manifest scope, so they were never candidates for recomputation and the original
+  criterion would have passed. What the pin bump genuinely invalidates is **7.7**'s "every
+  `.result.json` mtime unchanged", which cannot hold on a first post-bump run. The restatement is
+  still the better test — it asserts *which* keys changed and why — but its justification
+  over-generalised from 7.7 to 7.8.
+
+  **Bonus finding: predict#42's manifest forward-copy works, first time ever.**
+  `predictions/run_manifest.json` and `traits/run_manifest.json` were **absent** before this run
+  and are now present, so write-back is manifest-scoped for the first time rather than falling
+  back to unscoped discovery over the whole shared directory.
+  **But both forwarded copies carry `pipeline_run_id: sleap-roots-pipeline-hjg62`** — the *old*
+  run's id, not `srp-t76-zero-shared-hrrkz`. A zero-scan run exits before `write_run_manifest`, so
+  the id was never refreshed, and predict/traits copy it forward verbatim. The 8 results this run
+  rewrote are therefore associated with a manifest naming a different run: #71/bloom#703, observed
+  directly rather than reasoned about.
 > ⚠️ **7.7/7.8 were restated 2026-09-16 (PR #60's review). Their previous pass criteria could not
 > hold, and running them as written would have produced a result that proves nothing.**
 >
@@ -421,17 +472,11 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   image pin now stable — Workflow `Succeeded`, **0 GPU pods scheduled**, and **every** mtime and
   every `idempotency_key` unchanged. That is the standing A4 batch-oracle signal, and it is only
   meaningful once the code-sha is no longer moving.
-- [ ] 7.8 **Leftover-contamination signal, restated as an attribution check on the FIRST run.**
-  Between the first and second snapshots, mtimes are expected to change. Assert *which*:
-  **Validate:** every `result.json` whose mtime changed must have a changed `idempotency_key` whose
-  only differing input is `predict_code_sha` — i.e. the change is explained by the pin bump and
-  nothing else. And critically: **no file outside the manifest's `scan_keys` may be touched at
-  all.** A changed mtime with an *unchanged* key, or any write outside the declared scan set, is
-  the #54/#55 contamination signal and a hard failure.
-  Note this is measurably weaker than the old (unachievable) criterion, and deliberately so: with
-  the `a4_poc` directories shared across runs and never pruned, the accumulated foreign keys are
-  exactly the files the pin bump invalidates. Recording that honestly is worth more than a green
-  tick from a test that cannot fail for the right reason.
+  *(7.8's criteria and its measured result are recorded above, immediately after 7.6, because the
+  run that satisfied it — `srp-t76-zero-shared-hrrkz` — was 7.6's shared half. The criteria were:
+  every `result.json` whose mtime changed must have a changed `idempotency_key` whose only
+  differing input is `predict_code_sha`, and no file outside the manifest's `scan_keys` may be
+  touched at all. Both hold.)*
 
 ## 7b. Rebase onto PR #62 (merges FIRST — this PR rebases onto it)
 
