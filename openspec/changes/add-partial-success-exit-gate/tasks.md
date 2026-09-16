@@ -231,8 +231,11 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   passes on the five-task DAG — independent confirmation of registration.
   **Rollback pre-image corrected.** An earlier note here said the pre-image "is simply `main`
   itself". That became WRONG the moment #60 merged, since `main` now carries the new pins. The
-  rollback target is **`3cf4b4f`** (the pre-merge commit), verified before applying: the live
-  cluster was byte-for-byte `3cf4b4f` on all four templates. Live copies also captured to files.
+  rollback target is **`3cf4b4f`** (the pre-merge commit), verified before applying: the live cluster was
+  **semantically** equal to `3cf4b4f` on all four templates — equal under
+  `check_cluster_drift.sh`'s normalisation, not byte-for-byte. The raw objects differ by
+  API-server defaulting (`arguments: {}`, `inputs: {}`, `outputs: {}`, `metadata: {}`, `name: ""`)
+  and the cpu rewrite `0.5` → `500m`, which is exactly what that script strips. Live copies also captured to files.
   To roll back: `argo template delete sleap-roots-exit-gate-template`, then
   `git checkout 3cf4b4f -- sleap-roots-*-template.yaml` and `argo template update` each.
   **This apply exposed a real defect in the drift checker**, fixed in PR #73: `argo template
@@ -307,8 +310,8 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
      the conclusion; a TTL'd Workflow is not a record.**
 
   **Split it:**
-  - **7.4a — RUN 2026-09-16 (`srp-t74a-poison-gfzp6`). Every artifact criterion PASSES; only the
-    Workflow-phase criterion is blocked, by a newly-found bug (#76), not by anything in #60.**
+  - **7.4a — RUN 2026-09-16 (`srp-t74a-poison-gfzp6`). Every **filesystem** artifact criterion PASSES; the
+    Workflow-phase criterion and the `cyl_trait_sources` check are blocked, by a newly-found bug (#76), not by anything in #60.**
 
     | node | phase | exitCode |
     |---|---|---|
@@ -352,8 +355,13 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
     **To close 7.4a's Workflow-phase criterion:** either #76 lands, or re-run against scans whose
     idempotency keys have never been ingested.
-  - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count`, the per-scan `failed` row,
-    and the `cyl_trait_sources` entries.
+  - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count` and the per-scan `failed`
+    row — these need rows Bloom's dispatch route creates at enumerate time.
+    ⚠️ **`cyl_trait_sources` is NOT in that category** (corrected in the pre-merge audit): those rows
+    are written by **write-back** via `insert_cyl_result_envelope` on *any* dispatch path — this
+    repo's roadmap records a hand-submitted run creating `source_id` 6/7/8 back on 2026-07-30. The
+    reason 7.4a could not check it is simply that write-back Failed all three attempts (#76), not
+    that it requires Bloom dispatch.
 
   Original instructions follow. Re-run 2026-09-01's scenario 3: one scan whose `cyl_images`
   row points at never-uploaded object-storage content, plus two good scans, one batch.
@@ -436,7 +444,7 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
   | run | paths | phase | gate params | duration |
   |---|---|---|---|---|
-  | `srp-t76-zero-scratch-vdkr5` | fresh scratch | **`Failed`** | `{'0','1','1'}` | 1269 s |
+  | `srp-t76-zero-scratch-vdkr5` | scratch (the tree 7.5 left empty) | **`Failed`** | `{'0','1','1'}` | 1269 s |
   | `srp-t76-zero-shared-hrrkz` | real `a4_poc` | **`Succeeded`** 5/5 | `{'0','0','0'}` | 199 s |
 
   > ⚠️ **Durations corrected before merge.** Earlier drafts of this record read 7.5 as "1290 s
@@ -458,8 +466,10 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   evaluates each producer independently rather than keying off the last or worst one.
 
   **Shared directory → `Succeeded`.** predict scoped to the leftover `run_manifest.json` (8 keys)
-  rather than discovering nothing, recomputed all 8, traits followed, write-back ingested them,
-  gate `{0,0,0}` passed. **A zero-scan submission therefore reports a fully green Workflow while
+  rather than discovering nothing, recomputed all 8, traits followed, write-back **exited 0**,
+  gate `{0,0,0}` passed. (Stated as exit 0, not "ingested": 7.5 in this same record is the
+  demonstration that write-back exits 0 having ingested *zero* envelopes. Bloom-side ingestion for
+  this run was not verified — no DB read, and pod logs are unreadable.) **A zero-scan submission therefore reports a fully green Workflow while
   doing substantial real work on someone else's scan set** — which is #37/#71, measured.
 
   **Docs to update from this (7.6's own follow-through):** README currently says the zero-scan
@@ -512,9 +522,19 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 > **second** post-bump run the idempotency oracle (by then `predict_code_sha` is stable), and to
 > turn the first run into a measurement of *which* keys changed and why.
 
-- [x] 7.7 **RUN 2026-09-16 (`srp-t77-redeliver-t82vr`) — PASSES. This is the A4 batch-oracle
-  signal, and it is now met.** Re-delivered the shared batch with `predict_code_sha` stable
-  (7.6's shared half was the first post-bump recompute; this is the second delivery).
+- [x] 7.7 **RUN 2026-09-16 (`srp-t77-redeliver-t82vr`) — PASSES as an idempotency measurement.**
+  ⚠️ **It is NOT the A4 batch-oracle as originally specified, and an earlier version of this note
+  overstated it** (caught in the pre-merge audit). 7.7 as written says "re-submit **7.4's exact
+  batch**". What actually ran was a **second zero-scan submission** — live
+  `spec.arguments.parameters` shows `scan-ids=` empty, identical in shape to
+  `srp-t76-zero-shared-hrrkz`. So the skip path it exercised depends on predict falling back to the
+  **leftover** `run_manifest.json`, which is the #37/#71 behaviour this very change documents as a
+  defect — not on an explicit batch re-request through the normal path. Every artifact fact below is
+  correct; the claim "the batch-oracle signal is now met" was not. A true batch-oracle run needs an
+  explicit `--parameter scan-ids=…` re-request, and 7.4a's batch is the natural candidate once #76
+  is fixed.
+  Measured with `predict_code_sha` stable (7.6's shared half was the first post-bump recompute; this
+  is the second delivery over the same scan set).
   Workflow **`Succeeded`** 5/5, gate `{0,0,0}`, 6m54s. Against the pre-run snapshot:
 
   | check | result |
@@ -637,7 +657,13 @@ delta.
   does **not** change cluster behaviour until `argo template update` runs, stating whether it has.
   State as plainly as the 2026-09-15 entry does: **a green Workflow, or a `complete` run, does not
   mean no scans failed.** If 7.5 was not run, say so — do not record 7.4 alone as "#56 fixed".
-- [x] 9.2 **DONE 2026-09-16.** Closed out: the 2026-09-15 entry's "#56 remains open and is the actual blocker" (superseded block added, pointing at #76 as the moved blocker); my own earlier "count is still 4 and still accurate" note, which went stale the moment the gate was registered; the "Genuinely remaining" predictor-pin bullet and its dedup re-run (both done, with the caveat that the mtime-frozen signal is only valid within a fixed `predict_code_sha`); frontier item 1's #772/#56 bullet; and the A4 row's stage chain (now names `exit-gate` as the fifth task and only leaf). Also annotated the A4 row's status cell, which claimed write-back/notify/trigger were still remaining. Remaining `4 registered`/`#56 remains open` grep hits are dated status-log text that was true when written, each now carrying a supersession note.
+- [x] 9.2 **DONE 2026-09-16.** Closed out: the 2026-09-15 entry's "#56 remains open and is the actual blocker" (superseded block added, pointing at #76 as the moved blocker); my own earlier "count is still 4 and still accurate" note, which went stale the moment the gate was registered; the "Genuinely remaining" predictor-pin bullet and its dedup re-run (both done, with the caveat that the mtime-frozen signal is only valid within a fixed `predict_code_sha`); frontier item 1's #772/#56 bullet; and the A4 row's stage chain (now names `exit-gate` as the fifth task and only leaf). Also annotated the A4 row's status cell, which claimed write-back/notify/trigger were still remaining. **Corrected after the pre-merge audit:** an earlier version of this note claimed the grep
+  returned "only dated status-log text". That was false. `roadmap.md:303` is the A4 breakdown
+  sub-table's row literally titled `| **workflow template** |` — undated normative content, and the
+  very row this task names. Its stage chain omitted `exit-gate` and its status still read
+  "Two new DAG tasks needed, neither added yet"; I had updated line 138 (the A4 EPIC row) instead
+  and not noticed. Both now fixed. This is the #62 pattern again — fixed where I looked rather than
+  where the instruction pointed. Lines 188/558 are also non-status-log hits but are harmless prose.
   Original instructions: Close out the roadmap statements this change falsifies: the 2026-09-15 entry's "#56
   remains open and is the actual blocker"; "none of the **4** registered WorkflowTemplates" (now
   five — #58's scope grew); the "Genuinely remaining, not yet done" predictor-pin bullet (task 1.2)
