@@ -72,9 +72,20 @@ argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 ```
 
 > `argo lint --offline` reports a `couldn't find workflow template ...` error on
-> `sleap-roots-pipeline.yaml` and exits non-zero. That's an offline-lint artifact — the DAG
-> references its stages by `templateRef`, which needs a cluster to resolve. Lint without
-> `--offline` for the real answer.
+> `sleap-roots-pipeline.yaml` and exits non-zero — but **not because it needs a cluster**. Offline
+> lint *does* resolve `templateRef` from the files you pass it; it matches on **(namespace, name)**,
+> and this Workflow declares `metadata.namespace` while the templates declare none, so the lookup
+> misses. Strip that line from a **temp copy** and all five resolve with no cluster and no VPN:
+>
+> ```bash
+> T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"
+> sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"
+> argo lint --offline "$T"/sleap-roots-*.yaml     # → no linting errors found!
+> ```
+>
+> **Never strip that line from the real file** — Bloom's dispatch reads the manifest and the
+> launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` also passes
+> clean, but needs VPN; prefer the temp-copy recipe for a gate that works anywhere.
 
 ### 🔑 Token check
 
