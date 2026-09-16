@@ -505,14 +505,30 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 > **second** post-bump run the idempotency oracle (by then `predict_code_sha` is stable), and to
 > turn the first run into a measurement of *which* keys changed and why.
 
-- [ ] 7.7 **Idempotent re-delivery — the real batch-oracle signal, on the SECOND post-bump run.**
-  Before 7.4, record for every `{scan}.result.json` under the traits dir: path, mtime, and
-  `provenance.idempotency_key`. After 7.4 completes, re-record. Then re-submit 7.4's exact batch
-  and record a third time.
-  **Validate:** between the *second* and *third* snapshots — i.e. across the re-delivery, with the
-  image pin now stable — Workflow `Succeeded`, **0 GPU pods scheduled**, and **every** mtime and
-  every `idempotency_key` unchanged. That is the standing A4 batch-oracle signal, and it is only
-  meaningful once the code-sha is no longer moving.
+- [x] 7.7 **RUN 2026-09-16 (`srp-t77-redeliver-t82vr`) — PASSES. This is the A4 batch-oracle
+  signal, and it is now met.** Re-delivered the shared batch with `predict_code_sha` stable
+  (7.6's shared half was the first post-bump recompute; this is the second delivery).
+  Workflow **`Succeeded`** 5/5, gate `{0,0,0}`, 6m54s. Against the pre-run snapshot:
+
+  | check | result |
+  |---|---|
+  | 12 `result.json` mtimes | **all frozen** |
+  | 12 `provenance.idempotency_key`s | **all unchanged** |
+  | 24 `.slp` blobs (SHA256) | **all byte-identical** |
+
+  **The `.slp` blob check was added beyond the original criteria, and it turned out to be the
+  load-bearing one** — it is what explains #76. predict *skipped*, so no new bytes were produced,
+  so write-back's blob upload found identical checksums and succeeded. Contrast 7.4a, where predict
+  *recomputed* at the same key and wrote different bytes to the same address, which collided. Same
+  write-back code, same blob addresses, opposite outcomes, decided purely by skip-vs-recompute.
+  **So re-delivery is idempotent on the skip path and broken on the recompute path** — the precise
+  statement of #76, demonstrated by the pair of runs rather than argued.
+
+  On "**0 GPU pods scheduled**": taken literally that criterion cannot hold, and should be reworded
+  for future use. The `predictor` pod is a DAG task and is *always* scheduled; what the oracle
+  means is that no GPU *inference* happens. Observed: `predictor` ran, exited 0, and performed no
+  work (all 8 scans skipped on matching keys, all artifacts byte-frozen). Measure it as "no
+  artifacts rewritten", not as "no pod scheduled".
   *(7.8's criteria and its measured result are recorded above, immediately after 7.6, because the
   run that satisfied it — `srp-t76-zero-shared-hrrkz` — was 7.6's shared half. The criteria were:
   every `result.json` whose mtime changed must have a changed `idempotency_key` whose only
@@ -605,7 +621,8 @@ delta.
 
 ## 9. Record
 
-- [ ] 9.1 Add a roadmap status-log entry **for the day section 7 actually ran**, not at merge, in
+- [x] 9.1 **DONE 2026-09-16.** Roadmap status-log entry added for the day §7 ran, newest-first, with real workflow names, artifact evidence rather than phase, the crash run's `Failed`, what was NOT verified (7.4b's Bloom-side counts), and the restatement that a green Workflow does not mean no scans failed.
+  Original instructions: Add a roadmap status-log entry **for the day section 7 actually ran**, not at merge, in
   this repo's established shape: real workflow names and dates for both the poison-scan and
   crash-injection runs; artifact evidence rather than phase (which `.result.json` files landed with
   fresh mtimes, which `cyl_trait_sources` rows appeared, the poison scan's row reading `failed`,
@@ -613,21 +630,24 @@ delta.
   does **not** change cluster behaviour until `argo template update` runs, stating whether it has.
   State as plainly as the 2026-09-15 entry does: **a green Workflow, or a `complete` run, does not
   mean no scans failed.** If 7.5 was not run, say so — do not record 7.4 alone as "#56 fixed".
-- [ ] 9.2 Close out the roadmap statements this change falsifies: the 2026-09-15 entry's "#56
+- [x] 9.2 **DONE 2026-09-16.** Closed out: the 2026-09-15 entry's "#56 remains open and is the actual blocker" (superseded block added, pointing at #76 as the moved blocker); my own earlier "count is still 4 and still accurate" note, which went stale the moment the gate was registered; the "Genuinely remaining" predictor-pin bullet and its dedup re-run (both done, with the caveat that the mtime-frozen signal is only valid within a fixed `predict_code_sha`); frontier item 1's #772/#56 bullet; and the A4 row's stage chain (now names `exit-gate` as the fifth task and only leaf). Also annotated the A4 row's status cell, which claimed write-back/notify/trigger were still remaining. Remaining `4 registered`/`#56 remains open` grep hits are dated status-log text that was true when written, each now carrying a supersession note.
+  Original instructions: Close out the roadmap statements this change falsifies: the 2026-09-15 entry's "#56
   remains open and is the actual blocker"; "none of the **4** registered WorkflowTemplates" (now
   five — #58's scope grew); the "Genuinely remaining, not yet done" predictor-pin bullet (task 1.2)
   and its dedup re-run (task 7.8); the "Next (true frontier, as of 2026-08-31)" section's frontier
   item 1; and the A4 workflow-template row's stage chain.
   **Validate:** `grep -n "four\|#56 remains open\|4 registered" docs/bloom-integration/roadmap.md`
   returns only historical status-log text that was true when written.
-- [ ] 9.3 Record the three deferred follow-ups **with their limitation stated, not just the issue
+- [x] 9.3 **DONE 2026-09-16.** All three recorded with the limitation stated, not just the number (bloom#857 counts-not-status; bloom#859 as a **latch** over never-pruned shared dirs, with the note that it is not armed today; predict#44, plus the observation that predict#42's forward-copy started working today). The local dry-run breakage is recorded with its real failure order — namespace first, then all four templateRefs, not just `exit-gate`.
+  Original instructions: Record the three deferred follow-ups **with their limitation stated, not just the issue
   number**: bloom#857 (run status reads `complete`, not `partial`), bloom#859 (a partial
   predict/traits still fails the Workflow at write-back), predict#44 (forwarded manifest must
   narrow to `ok ∪ skipped`). Also record that the local dry-run path
   (`local_run_pipeline_first_time.sh`, which submits the *cluster* manifest with its own
   four-template list) will hard-fail on the unregistered `templateRef` — knowingly out of scope
   here, tracked by #21.
-- [ ] 9.4 Note that bloom's `staging` → `main` promotion is the production cutover for this DAG, and
+- [x] 9.4 **DONE 2026-09-16.** Recorded that `staging` → `main` is the production cutover, that merging the vendoring PR to `staging` *is* the staging deploy, that the gate template had to be registered first and now is, and that the ordering is one-directional. Also recorded the non-obvious part: production already runs the three new pins (the vendored DAG resolves stages via `templateRef`) while still dispatching the four-task DAG.
+  Original instructions: Note that bloom's `staging` → `main` promotion is the production cutover for this DAG, and
   that the gate template must be registered before it.
 
 ## 10. Final sweep

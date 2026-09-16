@@ -135,7 +135,7 @@ Bring the service repos to the standard: OpenSpec + canonical Claude commands + 
 | **A1 — result+provenance contract** | sleap-roots-contracts | Pydantic models + JSON Schema artifact + trait registry | — | drift guard green; round-trip/hash/idempotency tests; on PyPI (shipped **`v0.1.0a0`**; contract has since advanced to **`v0.1.0a4`**) | ✅ **PR #1 merged 2026-06-06; `v0.1.0a0` released 2026-06-08** |
 | **A2 — Bloom schema + write-back + CLI** | salk-bloom | provenance/idempotency schema; FK; blob table; idempotent service-role RPC; RLS lockdown; read-path; `bloom cyl` CLI; consume; Box backfill | **A1 @ v0.1.0a2 (pinned; re-pinned a1→a2 at change C — RPC validates a2)**; EPIC #16 ✅ (staging landed) | same envelope twice → 1 source row, no dup traits; direct write rejected, RPC succeeds; migration up/down; types-match-contract CI | 🔵 **In progress — consume-pin ✅ (#304) + change A ✅ (#290) + change C ✅ (#357) + changes D+E ✅ (#371); read-path ✅ ([#373](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/373) merged 2026-07-01; OpenSpec archive #376 still open). Remaining: **`bloom cyl` CLI ✅ merged** ([bloom #408](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/408), closes #397) → Box backfill; **D re-pin ✅ ([bloom #399](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/399), closes #393 — RPC accepts a3)**; change B (#295) deferred (no image traits)** |
 | **A3 — producers (predict / traits / training / params)** | predict, sleap-roots, training | see sub-table | A0 (predict GHCR [#5](https://github.com/talmolab/sleap-roots-predict/issues/5) still red); **A1 @ ≥ v0.1.0a2** (needs `BlobRef.root_type`; emitter's pin must reconcile with D's RPC gate — [#393](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/393)) | per sub-row | 🔵 **In progress — predict warm-worker/output-contract/registry-flip landed (#6/#9/#16/#17), training registry-seed landed (#4); **A3-params ✅ merged** ([predict #18](https://github.com/talmolab/sleap-roots-predict/pull/18), 2026-07-06 — Bloom metadata → `ResolvedParams`, age units confirmed days; **oracle since promoted to `sleap-roots-contracts` `v0.1.0a4`** ([contracts #16](https://github.com/talmolab/sleap-roots-contracts/pull/16)) — predict ([#28](https://github.com/talmolab/sleap-roots-predict/issues/28)) + bloomctl ([bloom #458](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/458)) now consume it); **A3-traits emitter ✅ merged** ([sleap-roots #254](https://github.com/talmolab/sleap-roots/pull/254), 2026-07-06, closes #250); **A3-predict parity gate ✅ closed** (relative tolerance, measured across all 13 production models — [#15](https://github.com/talmolab/sleap-roots-pipeline/issues/15)) |
-| **A4 — scan-level orchestration** | sleap-roots-pipeline | Per-*batch* Argo workflow (batches of scans, chunked per the design doc; **pivoted from per-scan 2026-07-24** — see status log): **images-downloader (Option A: bloomcli `--scan_id` stage-in **via the Supabase Storage API on 443** — MinIO:9000 is cluster-unreachable) → predict(warm) → traits (emit `ResultEnvelope`) → write-back **via bloomcli → the `insert_cyl_result_envelope` RPC** (with a scoped Supabase credential) → notification**. **Trigger = Bloom submits Workflow CRDs to the cluster k8s API (`:6443`, `argo` Kubernetes mode — NOT the Argo Server `:8888`, which is in-cluster-only)** (manual-first, EPIC #11; event-driven auto-on-ingest is a later phase — NOT Argo-Events ingress for v1). **✅ Connectivity — control plane RESOLVED 2026-07-21** (was firewall-blocked, verified 2026-07-01; fixed via a route/interface added to `bloom-dev` onto the internal network, not the drafted firewall rule — verified live: `curl https://10.7.30.173:6443/version` → `200` in ~14ms); data plane `cluster → bloom.salk.edu:443` **works** (confirmed from a cluster pod — no firewall; stage-in + write-back ride public HTTPS + a scoped Supabase credential). **Use hostname `bloom.salk.edu` (TLS/SNI), not `bloom-dev`.** **Storage = shared file storage mounted across the GPU nodes** (corrected 2026-07-06 — *not* node-local hostPath as earlier assumed): producers stay filesystem-only, but staged images + predictions are **durable and node-independent**, so stage handoff and crash/preemption **resume** survive a pod reschedule. (**`cyl_pipeline_runs` + `cyl_pipeline_run_scans` + Realtime is the v1 plan** — per the [2026-07-06 A4 design](../superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md) (§5/§6/§10; **note:** its §12 risk list is stale re: R1/R3/R4 — annotated in the doc itself, see the 2026-07-24 status-log entry); **supersedes** the earlier "no runs table" call. **Queue/claim mechanism DECIDED: pgmq** — `SECURITY DEFINER` enqueue/claim/complete/fail wrapper functions (not raw pgmq exposure), the same shape as [bloom #469](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/469)'s video-queue precedent; settled on [bloom #404](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/404) 2026-07-20, resolving the "SKIP-LOCKED vs pgmq" open question — **tables themselves not yet built.** **✅ Finalized 2026-07-24 (re-read #404 in full):** keep pgmq (already built stack-wide; matches Benfica's `workflows`-service planning notes that its enqueue mechanism is reused by A4), but **scope the worker narrowly** — claim = submit the batch's Argo workflow (a thin dispatch action), complete/fail = based on that submission call, not on the predict/traits compute itself. Argo's own `retryStrategy` + the RunAI-quota/semaphore layer (§9) stay the sole owner of the actual work's concurrency/retry; pgmq only guarantees the *dispatch step* survives a `workflows`-service restart. See the 2026-07-24 status-log entry for the full reasoning. Trigger = Bloom's `workflows` service submits the CRDs.) (Experiment-level `analyze` trigger is a later change, deps B2.) | A0, A2, A3 | end-to-end on a reference scan; idempotent re-delivery (D's `idempotency_key`); notification on success **and** failure. **Batch oracle (added 2026-07-24, design §14):** re-run an already-done batch/experiment → 0 GPU pods scheduled, run `complete`, all scans `reused`; kill the predict pod mid-batch → resumes, redoes only the tail (one model reload); inject a poison scan → batch ends `partial` (e.g. 39/40 + 1 `failed`), others succeed ⚠️ **`partial` is unreachable from this repo (corrected 2026-09-16, PR #60):** the status poller's rollup derives run status from Argo Workflow phases alone, and every Argo continue-past-failure mechanism yields `Succeeded` — so a poison-scan batch reads `complete` with `failed_count > 0`, at any batch size. Read this oracle as `done_count`/`failed_count`, not as the literal string `partial`, until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands. | 🔵 **In progress — compute-path PoC ✅ green** (2026-07-07, wf `4m2zg`/`b7x7t`, [PR #23](https://github.com/talmolab/sleap-roots-pipeline/pull/23)): predict→traits→`ResultEnvelope 0.1.0a3` / 918 traits on a reference scan (**compute path only — no write-back yet**). Remaining = write-back + notify + the Bloom trigger (stage-in ✅ [bloom #458](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/458); firewall ✅ resolved 2026-07-21, see `firewall` row below); unblock now = **1 scoped Supabase credential** ([#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17), still open) |
+| **A4 — scan-level orchestration** | sleap-roots-pipeline | Per-*batch* Argo workflow (batches of scans, chunked per the design doc; **pivoted from per-scan 2026-07-24** — see status log): **images-downloader (Option A: bloomcli `--scan_id` stage-in **via the Supabase Storage API on 443** — MinIO:9000 is cluster-unreachable) → predict(warm) → traits (emit `ResultEnvelope`) → write-back **via bloomcli → the `insert_cyl_result_envelope` RPC** (with a scoped Supabase credential) → exit-gate → notification**. **The `exit-gate` fifth task was added 2026-09-16** (#56 / [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60)): it is the DAG's ONLY leaf, so the Workflow's phase is derived from it rather than from any producer, and it re-reads the three producers' real exit codes (`{0,3}` pass) — necessary because Argo's `continueOn` keys only on node *phase*, not exit code. **Trigger = Bloom submits Workflow CRDs to the cluster k8s API (`:6443`, `argo` Kubernetes mode — NOT the Argo Server `:8888`, which is in-cluster-only)** (manual-first, EPIC #11; event-driven auto-on-ingest is a later phase — NOT Argo-Events ingress for v1). **✅ Connectivity — control plane RESOLVED 2026-07-21** (was firewall-blocked, verified 2026-07-01; fixed via a route/interface added to `bloom-dev` onto the internal network, not the drafted firewall rule — verified live: `curl https://10.7.30.173:6443/version` → `200` in ~14ms); data plane `cluster → bloom.salk.edu:443` **works** (confirmed from a cluster pod — no firewall; stage-in + write-back ride public HTTPS + a scoped Supabase credential). **Use hostname `bloom.salk.edu` (TLS/SNI), not `bloom-dev`.** **Storage = shared file storage mounted across the GPU nodes** (corrected 2026-07-06 — *not* node-local hostPath as earlier assumed): producers stay filesystem-only, but staged images + predictions are **durable and node-independent**, so stage handoff and crash/preemption **resume** survive a pod reschedule. (**`cyl_pipeline_runs` + `cyl_pipeline_run_scans` + Realtime is the v1 plan** — per the [2026-07-06 A4 design](../superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md) (§5/§6/§10; **note:** its §12 risk list is stale re: R1/R3/R4 — annotated in the doc itself, see the 2026-07-24 status-log entry); **supersedes** the earlier "no runs table" call. **Queue/claim mechanism DECIDED: pgmq** — `SECURITY DEFINER` enqueue/claim/complete/fail wrapper functions (not raw pgmq exposure), the same shape as [bloom #469](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/469)'s video-queue precedent; settled on [bloom #404](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/404) 2026-07-20, resolving the "SKIP-LOCKED vs pgmq" open question — **tables themselves not yet built.** **✅ Finalized 2026-07-24 (re-read #404 in full):** keep pgmq (already built stack-wide; matches Benfica's `workflows`-service planning notes that its enqueue mechanism is reused by A4), but **scope the worker narrowly** — claim = submit the batch's Argo workflow (a thin dispatch action), complete/fail = based on that submission call, not on the predict/traits compute itself. Argo's own `retryStrategy` + the RunAI-quota/semaphore layer (§9) stay the sole owner of the actual work's concurrency/retry; pgmq only guarantees the *dispatch step* survives a `workflows`-service restart. See the 2026-07-24 status-log entry for the full reasoning. Trigger = Bloom's `workflows` service submits the CRDs.) (Experiment-level `analyze` trigger is a later change, deps B2.) | A0, A2, A3 | end-to-end on a reference scan; idempotent re-delivery (D's `idempotency_key`); notification on success **and** failure. **Batch oracle (added 2026-07-24, design §14):** re-run an already-done batch/experiment → 0 GPU pods scheduled, run `complete`, all scans `reused`; kill the predict pod mid-batch → resumes, redoes only the tail (one model reload); inject a poison scan → batch ends `partial` (e.g. 39/40 + 1 `failed`), others succeed ⚠️ **`partial` is unreachable from this repo (corrected 2026-09-16, PR #60):** the status poller's rollup derives run status from Argo Workflow phases alone, and every Argo continue-past-failure mechanism yields `Succeeded` — so a poison-scan batch reads `complete` with `failed_count > 0`, at any batch size. Read this oracle as `done_count`/`failed_count`, not as the literal string `partial`, until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands. | 🔵 **In progress — compute-path PoC ✅ green** (2026-07-07, wf `4m2zg`/`b7x7t`, [PR #23](https://github.com/talmolab/sleap-roots-pipeline/pull/23)): predict→traits→`ResultEnvelope 0.1.0a3` / 918 traits on a reference scan (**compute path only — no write-back yet**). Remaining = write-back + notify + the Bloom trigger (stage-in ✅ [bloom #458](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/458); firewall ✅ resolved 2026-07-21, see `firewall` row below); unblock now = **1 scoped Supabase credential** ([#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17), still open) ⚠️ **This status cell is stale (noted 2026-09-16):** write-back, notify's transport and all three phases of the Bloom trigger route have since shipped, and the credential is in use. The real remaining work is the vendoring cutover (§8) plus [#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76), [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) and [bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859) — see the 2026-09-16 status-log entry. |
 
 #### A2 change breakdown (consume-pin ✅ + A ✅ + C ✅ + D ✅ + E ✅ + read-path ✅ + **D re-pin ✅ (#399)**; B deferred; CLI + backfill remain)
 
@@ -396,6 +396,18 @@ simultaneously (each handoff says so explicitly).
      flags the Argo-wiring half as unresolved and pointing at a tracking issue
      ([sleap-roots#259](https://github.com/talmolab/sleap-roots/issues/259)) that, it turns out,
      was never actually filed in this repo until now.
+     > ✅ **Argo half done 2026-09-16** — #56 merged as
+     > [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60)
+     > (`310aae63c4db4cc1eb608a4d7801031f0061106d`), applied in-cluster, and verified live: a
+     > poison-scan run now reaches write-back instead of dying at 0/3. The producers' `retryStrategy`
+     > still doesn't distinguish exit 3 from a crash — that was deliberately *not* the fix; instead
+     > `continueOn: {failed: true}` lets the DAG proceed and a terminal `exit-gate` task re-derives
+     > the Workflow phase from the real exit codes, because Argo's `continueOn` keys only on node
+     > *phase* and `retryStrategy.expression` cannot turn a failure into a success. Exit 3 therefore
+     > still burns the full retry budget; only the DAG-killing consequence is fixed.
+     > **The poison-scan scenario still does not complete end-to-end**, now blocked by
+     > [#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76) and the Bloom-side counts
+     > (which need the vendoring, §8). See the 2026-09-16 status-log entry.
 2. **Fix [bloom #685](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/685)**
    (write-back RPC's hard-pinned `contract_version=0.1.0a3`) — same fix pattern already proven at
    [bloom #399](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/399)
@@ -547,15 +559,129 @@ Adversarial 4-lens review. Resolutions:
     against that repo's own build-run history, don't assume), apply in-cluster, then re-run the
     2026-09-01 dedup batch-oracle scenario once more. Pass signal, unchanged from every prior
     attempt: an unrelated leftover scan's `result.json` mtime stays frozen, not rewritten.
+    > ✅ **Done 2026-09-16.** The predictor pin was bumped to `sha-e025e309…` in
+    > [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60) and applied in-cluster, and
+    > the dedup re-run was done as that change's tasks 7.7/7.8. **The pass signal held**: the 4
+    > leftover scans outside the manifest kept frozen mtimes and unchanged `idempotency_key`s, while
+    > the 8 in-manifest scans were recomputed — correctly, because `predict_code_sha` is part of the
+    > key and the pin bump changed it. A second re-delivery (`srp-t77-redeliver-t82vr`) then froze
+    > **all 12** plus all 24 `.slp` blobs, which is the real idempotency oracle. One caveat this
+    > surfaced: the "mtime stays frozen" signal is only valid *within* a fixed `predict_code_sha` —
+    > across a pin bump a recompute of in-scope scans is correct behaviour, not contamination.
+- **2026-09-16** — **#56 merged and applied to the cluster; its fix is now verified live in both
+  directions. The poison-scan scenario's Argo half works. The scenario as a whole still does not
+  complete, for a newly-found and unrelated reason ([#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76)).**
+  Read this as "#56's DAG wiring is proven", **not** as "the batch oracle passes".
+  - **Merged and applied.** [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60)
+    squash-merged as `310aae63c4db4cc1eb608a4d7801031f0061106d`; #56 auto-closed on that merge.
+    Templates applied from a clean `main` checkout — `argo template create` for the new
+    `sleap-roots-exit-gate-template`, `argo template update` for the other four. **All five now
+    report `IN SYNC`.** Non-offline `argo lint`, which resolves `templateRef` against the cluster,
+    passes on the five-task DAG. So the registered count is **five** as of today, where every
+    earlier entry's "4 registered `WorkflowTemplate`s" was accurate when written.
+  - **What the live runs actually showed** (artifact evidence, not workflow phase):
+
+    | run | scenario | phase | evidence |
+    |---|---|---|---|
+    | `srp-t75-crash-4qd66` | crash injection, `scan-ids=not-an-int`, scratch paths | **`Failed`** ✅ correct | all three producers' Retry nodes `exitCode 1`; gate's resolved params `'1','1','1'`; gate rejected |
+    | `srp-t76-zero-scratch-vdkr5` | zero-scan, fresh directory | **`Failed`** | downloader `0`, predict `1`, traits `1`; gate rejected the mixed vector `{0,1,1}` |
+    | `srp-t76-zero-shared-hrrkz` | zero-scan, shared `a4_poc` | **`Succeeded`** | scoped to the leftover 8-key manifest, recomputed all 8, gate `{0,0,0}` |
+    | `srp-t74a-poison-gfzp6` | **poison scan** `12894751` + good `12894745`/`12894746` | **`Failed`** ⚠️ at write-back, not at the producer | downloader `exitCode 3`; `continueOn` advanced the DAG; predict+traits `0`; both good scans' `.result.json` landed with fresh mtimes; poison produced nothing; manifest scoped to exactly the two good keys |
+    | `srp-t77-redeliver-t82vr` | idempotent re-delivery | **`Succeeded`** ✅ | all 12 `result.json` mtimes **and** `idempotency_key`s frozen; all 24 `.slp` blobs byte-identical |
+
+  - **The load-bearing result.** In `srp-t75-crash-4qd66`, every producer crashed and **`write-back`
+    still exited `0`**. Without the gate, write-back would have been the DAG's only leaf and the
+    Workflow would have reported **`Succeeded`** for a run in which nothing was processed. The claim
+    that a `continueOn`-only change would be "strictly worse than today" is therefore no longer an
+    argument from Argo semantics — it is a measurement. `srp-t76-zero-scratch-vdkr5` reproduced the
+    same thing independently. The gate is load-bearing, not defensive.
+  - **Both directions of the gate are now verified.** Forward: `continueOn` advances past a
+    `Failed` producer and the gate passes `{0,3}`. Backward: when `write-back` fails (it carries no
+    `continueOn`), the gate is `Omitted` — `Omitted` is `Fulfilled` but not `Completed`, so it does
+    not overwrite the branch phase and the Workflow correctly inherits `Failed`.
+  - **Why the poison-scan scenario still does not complete — and it is not #56.**
+    [#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76): predict's `.slp` output is
+    **not byte-reproducible**. Two runs of the same scan with identical inputs produce the *same*
+    `idempotency_key` (`86573f05b6b34dbf…`) but *different* `.slp` bytes (`8776CDD8…` vs
+    `E8535461…`, identical file sizes). The blob address embeds the idempotency key, so a recompute
+    writes different bytes to the same address and `bloomctl` refuses to overwrite. The strict blob
+    upload also happens *before* the write-back RPC's `ON CONFLICT (idempotency_key) DO NOTHING`
+    gate, which would have made the re-delivery a harmless no-op — `Ingested 0/2` confirms nothing
+    reached the RPC. Consequence: **re-delivery is idempotent on the skip path and broken on the
+    recompute path**, which is exactly the contrast between `srp-t77-redeliver-t82vr` (predict
+    skipped → no new bytes → write-back succeeded) and `srp-t74a-poison-gfzp6` (predict recomputed →
+    new bytes at the same address → collision).
+  - **`done_count=2` / `failed_count=1` and the poison scan's `cyl_pipeline_run_scans` row were NOT
+    verified.** Those rows are created by Bloom's `POST /workflows/pipeline` route at *enumerate*
+    time, and a hand `argo submit` creates none — while dispatching *through* Bloom today would run
+    the vendored **four**-task DAG and prove nothing about this change. They are deferred to after
+    the vendoring (§8), tracked in the change's `tasks.md` as 7.4b.
+  - **A green Workflow, or a `complete` run, still does not mean no scans failed.** Unchanged and
+    worth restating: the status poller's rollup derives run status from Argo phases alone, and every
+    Argo continue-past-failure mechanism yields `Succeeded`, so `partial` is unreachable at any
+    batch size
+    ([bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857)). A
+    zero-scan batch is also green — now measured, not assumed: `srp-t76-zero-shared-hrrkz` reported
+    a fully green Workflow while doing real GPU work on **another run's** scan set.
+  - **Deferred follow-ups, with the limitation stated rather than just the number:**
+    - [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) — a run
+      reads `complete` with `failed_count > 0`, never `partial`. Check the counts, not the status.
+    - [bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859) — a
+      partial predict/traits still fails the Workflow at write-back, because a manifest `scan_key`
+      with no result is reported as a batch failure and marked *retriable*. ⚠️ Measured today: this
+      is a **latch**, not a per-run annoyance — `write_run_manifest` unions and never prunes over
+      directories nothing cleans ([#63](https://github.com/talmolab/sleap-roots-pipeline/issues/63)),
+      so one predict/traits failure would fail **every future run** over those paths. Not armed
+      right now: all 8 manifest keys currently have results.
+    - [predict#44](https://github.com/talmolab/sleap-roots-predict/issues/44) — predict's forwarded
+      manifest must narrow to `ok ∪ skipped`, or a partial predict misattributes failures to traits.
+      Note predict#42's forward-copy **started working today**: `predictions/run_manifest.json` and
+      `traits/run_manifest.json` were absent before and are now present, so write-back is
+      manifest-scoped for the first time instead of discovering unscoped over the whole directory.
+    - The local dry-run path (`local_run_pipeline_first_time.sh`) will hard-fail — it applies four
+      templates into namespace `argo` but submits the *cluster* manifest, whose `metadata.namespace`
+      wins, so it fails on the missing namespace first; and all of its `templateRef`s would be
+      unresolvable anyway. Knowingly out of scope, tracked by
+      [#21](https://github.com/talmolab/sleap-roots-pipeline/issues/21).
+  - **Production cutover is bloom's `staging` → `main` promotion, and it is not done.** `salk-bloom`
+    still pins the vendored four-task DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`), so production
+    dispatches a DAG with no gate and no `continueOn` — while *already* running the three new image
+    pins, because the vendored DAG resolves stages via `templateRef`. Merging the vendoring PR to
+    `staging` **is** the deploy for staging; promoting `staging` → `main` is the production cutover.
+    The `exit-gate` template had to be registered before either, and now is (that ordering is
+    one-directional: shipping the five-task DAG to a namespace without the template fails **every**
+    dispatch at submit, prod and staging simultaneously).
+  - **Applying the templates was a live improvement, measured beforehand rather than assumed.**
+    Read-only NFS inspection showed `predictions/` and `traits/` had **no** `run_manifest.json`, so
+    write-back had been discovering **unscoped** and re-ingesting 12 `result.json` files — 4 of them
+    foreign leftovers — on every run. predict#42 narrows that to the manifest's 8.
+  - **Other findings recorded today:**
+    [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) (the root cause behind #37,
+    bloom#859 and bloom#703 — `run_manifest.json`'s identity spans runs because shared paths are
+    load-bearing *by design*, so per-run path isolation cannot be the fix; note the union still has
+    only **one** contributor, so there is a window to fix this cleanly),
+    [#72](https://github.com/talmolab/sleap-roots-pipeline/issues/72) (the gate's image is pinned by
+    tag with `IfNotPresent` and depends on `/bin/sh` in a versioned application image), and
+    [#73](https://github.com/talmolab/sleap-roots-pipeline/pull/73) (merged — `argo template create`
+    stamps `workflows.argoproj.io/creator` into metadata **labels**, which made the drift checker
+    report a false `DRIFT` on the freshly created gate).
+  - **Diagnostic constraint worth knowing:** there is currently **no route to Argo pod logs**.
+    `kubectl logs` and `argo logs` both fail because `pods/log` is not granted to the `argo-user`
+    ServiceAccount (the Role grants `pods`, but Kubernetes treats subresources as separate resource
+    strings), and `argo logs` **exits 0** while writing those errors to stderr. `runai workload
+    logs` sees Argo workflows but rejects them (`unknown workload type: Workflow`). #76 was
+    diagnosed instead by rebuilding `bloomctl` at the deployed commit `06148896` and re-running its
+    exact operation locally. Fixing this needs `pods/log` on the Role, or an Argo artifact
+    repository with `archiveLogs: true`.
 - **2026-09-15** — **bloom#772's driver-side fix merged; #56's Argo-side wiring is still the
   blocker, so scenario 3's poison-scan symptom is unchanged in practice today.**
   - **⚠️ Correction (2026-09-15, later): #56's Argo-side wiring has since been written and opened as
     [PR #60](https://github.com/talmolab/sleap-roots-pipeline/pull/60)**, so the "still the blocker"
-    framing below is superseded. The "none of the **4** registered `WorkflowTemplate`s" count is
-    **still 4 and still accurate**: PR #60 adds a fifth template *file*, but registration is a
-    separate step (`argo template create`) that has not been run — `argo template list -n
-    runai-busch-lab` returns four as of 2026-09-16. It becomes five only when that step happens.
-    Merging that PR does **not** change cluster behaviour
+    framing below is superseded — see the **2026-09-16** entry above, where #60 merged and the
+    templates were applied. The "none of the **4** registered `WorkflowTemplate`s" count was
+    accurate when written and again on the morning of 2026-09-16 (PR #60 added a fifth template
+    *file*, but registration is a separate `argo template create` step); **it became five when that
+    step ran later that day**. Merging that PR did **not** change cluster behaviour
     until `argo template update` runs, and the live batch-oracle re-runs have **not** been done — so
     do not read this correction as "poison-scan scenario fixed" either. The full record, with what
     was actually observed, is deferred to the entry written on the day those runs happen (PR #60's
@@ -576,6 +702,12 @@ Adversarial 4-lens review. Resolutions:
     still fail completely at 0/3, same as before. **#56 remains open and is the actual blocker**
     for the batch-oracle poison-scan target; don't read this entry as "poison-scan scenario
     fixed."
+    > ⚠️ **Superseded 2026-09-16.** #56 is merged, applied and its DAG wiring verified live — a
+    > poison-scan run now advances past the exit-3 producer instead of dying at 0/3
+    > (`srp-t74a-poison-gfzp6`). The batch-oracle target is still **not** met, but the blocker has
+    > moved: it is now [#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76) (predict's
+    > `.slp` output is not byte-reproducible, so a recompute collides with the stored blob) plus the
+    > Bloom-side counts, which need §8's vendoring. See the 2026-09-16 entry.
   - Filed [sleap-roots-pipeline#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58)
     while scoping #772/#56: none of the 4 registered `WorkflowTemplate`s have an automated
     drift-check the way the top-level `Workflow` doc's vendoring (2026-08-25 design) does for
