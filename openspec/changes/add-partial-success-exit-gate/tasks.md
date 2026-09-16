@@ -288,27 +288,44 @@ delta.
   because renaming is a legal operation with no way to know content went missing. Done: the renamed
   `Launcher registers every workflow template` now carries the namespace-equality rule and the
   no-env-var-override rule, plus two scenarios (#62 is dropping its own).
-- [ ] 7b.2 **After #62 merges, diff its actual archived requirement text against what was folded in
+- [x] 7b.2 **After #62 merges, diff its actual archived requirement text against what was folded in
   above.** The text used here came from the peer session's description, not from the merged file.
   **Validate:** every normative clause in #62's archived `Launcher registers…` requirement appears in
   this change's renamed version. Anything missing would be deleted by this archive.
-- [ ] 7b.3 **Add the namespace assertions to `scripts/check_manifests.py`** — deferred deliberately:
+  **DONE 2026-09-16.** Diffed clause-by-clause against the live archived text. Two clauses were
+  absent from the replacement and would have been silently deleted: *"Targeting another project
+  requires editing the manifest as well, and registering that project's templates and secrets
+  first"*, and the negative assertion *"it references no models-downloader template"*. Both restored,
+  plus the concrete `runai-busch-lab` value alongside the relational assertion. Verified with a
+  whitespace-normalised clause check, since a naive substring match false-flags on line wrapping.
+- [x] 7b.3 **Add the namespace assertions to `scripts/check_manifests.py`** — deferred deliberately:
   this branch still carries `NAMESPACE="runai-talmo-lab"` because the fix belongs to #62, so the
   assertion would fail until the rebase. After rebasing, assert (a) the launcher's `NAMESPACE` equals
   `sleap-roots-pipeline.yaml`'s `metadata.namespace`, and (b) it is a literal with no `${...}`
   expansion.
   **Validate:** `python scripts/check_manifests.py` passes with both new assertions.
-- [ ] 7b.4 **Re-apply README hunks over #62's sweep.** Three overlap (main lines 71-76, 167-174,
+  **DONE.** Four assertions added; 51 pass. Negative control confirmed: re-introducing
+  `NAMESPACE="${NAMESPACE:-runai-busch-lab}"` makes the literal assertion fail, which is exactly the
+  override #62's spec forbids.
+- [x] 7b.4 **Re-apply README hunks over #62's sweep.** Three overlap (main lines 71-76, 167-174,
   285-291). #62 rewrites all 14 `runai-talmo-lab` references to `busch-lab`, so the five
   `argo template create` commands must name `runai-busch-lab` **directly** — drop the
   substitution blockquote added here, since the point of that sweep is that no copy-pasteable
   command names the wrong namespace.
   **Validate:** `grep -c "runai-talmo-lab" README.md` → 0.
-- [ ] 7b.5 Confirm `runai_run_pipeline.sh` merged cleanly: #62 rewrote lines 26-38 (literal
+  **DONE.** Both README conflicts resolved toward busch-lab; the five `argo template create`
+  commands now name `runai-busch-lab` directly and the substitution blockquote is dropped, keeping
+  only #56's ordering constraint. NOTE the stated criterion (`grep -c runai-talmo-lab` → 0) was
+  wrong: two references remain and are #62's own, deliberately explaining that talmo-lab is still
+  live but no longer this pipeline's target.
+- [x] 7b.5 Confirm `runai_run_pipeline.sh` merged cleanly: #62 rewrote lines 26-38 (literal
   `NAMESPACE`, shared-namespace note) and deleted the ⚠️ mismatch comment added here; this change's
   `TEMPLATES` entry and five-line header recipe are a different hunk and should survive.
   **Validate:** `bash -n runai_run_pipeline.sh`; `TEMPLATES` lists five files; no ⚠️ mismatch comment
   remains; `NAMESPACE` is the literal `runai-busch-lab`.
+  **DONE.** Resolved toward #62's rewrite (literal `NAMESPACE`, shared-namespace note); the ⚠️
+  mismatch comment added here is gone, and the `TEMPLATES` entry plus the header recipe survived as
+  a separate hunk, with the recipe now on busch-lab and `create` for the gate.
 - [ ] 7b.6 Re-run the full local gate after rebasing: `scripts/lint_manifests.sh`,
   `scripts/check_manifests.py`, `openspec validate --strict`.
 

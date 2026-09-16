@@ -195,6 +195,32 @@ def main() -> int:
         if entry:
             check(f"{stage} ARGO_WORKFLOW_NAME value", entry[0].get("value"), "{{workflow.name}}")
 
+    # --- Requirement: Launcher registers every workflow template --------------------
+    # The launcher must register templates INTO the namespace the Workflow actually runs in,
+    # and that value must be a literal: `argo submit -n <ns>` does not redirect a submission
+    # (the manifest's metadata.namespace wins), so an env-var override could only publish the
+    # templates into a different project than the one the Workflow lands in.
+    launcher = (ROOT / "runai_run_pipeline.sh").read_text(encoding="utf-8")
+    m = re.search(r"(?m)^NAMESPACE=(.*)$", launcher)
+    check("launcher declares NAMESPACE", bool(m), True)
+    if m:
+        raw = m.group(1).strip()
+        check(
+            "launcher namespace matches the Workflow's metadata.namespace",
+            raw.strip("\"'"),
+            wf["metadata"]["namespace"],
+        )
+        check(
+            "launcher namespace is a literal, not an env-var expansion",
+            "$" in raw or "{" in raw,
+            False,
+        )
+    check(
+        "launcher registers every template the DAG references",
+        sorted(re.findall(r"\"(sleap-roots-[a-z-]+-template)\.yaml\"", launcher)),
+        sorted(f[:-5] for f in [GATE, *BATCH_STAGES.values()]),
+    )
+
     # --- Reproducibility: pins ------------------------------------------------------
     images: dict[str, str] = {}
     for fname in [GATE, *BATCH_STAGES.values()]:

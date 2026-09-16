@@ -82,18 +82,22 @@ it submits actually runs in.
 
 That value SHALL NOT be overridable by an environment variable. `argo submit -n <ns>` does not
 redirect a submission — the manifest's `metadata.namespace` wins — so an override could only move
-the template registrations away from the namespace the Workflow still lands in.
+the template registrations away from the namespace the Workflow still lands in. Targeting another
+project requires editing the manifest as well, and registering that project's templates and secrets
+first.
 
 #### Scenario: Launcher's TEMPLATES list contains every workflow template
 
 - **WHEN** `runai_run_pipeline.sh` is inspected
 - **THEN** its registered `TEMPLATES` list contains all five template files: the images-downloader,
   predictor, trait-extractor, write-back, and exit-gate templates
+- **AND** it references no models-downloader template
 
 #### Scenario: Launcher registers into the namespace the Workflow runs in
 
 - **WHEN** `runai_run_pipeline.sh` and `sleap-roots-pipeline.yaml` are inspected
-- **THEN** the launcher's `NAMESPACE` value equals the Workflow's `metadata.namespace`
+- **THEN** the launcher's `NAMESPACE` value is `runai-busch-lab`
+- **AND** that value equals the Workflow's `metadata.namespace`
 
 #### Scenario: The launcher's namespace is a literal, not an environment-variable expansion
 
