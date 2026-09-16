@@ -109,16 +109,25 @@ WorkflowTemplate object's own `metadata.annotations` (top of the file) never is.
 
 ## 5. Stage images
 
-Current registry is **GitLab** (`registry.gitlab.com/salk-tm/...`); the roadmap A0 target is to
-migrate these to GHCR, not yet done — so use the GitLab refs until then.
+Every cluster template pulls from **GHCR**. The GitLab registry
+(`registry.gitlab.com/salk-tm/...`) is historical — it survives only in the three stale
+`local-WSL2-*` templates, which are not registered to any cluster.
 
 | Stage | Image |
 |---|---|
-| models-downloader | `registry.gitlab.com/salk-tm/models-downloader:<tag>` |
-| predictor (GPU) | `registry.gitlab.com/salk-tm/sleap-roots-predict:<tag>` |
-| trait-extractor | `registry.gitlab.com/salk-tm/sleap-roots-traits:<tag>` |
+| images-downloader | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
+| predictor (GPU) | `ghcr.io/talmolab/sleap-roots-predict:<tag>@sha256:<digest>` |
+| trait-extractor | `ghcr.io/talmolab/sleap-roots-trait-extractor:<tag>@sha256:<digest>` |
+| write-back | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
+| exit-gate | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
 
-Pin a tag/digest — never `:latest`. Confirm the tag exists in the registry before submitting.
+There is no `models-downloader` stage in the cluster DAG — it was dropped when the DAG was
+rewritten to warm-predict → traits; only the local-WSL2 variant still references one.
+
+Pin a tag/digest — never `:latest`. The two producers must carry an `@sha256:` digest, which is
+what their `SRP_PREDICT_CONTAINER_DIGEST` / `SRT_TRAITS_CONTAINER_DIGEST` env vars are validated
+against; the `bloomctl` stages are tag-pinned (#72). Confirm the reference resolves in the registry
+before submitting.
 
 ## 6. Example — run the predictor stage interactively
 
@@ -131,7 +140,7 @@ dir (`models_downloader_output`) is what feeds the predictor's `models_input`.
 wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml && \
 runai workspace submit srp-predict-test \
   -p busch-lab \
-  --image registry.gitlab.com/salk-tm/sleap-roots-predict:<tag> \
+  --image ghcr.io/talmolab/sleap-roots-predict:<tag> \
   --image-pull-policy Always \
   --gpu-memory-request 8192M \
   --cpu-core-request 8 \
@@ -196,7 +205,7 @@ set the priority class:
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
 | Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7 |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
-| `ImagePullBackOff` | confirm the `registry.gitlab.com/salk-tm/...` tag exists; test `docker pull` of the same tag |
+| `ImagePullBackOff` | confirm the `ghcr.io/...` reference resolves; test `docker pull` of the exact string in `image:`, digest included |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
 | `argo: command not found` | `argo` is WSL-only here — see §1a. Not installed on Windows. |

@@ -148,6 +148,33 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   excluding `openspec/changes/archive/`) and confirm every remaining hit either carries the corrected
   mechanism or is one of the two counter-sites.
 
+- [x] 4.3 Correct the **registry** claim, which is false in three ways: it names GitLab when all
+  five cluster templates pull from GHCR; it says GHCR migration is "not yet done"; and it lists a
+  `models-downloader` stage the cluster DAG no longer has (plus `sleap-roots-traits` rather than its
+  replacement `sleap-roots-trait-extractor`). Sites:
+  - `openspec/project.md:43-45` (Docker stack) and `:172-174` (External Dependencies)
+  - `.claude/skills/runai/SKILL.md` §5 — the registry statement, the stage table, and the
+    "use the GitLab refs until then" instruction, which would actively mislead anyone following it
+  - `.claude/skills/runai/SKILL.md` §6 example `--image` flag, and the `ImagePullBackOff`
+    troubleshooting row
+  - `.claude/commands/ci-debug.md:40` — same `ImagePullBackOff` row
+  Leave the three `local-WSL2-*` templates' GitLab pins alone: they are *accurate* — those files
+  really do reference GitLab — and re-pointing them is a functional change to a dry-run path that is
+  already known broken (#21). The defect is describing them as the *current* registry, not their
+  existence.
+  **Validate:** `grep -rn -i 'registry.gitlab.com' --include='*.md' .` (excluding
+  `openspec/changes/archive/` and `docs/bloom-integration/roadmap.md`, whose mentions are historical
+  narrative about the A3-traits port and are accurate) returns no site that asserts GitLab is
+  current. Cross-check against the live templates:
+  `for f in sleap-roots-*-template.yaml; do grep -m1 -E '^\s+image:' $f; done` shows `ghcr.io` for
+  all five.
+
+- [x] 4.4 Also correct `openspec/project.md:64-65`, whose "Pin images by tag/digest … (full
+  provenance/idempotency is A4, not yet implemented)" becomes strictly weaker than the rule this
+  change makes normative for the two producers.
+  **Validate:** the revised text requires `@sha256:` for the producers and records that the
+  `bloomctl` stages stay tag-pinned (#72).
+
 ## 5. Pre-merge verification
 
 - [ ] 5.1 `python scripts/check_manifests.py` → `=== ALL 67 ASSERTIONS PASS ===`.

@@ -44,6 +44,15 @@ took reading the live NFS output to notice.
   only the two in the file where it was first noticed. No container digest is an input to
   `compute_idempotency_key`. The claim's conclusion survives, but by a different mechanism (see
   `design.md`), so this is a wrong-mechanism correction rather than a deletion.
+- **Correct a second falsified claim, about the registry itself.** `openspec/project.md`,
+  `.claude/skills/runai/SKILL.md` and `.claude/commands/ci-debug.md` state that the stage images
+  publish to **GitLab** (`registry.gitlab.com/salk-tm/...`) and that GHCR migration is "not yet
+  done". All five cluster templates already pull from GHCR; GitLab survives only in the three stale
+  `local-WSL2-*` variants. The same sites list a `models-downloader` stage the cluster DAG no longer
+  has, and name `sleap-roots-traits` rather than its GHCR replacement
+  `sleap-roots-trait-extractor`. Pre-existing, but it describes the exact `image:` lines this change
+  edits — and `SKILL.md`'s guidance to "use the GitLab refs until then" would actively mislead
+  anyone following it.
 
 **Not marked BREAKING, deliberately.** The two MODIFIED requirements tighten "pinned by digest *or*
 `sha-<sha>`" to "digest required", which makes both currently-shipping manifests non-conformant
@@ -85,7 +94,12 @@ one recompute cycle, not two.
 - Affected tooling: `scripts/check_manifests.py` (58 assertions today)
 - Affected docs: `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`,
   `docs/superpowers/plans/2026-07-06-a4-argo-workflow-poc.md`,
-  `docs/bloom-integration/roadmap.md` (the claim sweep, and the post-run status-log entry)
+  `docs/bloom-integration/roadmap.md` (the claim sweep, and the post-run status-log entry);
+  `openspec/project.md`, `.claude/skills/runai/SKILL.md`, `.claude/commands/ci-debug.md`
+  (the registry correction)
+- ⚠️ **Open PR #74 also edits `.claude/skills/runai/SKILL.md`.** Its only hunk there is at lines
+  19-31; this change's edits are at 112+ and 199, so the two auto-merge. Whichever lands second
+  should re-check rather than assume.
 - **No cross-repo vendoring step is needed.** `salk-bloom` vendors only `sleap-roots-pipeline.yaml`
   (per that file's own header), not the templates this change edits — so unlike #56's §8, there is
   no lockstep companion PR.
