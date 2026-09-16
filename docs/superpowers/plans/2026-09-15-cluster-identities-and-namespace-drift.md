@@ -349,6 +349,25 @@ Invoke `/openspec:proposal` with change-id `fix-launcher-namespace`. Ground it w
 
 - [ ] **Step 2: Write the spec delta**
 
+> **⚠️ SUPERSEDED — do not execute this step as written (note added 2026-09-16).** The delta text
+> below specifies a `NAMESPACE` environment-variable override and a "Launcher namespace is
+> overridable" scenario. **The override cannot work and was removed before merge.** `argo submit
+> -n <ns>` does not redirect a submission — the manifest's `metadata.namespace` wins (verified:
+> `argo submit --server-dry-run -n runai-talmo-lab -o json` → `metadata.namespace =
+> runai-busch-lab`), and `argo-user` has no create rights in `runai-talmo-lab` anyway. All an
+> override could do is publish the templates into a different project than the one the Workflow
+> runs in.
+>
+> What actually shipped is a plain literal `NAMESPACE="runai-busch-lab"`, a requirement stating the
+> value SHALL NOT be overridable, and a scenario asserting it is a literal rather than a parameter
+> expansion. See the archived change at
+> `openspec/changes/archive/2026-09-16-fix-launcher-namespace/` and the live requirement in
+> `openspec/specs/per-batch-pipeline/spec.md`, not the draft below.
+>
+> Left in place rather than rewritten: this is a record of what was planned, and the gap between it
+> and what shipped is the useful part. Flagged because the text below is an *instruction to an
+> executor* — re-running it verbatim would re-introduce the broken override.
+
 The existing requirement at `openspec/specs/per-batch-pipeline/spec.md:191` ("Launcher registers all four templates") covers only the `TEMPLATES` list. Add a MODIFIED delta extending it with a namespace assertion. The delta file must contain:
 
 ```markdown
