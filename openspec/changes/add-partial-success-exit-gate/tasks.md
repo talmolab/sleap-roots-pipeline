@@ -220,12 +220,36 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   ```
   **Validate:** four files captured; diff each against `main`'s copy and understand any difference
   before overwriting it — a divergence here is a live #58 instance.
-- [ ] 7.2 Register the gate **first**, then update the other four. `argo template create` for the
-  new one (`update` errors on a nonexistent template); `argo template update` for the rest.
-  Registering the gate first is safe on its own — an unreferenced WorkflowTemplate is inert — and
-  is a hard prerequisite for anything that dispatches the five-task DAG.
-  **Validate:** `argo template get` each; compare against the local file ignoring server-injected
-  metadata (`resourceVersion`, `uid`, `creationTimestamp`, `generation`, `managedFields`).
+- [x] 7.2 **APPLIED 2026-09-16** from a clean `main` checkout at `310aae6` (the squash-merge of
+  PR #60), not from the branch — per #53's precedent. Gate `argo template create`d first, then
+  `argo template update` on the other four. Pre-flight: `argo list --status Running` empty.
+  **Result:** all five registered; `check_cluster_drift.sh` reports all five **IN SYNC**, exit 0.
+  Live pins confirmed: `bloomctl:sha-0614889` ×3 (gate, images-downloader, write-back),
+  `sleap-roots-predict:sha-e025e309…`, `trait-extractor:sha-689cffb`. The gate's `timeout: 600s`,
+  `priorityClassName: interactive-preemptible` and `retryStrategy{limit:2,Always}` all survived
+  registration. Non-offline `argo lint` (which resolves `templateRef` against the *cluster*) now
+  passes on the five-task DAG — independent confirmation of registration.
+  **Rollback pre-image corrected.** An earlier note here said the pre-image "is simply `main`
+  itself". That became WRONG the moment #60 merged, since `main` now carries the new pins. The
+  rollback target is **`3cf4b4f`** (the pre-merge commit), verified before applying: the live
+  cluster was byte-for-byte `3cf4b4f` on all four templates. Live copies also captured to files.
+  To roll back: `argo template delete sleap-roots-exit-gate-template`, then
+  `git checkout 3cf4b4f -- sleap-roots-*-template.yaml` and `argo template update` each.
+  **This apply exposed a real defect in the drift checker**, fixed in PR #73: `argo template
+  create` stamps `workflows.argoproj.io/creator` into `metadata.LABELS` (not annotations, and only
+  on `create` — `update` does not), which the checker did not strip, so the freshly created gate
+  reported DRIFT against an identical file while the four updated ones read IN SYNC. PR #60's
+  review predicted this failure but placed the key in annotations; running it settled where it
+  actually lives. The all-five-IN-SYNC result above is from the fixed checker, and the fix was
+  negative-controlled (from `3cf4b4f` it still reports real drift on all four).
+  **Production effect, measured not assumed.** `salk-bloom` still pins the vendored **four**-task
+  DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`), so production does not run the gate yet — but its
+  vendored DAG uses `templateRef`, so it picked up all three new pins immediately. Read-only NFS
+  inspection beforehand established this is a net improvement, not a risk: `predictions/` and
+  `traits/` had **no** `run_manifest.json` (predict did not forward it pre-#42), so write-back was
+  discovering **unscoped** and re-ingesting 12 `result.json` files — 4 of them foreign leftovers —
+  on every run. predict#42 narrows that to the manifest's 8. All 8 manifest keys had results, so
+  bloom#859's latch was not armed.
 - [x] 7.3 **Gate truth-table probe** — RUN 2026-09-15 in `runai-talmo-lab`. Scratch template name,
   no producers, no GPU, no volumes, no credentials; all objects deleted afterwards.
   **Correction to an earlier note here:** this was first recorded as safe "by construction" because
@@ -246,14 +270,86 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   vector: `(0,0,0)`, `(0,3,0)`, `(3,3,3)`, `(0,1,0)`, `(0,2,0)`, `(0,143,0)`, `(0,,0)`, `(0,-1,0)`.
   **Validate:** `Succeeded` for the first three, `Failed` for the rest. This is the cheapest proof
   of the gate's logic *as deployed*, and it is independent of any other repo's behaviour.
-- [ ] 7.4 **Poison-scan scenario** — re-run 2026-09-01's scenario 3: one scan whose `cyl_images`
+- [ ] 7.4 **BLOCKED as written (assessed 2026-09-16) — must be split. Two independent reasons.**
+  1. **Its Bloom-side criteria are unreachable until §8 lands.** `done_count=2`/`failed_count=1`
+     and the poison scan's `cyl_pipeline_run_scans` row require rows that Bloom's
+     `POST /workflows/pipeline` route creates at *enumerate* time. A hand `argo submit` creates
+     none, so those assertions have nothing to attach to. But dispatching *through* Bloom would run
+     the vendored **four**-task DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`, no gate, no
+     `continueOn`) — i.e. it would exercise the old code and prove nothing about this change.
+     So the Bloom half of 7.4 is only meaningful **after** §8 re-vendors and bumps the pin.
+  2. **The poison scan's identity is not recorded anywhere in this repo.** It needs a `cyl_images`
+     read. Note `scan_12894751` is conspicuously absent from the eight staged keys
+     (`…745`–`…750`, `…752`, `…753`) and from `a4_poc/input/`, which makes it the likely candidate
+     — but that is an inference from a gap in a sequence, not a verified fact, and it must be
+     confirmed against Bloom before being used.
+
+  **Split it:**
+  - **7.4a** (runnable now, hand-submitted, scratch paths): DAG reaches write-back; both good
+    scans' `.result.json` land with fresh mtimes; the poison scan produces no result; the gate
+    receives `{3,0,0}`; Workflow `Succeeded`. Verifiable entirely from Argo node status + NFS
+    artifacts, which is what this repo can see.
+  - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count`, the per-scan `failed` row,
+    and the `cyl_trait_sources` entries.
+
+  Original instructions follow. Re-run 2026-09-01's scenario 3: one scan whose `cyl_images`
   row points at never-uploaded object-storage content, plus two good scans, one batch.
   **Validate:** the DAG reaches `write-back`; both good scans' `.result.json` land on the NFS mount
   with fresh mtimes and appear in `cyl_trait_sources`; the poison scan's `cyl_pipeline_run_scans`
   row is `failed`; `done_count=2`, `failed_count=1`; Workflow `Succeeded`. Verify by artifact, not
   by workflow phase alone.
-- [ ] 7.5 **Crash-injection scenario — the load-bearing test**, since silently greening real crashes
-  is this design's failure mode. Submit with `scan-ids=not-an-int`, which `parse_scan_ids_flag`
+- [x] 7.5 **RUN 2026-09-16 — PASSED, and it produced the strongest evidence in this change.**
+  Workflow `srp-t75-crash-4qd66`, submitted with `scan-ids=not-an-int` against a **scratch** path
+  tree (`a4_scratch_56/{input,predictions,traits}`, created empty), never the `a4_poc` paths.
+  Terminal after **1290 s (21.5 min)**.
+
+  | node | type | phase | `outputs.exitCode` |
+  |---|---|---|---|
+  | `images-downloader` (3 attempts) | Retry | Failed | **1** ("No more retries left") |
+  | `predictor` (4 attempts) | Retry | Failed | **1** |
+  | `trait-extractor` (3 attempts) | Retry | Failed | **1** |
+  | **`write-back`** | Retry | **Succeeded** | **0** |
+  | `exit-gate` (3 attempts) | Retry | Failed | 1 |
+  | Workflow | — | **Failed** | — |
+
+  Gate's resolved `inputs.parameters`: `images-downloader-code='1'`, `predictor-code='1'`,
+  `trait-extractor-code='1'` — real values, **not** empty strings. That is direct live
+  confirmation that `{{tasks.X.exitCode}}` resolves *through* Retry nodes on this controller,
+  which until now was only verified in v3.6.7 source.
+
+  ⚠️ **`write-back` SUCCEEDED while all three producers crashed — so this run is the empirical
+  proof that the gate is load-bearing.** Without it, write-back would have been the DAG's only
+  leaf, it exited 0, and `assessDAGPhase` would have reported the Workflow **`Succeeded`** for a
+  run in which every producer crashed and zero scans were processed. The design doc's claim that a
+  `continueOn`-only change is "strictly worse than today" is no longer an argument from Argo
+  semantics — it is a measurement. The gate received `{1,1,1}`, rejected it, and failed the
+  Workflow correctly.
+  Why write-back exits 0 here: the scratch `traits/` dir is empty and no `run_manifest.json` was
+  written (the crash precedes `write_run_manifest`), so `discover_envelopes` falls back to
+  **unscoped** discovery, finds zero envelopes, and reports success. Worth recording rather than
+  filing: this is exactly the path that makes a total crash greenable, and it is why the gate reads
+  producer exit codes instead of trusting the terminal stage.
+
+  **Isolation held.** All 12 production `a4_poc/traits/*.result.json` mtimes unchanged against the
+  pre-run baseline, and `a4_poc/input/run_manifest.json` untouched (still 2026-09-10). The scratch
+  tree was left **completely empty** with no `run_manifest.json` — independently confirming that a
+  crash exit happens before `write_run_manifest`, which is the reason this test needed a scratch
+  path at all.
+
+  **Not verified:** the gate's stderr diagnostic. `pods/log` is Forbidden to the `argo-user`
+  ServiceAccount in `runai-busch-lab`, so container logs are unreadable with these credentials and
+  the operator-facing message could not be confirmed. Everything above is from node status, not
+  logs.
+
+  **Cost measured:** a crash-class run burns the full retry budget at every stage before the gate
+  can reject — 21.5 min wall clock and 4 GPU predictor pod schedules on input that cannot succeed.
+  #60 fixed the DAG-killing consequence, not the retry storm; this is the number.
+
+  **Bloom-side assertions NOT done** (see 7.4): a hand `argo submit` creates no
+  `cyl_pipeline_runs`/`cyl_pipeline_run_scans` rows, so `failed_count` and per-scan status have
+  nothing to attach to. Deferred to after §8.
+
+  Original instructions follow. Submit with `scan-ids=not-an-int`, which `parse_scan_ids_flag`
   surfaces as a `ClickException` → **exit 1**.
   ⚠️ **Run this against a scratch input directory, not the default `a4_poc` paths.** Production
   dispatches the vendored copy of this Workflow with the same `hostPath`s, so the default paths are
