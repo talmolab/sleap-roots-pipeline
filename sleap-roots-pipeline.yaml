@@ -53,7 +53,9 @@ spec:
     # type: Directory (not DirectoryOrCreate), per cluster-admin guidance 2026-08-06: if the NFS
     # mount is down on whichever node a step lands on, DirectoryOrCreate silently creates a local
     # directory on that node's root disk instead — output vanishes, with a successful-looking
-    # pipeline result on top. Directory fails loudly instead. All three paths have existed
+    # pipeline result on top. Directory prevents that — but note it does NOT fail loudly: the pod
+    # sits Pending (see the retryStrategy notes below), so the Workflow hangs rather than failing.
+    # Preventing silent data loss is the reason to keep it; expect a hang, not an error. All three paths have existed
     # continuously since this program's PoC and aren't going away, so there's no cold-start case
     # left that DirectoryOrCreate was protecting (the permission-on-a-truly-fresh-path risk this
     # comment used to flag was separately live-tested for the predictor's own output path in
@@ -147,10 +149,15 @@ spec:
           # continueOn would report an exhausted-retry crash as Succeeded.
           # It reads producers it does not depend on, which resolves only because this DAG is
           # LINEAR and they are all its ancestors. If you restructure this DAG, keep every
-          # referenced producer an ancestor of exit-gate: Argo substitutes unresolved task
-          # references with allowUnresolved=true (verified in dag.go at v3.6.7, the version this
-          # cluster runs), so a broken reference would silently arrive at the gate as a literal
-          # string rather than raising — the gate's strict allowlist is what makes it visible.
+          # referenced producer an ancestor of exit-gate — but that mistake is caught early and
+          # loudly, not silently: Argo's validateDAGTaskArgumentDependency rejects a non-ancestor
+          # reference at BOTH `argo lint` and submission with
+          # `missing dependency '<task>' for parameter '<name>'` (verified live against this
+          # cluster: argo v3.6.5 CLI, v3.6.7 controller). What the gate's allowlist covers is a
+          # different case the validator cannot see: a task that IS a valid ancestor but produced
+          # no outputs.exitCode, where an empty or literal `{{tasks.<name>.exitCode}}` reaches the
+          # gate because dag.go substitutes with allowUnresolved=true. See the exit-gate template's
+          # header for the full reasoning.
           - name: exit-gate
             templateRef:
               name: sleap-roots-exit-gate-template

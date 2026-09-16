@@ -62,6 +62,11 @@ smoke-tested, 2026-08-05). This session never switched.
     this cluster is `high`, not `inference` (an earlier wrong assumption). Added an explicit
     warning that an unset `priorityClassName` on this cluster defaults to `very-high` (150) —
     worse than either named tier, never delete the field from the other three templates.
+    > ⚠️ **The `very-high` (150) half of that warning was wrong** (found 2026-09-16, PR #60's
+    > review). It was never verified; pods observed with no class resolved to priority **0**, the
+    > lowest tier, and `priorityclasses` is Forbidden to our credentials so the default cannot be
+    > confirmed either way. The *instruction* — never delete the field — still stands; only the
+    > stated reason is inverted. The `high`-vs-`inference` naming correction above is unaffected.
   - `openspec validate enable-predictor-gpu-fractions --strict` passes. `argo lint` passes.
 
 - **`bloom-workflow` SA wiring + hostPath hardening — PR #42**, `wire-bloom-workflow-sa` branch,

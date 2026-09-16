@@ -41,12 +41,40 @@ metadata:
 spec:
   templates:
     - name: exit-gate
-      # Never omit this field. Per sleap-roots-predictor-template.yaml's own recorded observation,
-      # an Argo pod with no priorityClassName lands at very-high (150) on this cluster — ABOVE the
-      # predictor's `high` (125) — so an omitted value would make this trivial `sh` pod the
-      # highest-priority thing in the pipeline, able to preempt real GPU work. Matches the other
-      # CPU-only stages.
+      # Never omit this field — but not for the reason this repo used to record. The claim that an
+      # unset priorityClassName "lands at very-high (150), above the predictor's high (125)" was
+      # never verified and is very likely wrong: Argo pods observed with no priorityClassName
+      # resolved to priority 0 (three pods, runai-talmo-lab, 2026-09-16), i.e. the LOWEST tier,
+      # below `train` (50). The cluster-scoped `priorityclasses` API is Forbidden to the argo-user
+      # identities, so neither a globalDefault nor its value can be confirmed from this repo's
+      # credentials — which is itself the reason to always state the class explicitly rather than
+      # rely on any default. Corrected direction of the risk: omitting this field starves the gate,
+      # it does not let it preempt GPU work. `interactive-preemptible` matches the other CPU-only
+      # stages and is the right value; see also I2 in PR #60's review on why a NON-preemptible gate
+      # would be actively dangerous (it must fit deserved quota or sit Pending forever).
       priorityClassName: interactive-preemptible
+      # Bounds the one failure mode this template introduces that nothing else can catch.
+      # Because exit-gate is the DAG's ONLY leaf, assessDAGPhase takes the Workflow's phase from
+      # it — and at v3.6.7 assessNodeStatus maps PodPending UNCONDITIONALLY to NodePending (there
+      # is no ImagePullBackOff / FailedMount handling). So a gate pod that cannot start — GHCR
+      # blip on a node with no cached layer, unschedulable, over quota — is never Failed and never
+      # Error, which means neither retryStrategy nor continueOn applies, and a batch whose real
+      # work is COMPLETE (write-back already committed to Bloom) sits Running forever while
+      # Bloom's status poller never resolves the run.
+      #
+      # `timeout` is the field that fixes this and `activeDeadlineSeconds` is NOT: the controller
+      # checks `node.Phase == wfv1.NodePending && time.Now().After(node.StartedAt.Add(tmplTimeout))`
+      # — an explicit Pending check — whereas the workflow-level deadline's Pending path
+      # (failNodesWithoutCreatedPodsAfterDeadlineOrShutdown) only covers nodes with no pod created,
+      # and setting it at Workflow scope would also bound the GPU predictor, which we must not do.
+      #
+      # Value does NOT scale with batch size: this node is only created once write-back completes,
+      # so every per-scan cost is upstream of the window, and the script itself is three string
+      # compares. What 600s must absorb is scheduling latency on a contended cluster plus a cold
+      # image pull. It applies per attempt, so with limit: 2 the worst case is ~3x this plus
+      # backoff. Deliberately generous — the win is converting "hangs forever" into "fails in
+      # minutes", not tight enforcement.
+      timeout: 600s
       retryStrategy:
         # This task is the DAG's only leaf, so it alone determines the Workflow phase — without a
         # retry, a single image-pull blip or a preemption would report a fully-successful batch as

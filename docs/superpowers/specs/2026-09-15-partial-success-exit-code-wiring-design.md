@@ -125,9 +125,15 @@ hazard if omitted:
   follow would run `bloomctl <script>` and exit 2, failing **every** workflow including successful
   ones. This is the one place the "containers are not modified" decision is deliberately inverted —
   the gate is ours, not a producer.
-- **an explicit `priorityClassName`** — an Argo pod with none lands at very-high (150) on this
-  cluster, *above* the GPU predictor's `high` (125), which would make a trivial `sh` pod the
-  highest-priority thing in the pipeline.
+- **an explicit `priorityClassName`** — the priority an Argo pod gets with none declared is not
+  verifiable from this repo's credentials (`priorityclasses` is cluster-scoped and Forbidden to the
+  `argo-user` identities), and pods observed with none resolved to **priority 0** — the *lowest*
+  tier, below `train` (50). **Correction, 2026-09-16:** this document previously repeated the
+  repo-wide claim that an unset class lands at very-high (150), *above* the predictor's `high`
+  (125). That claim was never verified — `git log -S` traces it to PR #41, introduced alongside a
+  `grep`, not a scheduling observation — and the observed default contradicts it. The conclusion
+  (always declare the field) is unchanged; the *direction of the risk* is inverted: omitting it
+  starves the gate rather than letting it preempt GPU work.
 - **a `retryStrategy` with `retryPolicy: Always`** — the gate is the only leaf, so a single
   image-pull blip or preemption would otherwise report a fully-successful batch as `Failed`.
 - **`resources.requests`** — otherwise the pod is BestEffort QoS and is first evicted under node
@@ -268,12 +274,24 @@ retry could redo or corrupt already-good work.
   `(provenance.idempotency_key, provenance.contract_version)` against the existing
   `{scan_key}.result.json` (`trait_extractor/extractor.py:105`) — content-derived, not mere file
   existence.
-- **predictor** — the weakest of the three, knowingly. Its skip is **existence-only**, and the
-  template's own comment already warns that a mid-write eviction can leave a truncated
-  `.predictions.json` that a retry trusts as done, concluding that more retries widen that window
-  and the limit should be gated on atomic-write plus checksum-verified skip. This design does not
-  widen it — the limit is unchanged and no new retries are added — but it does not close it
-  either. It remains predict's to fix (predict#43 covers the atomic-write half).
+- **predictor** — ⚠️ **corrected 2026-09-16.** This section claimed predict's skip is
+  **existence-only**, making it "the weakest of the three", and the predictor template's own
+  comment said the same. **Both were false**, and the claim was checkable in minutes:
+  `sleap_roots_predict/batch.py:256-283` (`_previous_identity_key`, shipped in predict #35 and
+  present in the pin this change bumps to) recomputes an idempotency key from the on-disk sidecar
+  plus `PredictionManifest` and returns `None` on `OSError | JSONDecodeError | ValueError`. So a
+  truncated `.predictions.json` is treated as **changed** and re-predicted — never trusted as done.
+  Its own docstring: *"an exact match skips, anything else (including no previous artifacts at all)
+  predicts and overwrites."* This repo's roadmap already recorded the upgrade ("instead of
+  `Path.exists()`") in the `sleap-roots-predict` row, ~400 lines from where this claim sat.
+  All three stages therefore use content-derived skips, and predict is **not** the weakest.
+  **The real consequence, which the false claim hid:** predict's key includes `predict_code_sha`,
+  baked into the image as `SRP_PREDICT_CODE_SHA`, and traits feeds `manifest.predict_code_sha`
+  into its own key via `trait_extractor/envelope.py`. So bumping the predictor pin invalidates
+  **every** accumulated scan's key in both stages at once, and the first post-bump run legitimately
+  recomputes all of them. That is what makes a "leftover artifacts untouched" assertion unusable
+  across a pin bump — see §7's restated validation criteria. predict#43's atomic-write work is
+  still worth doing, but it is not load-bearing for this change.
 
 ### Image pins
 

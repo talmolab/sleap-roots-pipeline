@@ -194,12 +194,15 @@ identical key and recognizes done work); Argo `retryStrategy` (crash/OOM/preempt
 
 **Scan-level failure — retry-then-isolate:** retry a failing scan up to `MAX_SCAN_ATTEMPTS`
 (attempt count next to the checkpoint / on the child row); if it still fails (or repeatedly kills the
-pod), mark that scan `failed` and continue the batch → run ends `partial` (e.g. 39/40 + 1 failed)
+pod), mark that scan `failed` and continue the batch → run ends `partial` (e.g. 39/40 + 1 failed) ⚠️ **`partial` is unreachable from this repo (corrected 2026-09-16, PR #60):** the status poller's rollup derives run status from Argo Workflow phases alone, and every Argo continue-past-failure mechanism yields `Succeeded` — so a poison-scan batch reads `complete` with `failed_count > 0`, at any batch size. Read this oracle as `done_count`/`failed_count`, not as the literal string `partial`, until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands.
 rather than blocking. Distinguish **scan-level error** (mark failed, continue) from **pod-level
 death** (Argo retry + resume-skip).
 
-**Producer Argo-readiness — reconcile *both* producers uniformly.** ⚠️ **DISCHARGED 2026-09-15, and
-the specifics below are now stale — kept for provenance.** As originally written: the predict batch
+**Producer Argo-readiness — reconcile *both* producers uniformly.** ⚠️ **PARTLY DISCHARGED
+2026-09-15; the specifics below are now stale — kept for provenance.** The driver halves are
+shipped; the **Argo half is not** — #56 is open and its fix is in review as PR #60, with the
+`exit-gate` template not yet registered on the cluster. (This line read "DISCHARGED" until
+2026-09-16; corrected after checking live state.) As originally written: the predict batch
 runner and the traits driver shared three behaviours needing one A4-wiring decision: (a) empty input →
 exit 0 (a silent-green node if stage-in produced nothing), (b) exit non-zero if *any* scan fails →
 `retryStrategy` retries the whole batch, and (c) no init / SIGTERM handler for graceful preemption.
@@ -298,6 +301,6 @@ or a truncated manifest is skipped as done.)
 - Idempotency: same envelope twice → 1 source, no dup traits (RPC already covers).
 - Dedup: re-run an already-done experiment → 0 GPU pods, run `complete`, all `reused`.
 - Resume: kill the predict pod mid-batch → resumes, re-does only the tail (one reload).
-- Retry-then-isolate: inject a poison scan → run ends `partial`, others succeed.
+- Retry-then-isolate: inject a poison scan → run ends `partial`, others succeed. ⚠️ **`partial` is unreachable from this repo (corrected 2026-09-16, PR #60):** the status poller's rollup derives run status from Argo Workflow phases alone, and every Argo continue-past-failure mechanism yields `Succeeded` — so a poison-scan batch reads `complete` with `failed_count > 0`, at any batch size. Read this oracle as `done_count`/`failed_count`, not as the literal string `partial`, until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands.
 - Concurrency: submit > quota batches → excess pending in RunAI/Argo, none dropped.
 - End-to-end: a reference scan set (shared with the A3-predict parity gate) → results + status in UI.

@@ -98,17 +98,29 @@ are YAML manifests and shell scripts.
 
 There is no unit-test harness (no application code). Validation is **operational**:
 
-- `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml` — lint the Workflow
-  **together with every template it references**, in one invocation. Plain
-  `argo lint <file>.yaml` resolves `templateRef` against templates *registered in the namespace*,
-  so it fails for a template that exists only as a local file; and linting the Workflow alone
-  offline proves nothing about its refs. The combined `--offline` form is the only one that
-  catches a DAG task pointing at a template that was never added.
+- `bash scripts/lint_manifests.sh` (from WSL, where `argo` lives) — lints the Workflow **together
+  with every template it references**, in one invocation. Use the script, **not** the bare command:
+  `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml` **fails on this tree**
+  even though the tree is valid. Offline lint does resolve `templateRef` from the files you pass,
+  but it matches on **(namespace, name)**, and `sleap-roots-pipeline.yaml` declares
+  `metadata.namespace` while the templates declare none — so the lookup always misses. The script
+  lints a temp copy with that one line stripped and never touches the tracked files. Never strip it
+  from the real file. What this catches is a `templateRef` with **no matching file in this repo**;
+  it says nothing about what is *registered in the cluster* — that is
+  `scripts/check_cluster_drift.sh`'s job (it reports `NOT REGISTERED`), and it matters because a
+  template must be `argo template create`d before any Workflow referencing it can be submitted.
+- `python scripts/check_manifests.py` — executable assertions for this repo's own conventions,
+  which `argo lint` knows nothing about (priority classes, quota labels, credential isolation,
+  retry shape, pin hygiene, mount agreement). Includes the exit-gate's allowlist, asserted by
+  **executing** the shipped script over a vector table rather than inspecting its text.
 - field assertions on the manifests (`yq`) for anything `argo lint` does not check — it validates
   Argo schema, not whether a pod carries a `priorityClassName`, a quota label, or a `retryStrategy`
 - local dry-runs via `local_run_pipeline_first_time.sh` (Docker Desktop + WSL2, CPU). ⚠️ Currently
-  broken for the A4 DAG: it submits the *cluster* manifest with its own four-template list, so it
-  hard-fails on the `exit-gate` `templateRef`. Tracked by #21.
+  broken for the A4 DAG, and for two reasons in this order: it applies its four templates into
+  namespace `argo` but submits the *cluster* manifest, whose `metadata.namespace`
+  (`runai-busch-lab`) wins over `--namespace` — so it fails on the missing namespace first; and if
+  it got past that, **all** of its `templateRef`s would be unresolvable (the templates are in
+  `argo`), not only the new `exit-gate`. Tracked by #21.
 - a real submission on the cluster (`argo submit … --watch`) against a reference scan set —
   including the **failure** paths, not just the happy one: a partial batch should end `Succeeded`
   with the good scans written back, and a crash-class exit should end `Failed`

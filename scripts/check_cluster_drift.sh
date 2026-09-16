@@ -54,16 +54,40 @@ def clean(o):
         return out
     if isinstance(o, list):
         return [clean(i) for i in o]
-    if isinstance(o, str):
-        # Kubernetes rewrites cpu quantities: '0.5' -> '500m'. Same value.
-        try:
-            if o.endswith("m") and float(o[:-1]) / 1000 == float(o[:-1]) / 1000:
-                return str(float(o[:-1]) / 1000)
-        except ValueError:
-            pass
     return o
 
-d = clean(yaml.safe_load(open(sys.argv[1], encoding="utf-8")))
+
+# Kubernetes rewrites cpu quantities: '0.5' -> '500m'. Same value, not drift. This is scoped to
+# keys that actually hold a CPU quantity: the previous version tested any string ending in 'm'
+# under a guard, `float(o[:-1])/1000 == float(o[:-1])/1000`, which is `X == X` and therefore
+# always true -- so it also rewrote `backoff.duration: "2m"` to "0.002", making a duration change
+# of that shape compare equal to a CPU value. Numerics are coerced to str on both sides so an
+# unquoted `cpu: 0.5` cannot read as drift against the live side's `500m`.
+def normalise_cpu(o):
+    if isinstance(o, dict):
+        return {
+            k: (_cpu(v) if k == "cpu" else normalise_cpu(v))
+            for k, v in o.items()
+        }
+    if isinstance(o, list):
+        return [normalise_cpu(i) for i in o]
+    return o
+
+
+def _cpu(v):
+    s = str(v)
+    if s.endswith("m"):
+        try:
+            return str(float(s[:-1]) / 1000)
+        except ValueError:
+            return s
+    try:
+        return str(float(s))
+    except ValueError:
+        return s
+
+
+d = normalise_cpu(clean(yaml.safe_load(open(sys.argv[1], encoding="utf-8"))))
 print(yaml.safe_dump(d, sort_keys=True, default_flow_style=False))
 PY
 }
@@ -80,8 +104,20 @@ for f in sleap-roots-*-template.yaml; do
     drift=1
     continue
   fi
-  normalise "$tmp/live.yaml" > "$tmp/live.norm"
-  normalise "$f"             > "$tmp/repo.norm"
+  # `set -e` is deliberately NOT in effect for this script, so a normalise() failure would
+  # otherwise leave BOTH files empty, diff -q would call them identical, and every template would
+  # be reported IN SYNC with exit 0 -- a check whose failure mode is "everything is fine". Assert
+  # both sides produced real output before believing any comparison.
+  if ! normalise "$tmp/live.yaml" > "$tmp/live.norm" || ! [ -s "$tmp/live.norm" ]; then
+    echo "CHECK FAILED    $name  (could not normalise the LIVE object; refusing to report sync)" >&2
+    drift=2
+    continue
+  fi
+  if ! normalise "$f" > "$tmp/repo.norm" || ! [ -s "$tmp/repo.norm" ]; then
+    echo "CHECK FAILED    $name  (could not normalise $f; refusing to report sync)" >&2
+    drift=2
+    continue
+  fi
   if diff -q "$tmp/live.norm" "$tmp/repo.norm" >/dev/null; then
     echo "IN SYNC         $name"
   else
@@ -100,5 +136,11 @@ for f in sleap-roots-*-template.yaml; do
 done
 
 echo
-if [ "$drift" -eq 0 ]; then echo "=== cluster is IN SYNC with the repo ==="; else echo "=== DRIFT DETECTED (see above) ==="; fi
+if [ "$drift" -eq 0 ]; then
+  echo "=== cluster is IN SYNC with the repo ==="
+elif [ "$drift" -eq 2 ]; then
+  echo "=== CHECK FAILED — this is NOT a clean result, do not treat it as one ==="
+else
+  echo "=== DRIFT DETECTED (see above) ==="
+fi
 exit "$drift"

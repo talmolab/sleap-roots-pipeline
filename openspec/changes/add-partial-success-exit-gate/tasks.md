@@ -87,9 +87,12 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   `Succeeded`. Do not split them.
 - [x] 3.3 Extend the file's header comments: that the gate is the DAG's only leaf and therefore
   determines the Workflow phase; that every producer the gate references must remain an *ancestor*
-  of it; and that a broken reference arrives as a literal string rather than failing, so the gate's
-  allowlist is what makes it visible. Also correct `serviceAccountName`'s comment: "four stage
-  templates" → five.
+  of it; and that breaking that ancestry is rejected by Argo's own
+  `validateDAGTaskArgumentDependency` at both `argo lint` and submission, while the gate's allowlist
+  covers the narrower case the validator cannot see — a valid ancestor that produced no
+  `outputs.exitCode`. Also correct `serviceAccountName`'s comment: "four stage templates" → five.
+  **Corrected after 7.3's non-ancestor probe:** an earlier version of this instruction said a broken
+  reference "arrives as a literal string rather than failing", which is false — see 7.3's result.
   **Validate:** `grep -c 'four' sleap-roots-pipeline.yaml` → `0`.
 - [x] 3.4 Lint the DAG together with every template it references — the **only** check that
   cross-resolves `templateRef`, i.e. the only one that proves 3.2 did not land without 2.1:
@@ -174,8 +177,9 @@ Tasks 1–4 and 6 are local and need no cluster and no secrets, except the GHCR 
   ```
   **Validate:** every assertion above matches its expected value. (Fall back to `python -c` +
   PyYAML if `yq` is unavailable.)
-- [x] 6.2 Confirm the gate's references are ancestors — the constraint that, if broken, silently
-  passes a literal string:
+- [x] 6.2 Confirm the gate's references are ancestors — the earliest of the three layers enforcing
+  it (Argo's validator rejects a non-ancestor at lint and submit; the gate's allowlist covers a
+  valid ancestor with no `outputs.exitCode`):
   ```bash
   yq -r '.spec.templates[0].dag.tasks[] | select(.name=="exit-gate") | .arguments.parameters[].value' $P
   ```
@@ -199,6 +203,13 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   `outputs: {}`/`metadata: {}`, injects `namespace`, and rewrites `cpu: '0.5'` to `cpu: 500m`, all of
   which make a naive diff report all four as drifted. Validated both ways — from `main` it reports
   IN SYNC; from this branch it reports exactly the five pending changes and nothing else.
+  Note the script globs five template files, so it additionally reports `NOT REGISTERED` for
+  `sleap-roots-exit-gate-template` until 7.2 runs — that is the expected output, not drift.
+  **Hardened 2026-09-16 (PR #60 review):** the script previously printed `IN SYNC` for every
+  template if its own normaliser failed (`set -uo pipefail` with no `-e` → two empty files →
+  `diff -q` identical → exit 0). It now asserts both normalised files are non-empty first, so a
+  broken check fails loudly instead of reporting success. Re-run it after 7.2's apply; the
+  pre-hardening "IN SYNC" above was a true result but was not a trustworthy *mechanism*.
   Original instructions follow. **Capture a rollback pre-image first, before mutating anything.**
   ```bash
   argo list -n runai-busch-lab --status Running     # must be empty before proceeding
@@ -268,12 +279,41 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   `0` (gate accepts → `Succeeded`). Run it **both** ways — scratch dir and shared dir.
   **Validate:** record the actual phase for each, then update the spec, README and design doc to
   state what was measured. Until then no document may claim either outcome as fact.
-- [ ] 7.7 **Idempotent re-delivery:** re-submit 7.4's exact batch.
-  **Validate:** Workflow `Succeeded`, 0 GPU pods scheduled, every `.result.json` mtime unchanged —
-  confirming `continueOn` did not disturb skip-if-done. This is the standing A4 batch-oracle signal.
-- [ ] 7.8 Confirm an unrelated leftover scan's `result.json` mtime is unchanged by any run above
-  (the standing leftover-contamination signal from #54/#55, which also discharges the predictor-pin
-  re-run the roadmap lists as outstanding).
+> ⚠️ **7.7/7.8 were restated 2026-09-16 (PR #60's review). Their previous pass criteria could not
+> hold, and running them as written would have produced a result that proves nothing.**
+>
+> Both keyed on "`.result.json` mtimes unchanged". That is invalid **across a pin bump**. predict's
+> skip-if-done compares an idempotency key (`_previous_identity_key`, predict #35 — *not* the
+> existence check this change's docs wrongly claimed until now), and that key includes
+> `predict_code_sha`, which is baked into the image as `SRP_PREDICT_CODE_SHA`. Traits feeds
+> `manifest.predict_code_sha` into its own key via `trait_extractor/envelope.py`. This change bumps
+> the predictor pin — so **every** accumulated scan's key changes in both stages at once, and the
+> first post-bump run legitimately recomputes and rewrites all of them.
+>
+> So on the first run mtimes *will* move, for a correct reason, and the old criteria could not
+> distinguish that from the leftover-contamination bug they exist to detect. The fix is to make the
+> **second** post-bump run the idempotency oracle (by then `predict_code_sha` is stable), and to
+> turn the first run into a measurement of *which* keys changed and why.
+
+- [ ] 7.7 **Idempotent re-delivery — the real batch-oracle signal, on the SECOND post-bump run.**
+  Before 7.4, record for every `{scan}.result.json` under the traits dir: path, mtime, and
+  `provenance.idempotency_key`. After 7.4 completes, re-record. Then re-submit 7.4's exact batch
+  and record a third time.
+  **Validate:** between the *second* and *third* snapshots — i.e. across the re-delivery, with the
+  image pin now stable — Workflow `Succeeded`, **0 GPU pods scheduled**, and **every** mtime and
+  every `idempotency_key` unchanged. That is the standing A4 batch-oracle signal, and it is only
+  meaningful once the code-sha is no longer moving.
+- [ ] 7.8 **Leftover-contamination signal, restated as an attribution check on the FIRST run.**
+  Between the first and second snapshots, mtimes are expected to change. Assert *which*:
+  **Validate:** every `result.json` whose mtime changed must have a changed `idempotency_key` whose
+  only differing input is `predict_code_sha` — i.e. the change is explained by the pin bump and
+  nothing else. And critically: **no file outside the manifest's `scan_keys` may be touched at
+  all.** A changed mtime with an *unchanged* key, or any write outside the declared scan set, is
+  the #54/#55 contamination signal and a hard failure.
+  Note this is measurably weaker than the old (unachievable) criterion, and deliberately so: with
+  the `a4_poc` directories shared across runs and never pruned, the accumulated foreign keys are
+  exactly the files the pin bump invalidates. Recording that honestly is worth more than a green
+  tick from a test that cannot fail for the right reason.
 
 ## 7b. Rebase onto PR #62 (merges FIRST — this PR rebases onto it)
 

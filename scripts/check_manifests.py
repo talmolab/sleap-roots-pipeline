@@ -16,13 +16,21 @@ Exit:   0 = all assertions hold, 1 = at least one failed.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# A POSIX shell, for executing the gate's shipped script. Absence is a hard failure, never a
+# skip: the gate assertions below are the only automated guard on this repo's central safety
+# property, and a check whose failure mode is "everything is fine" is worse than no check.
+SH = shutil.which("sh") or shutil.which("bash")
 
 PIPELINE = "sleap-roots-pipeline.yaml"
 GATE = "sleap-roots-exit-gate-template.yaml"
@@ -35,8 +43,63 @@ BATCH_STAGES = {
 }
 ACCEPTED_GATE_CODES = {"0", "3"}
 
+# Values the gate must reject, in every producer position. Each is a real failure mode:
+# 1/2/99/143 are crash and SIGTERM exits; "" is a Failed node that produced no `outputs.exitCode`
+# (a valid ancestor with no exit code -- the case Argo's own ancestry validator cannot catch);
+# "03" and " 3" are near-misses the string compare must not normalise; the `{{tasks...}}`
+# placeholder is what `template.Replace(..., allowUnresolved=true)` leaves behind; "*" and "x"
+# probe for glob or arithmetic evaluation escaping the `case` subject.
+REJECTED_GATE_CODES = [
+    "1",
+    "2",
+    "99",
+    "143",
+    "-1",
+    "",
+    "03",
+    " 3",
+    "{{tasks.predictor.exitCode}}",
+    "*",
+    "x",
+]
+
 _failures: list[str] = []
 _passes = 0
+
+
+def gate_env_names(gate_ctr: dict) -> list[str]:
+    """Map each producer to the gate env var carrying its exit code, in PRODUCERS order.
+
+    Derived from the manifest rather than hardcoded, so renaming an env var or an input
+    parameter makes the executable checks below follow it instead of silently going stale.
+    """
+    by_param = {
+        e["value"]: e["name"] for e in gate_ctr.get("env", []) if isinstance(e.get("value"), str)
+    }
+    return [by_param[f"{{{{inputs.parameters.{p}-code}}}}"] for p in PRODUCERS]
+
+
+def run_gate(script: str, env_names: list[str], codes: list[str | None]) -> int:
+    """Execute the gate's SHIPPED script under `sh` and return its real exit status.
+
+    `codes` is positional, matching PRODUCERS; a `None` entry leaves that variable *unset*,
+    which is a distinct case from the empty string under the script's `set -u`.
+
+    This runs the same two things the cluster runs -- the manifest's `command` (`/bin/sh -c`)
+    and its `args[0]` -- so it cannot drift from the shipped gate the way a retyped copy or a
+    substring check can. Env is deliberately minimal: nothing but PATH is inherited, so a
+    variable the script reads can only come from `codes`.
+    """
+    env = {"PATH": os.environ.get("PATH", "")}
+    for name, code in zip(env_names, codes):
+        if code is not None:
+            env[name] = code
+    return subprocess.run(  # noqa: S603 - fixed argv, no shell, script comes from our own tree
+        [SH, "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+    ).returncode
 
 
 def check(label: str, got, want) -> None:
@@ -128,9 +191,13 @@ def main() -> int:
     referenced = sorted(m.group(1) for m in refs if m)
     check("gate references exactly the three producers", referenced, sorted(PRODUCERS))
 
-    # Every referenced producer must be an ANCESTOR of the gate. If this ever breaks,
-    # Argo substitutes with allowUnresolved=true and the literal placeholder reaches the
-    # container -- no error, no hang. The allowlist below is the only thing that catches it.
+    # Every referenced producer must be an ANCESTOR of the gate. Argo enforces this too --
+    # `validateDAGTaskArgumentDependency` rejects a non-ancestor reference at both `argo lint`
+    # and submission (`missing dependency '<task>' for parameter '<name>'`), verified live -- so
+    # this assertion is the earliest of three independent layers, not the only one. What neither
+    # this check nor the validator can see is a task that IS a valid ancestor but produced no
+    # `outputs.exitCode`; that case reaches the container as an empty or literal value, and only
+    # the gate's allowlist (executed below) catches it.
     deps = {t["name"]: t.get("dependencies", []) for t in tasks}
     ancestors: set[str] = set()
     stack = list(deps["exit-gate"])
@@ -176,11 +243,47 @@ def main() -> int:
     )
     # The comparison must be an ALLOWLIST. A denylist would silently pass an unsubstituted
     # `{{tasks.X.exitCode}}` placeholder, an empty string, and any future exit code.
-    check(
-        "gate compares against an allowlist of the accepted codes",
-        all(f"{c}|" in script or f"|{c})" in script for c in sorted(ACCEPTED_GATE_CODES)),
-        True,
-    )
+    #
+    # This is asserted by EXECUTING the shipped script, not by inspecting its text. A substring
+    # check cannot tell an allowlist from a denylist: `all(f"{c}|" in script ...)` is satisfied
+    # by `0|1|3)` (which greens a crash) and by a full inversion to a denylist, both of which
+    # were confirmed to pass while the gate accepted exit 99. Since this allowlist is the only
+    # thing standing between a genuine crash and a green Workflow (#56), its guard has to run it.
+    if not SH:
+        check("POSIX shell available to execute the gate script", "not found", "sh or bash")
+    else:
+        env_names = gate_env_names(gate_ctr)
+        accepted = sorted(ACCEPTED_GATE_CODES)
+        check(
+            "gate accepts every all-{0,3} combination of producer codes",
+            [
+                (a, b, c)
+                for a in accepted
+                for b in accepted
+                for c in accepted
+                if run_gate(script, env_names, [a, b, c]) != 0
+            ],
+            [],
+        )
+        check(
+            "gate rejects every non-{0,3} code, in every producer position",
+            [
+                (i, bad)
+                for i in range(len(PRODUCERS))
+                for bad in REJECTED_GATE_CODES
+                if run_gate(script, env_names, [bad if j == i else "0" for j in range(3)]) == 0
+            ],
+            [],
+        )
+        check(
+            "gate rejects an unset producer code (a Failed node with no outputs.exitCode)",
+            [
+                i
+                for i in range(len(PRODUCERS))
+                if run_gate(script, env_names, [None if j == i else "0" for j in range(3)]) == 0
+            ],
+            [],
+        )
     check(
         "gate reads codes from env, not interpolated into the script",
         "{{" in script,

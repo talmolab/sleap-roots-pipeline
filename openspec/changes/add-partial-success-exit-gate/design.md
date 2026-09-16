@@ -62,9 +62,22 @@ passes through to the container unchanged, and `grep -i requeue` over that file 
 also a deterministic failure, not a hang.) The claim came from a read of `main`, post-4.1.3, where
 the code has since changed.
 
-This correction matters because it changes what protects us. There is no runtime error to rely on;
-the only thing that turns a broken reference into a visible failure is the gate rejecting anything
-outside `{0, 3}`. Hence two spec requirements that would otherwise look like style:
+**Second correction, from actually running it.** The above is true of *runtime* substitution, but a
+**non-ancestor** reference never reaches runtime: Argo's `validateDAGTaskArgumentDependency`
+(`workflow/validate/validate.go` at v3.6.7) matches on the prefix `{{tasks.` — any suffix, so
+`.exitCode` is covered — and rejects it at **both `argo lint` and submission** with
+`missing dependency '<task>' for parameter '<name>'`. Verified by deliberately breaking the DAG
+against this cluster. So restructuring the DAG so a producer stops being an ancestor cannot reach
+the cluster silently, and an earlier draft of this document was wrong to say it could.
+
+This correction matters because it changes what protects us, and in which direction. A broken
+*ancestry* is caught loudly and early, by three independent layers: the static ancestry assertion
+in `scripts/check_manifests.py`, Argo's own validator at lint and submit, and the gate. What has no
+runtime error to rely on is the narrower case the validator cannot see — a task that **is** a valid
+ancestor but produced no `outputs.exitCode`, reachable when a node is `Failed` without its main
+container terminating. There the gate receives an empty or literal value, and rejecting anything
+outside `{0, 3}` is the only thing that converts it into a visible failure. Hence two spec
+requirements that would otherwise look like style:
 
 - the gate compares against an explicit **allowlist**, never a denylist — a denylist of
   `{1, 2, 143}` would pass a literal placeholder, an empty string, and any future exit code;

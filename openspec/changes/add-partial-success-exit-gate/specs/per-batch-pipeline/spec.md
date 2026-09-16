@@ -18,8 +18,10 @@ gate rather than by any stage's own node phase. The Workflow SHALL declare a `sc
 parameter that `images-downloader` consumes, so the batch a run processes is a caller-supplied
 input rather than a hardcoded scan. The Workflow SHALL set `spec.serviceAccountName:
 bloom-workflow` so every step's pod can report its results back to Argo. Its `hostPath` volumes
-SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS mount fails the pod
-loudly instead of silently writing output to the node's local disk. The DAG SHALL use
+SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS mount cannot silently
+write output to the node's local disk. Note the resulting failure mode is a **hang, not a loud
+failure**: a pod that cannot mount its `hostPath` sits `Pending`, not `Failed` or `Error`, so
+neither `retryStrategy` nor `continueOn` applies. The DAG SHALL use
 `dependencies:`, never `depends:`, since the latter is all-or-nothing per DAG template and would
 forbid `continueOn` on every task in it. Because this file is the only canonical,
 correctly-complete definition of this Workflow's shape — and is independently reconstructed
@@ -53,12 +55,14 @@ editing rather than discovering the drift only when a real batch dispatch fails.
 - **THEN** `spec.serviceAccountName` is `bloom-workflow`
 - **AND** none of the five workflow templates override `serviceAccountName` at the template level
 
-#### Scenario: hostPath volumes fail loudly on a down NFS mount
+#### Scenario: hostPath volumes require their path to pre-exist
 
 - **WHEN** the Workflow's `volumes` are inspected
 - **THEN** `images-input-dir`, `predictions-output-dir`, and `traits-output-dir` all declare
   `hostPath.type: Directory`
 - **AND** none of the three declares `type: DirectoryOrCreate`
+- **AND** the consequence is documented as a `Pending` hang rather than a pod failure, since
+  `assessNodeStatus` maps `PodPending` unconditionally to `NodePending` at v3.6.7
 
 #### Scenario: File carries a cross-repo vendoring guardrail
 
@@ -262,8 +266,10 @@ The template SHALL declare no `volumeMounts`, so Argo attaches neither the `host
 nor the credentials Secret to its pod, and SHALL NOT set `HOME`: the gate reads no data and makes
 no Bloom API call.
 
-The template SHALL declare an explicit `priorityClassName`, since an Argo pod with none lands at
-very-high priority on this cluster — above the predictor's own class. It SHALL declare a
+The template SHALL declare an explicit `priorityClassName`, since the priority an Argo pod receives
+with none declared cannot be verified from this repo's credentials (the cluster-scoped
+`priorityclasses` API is Forbidden to the `argo-user` identities) and pods observed with none
+resolved to priority `0` — the lowest tier, below `train`. It SHALL declare a
 `retryStrategy` with `retryPolicy: Always` **and a `backoff`**, since it is the DAG's only leaf: a
 transient gate-pod failure would otherwise report a fully-successful batch as `Failed`, and
 retrying immediately against a still-contended cluster spends the whole budget in seconds. It SHALL

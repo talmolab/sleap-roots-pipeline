@@ -17,8 +17,12 @@
 # and resolution succeeds. It never modifies the repo. Verified against argo v3.6.5 (CLI) against a
 # v3.6.7 cluster, 2026-09-15.
 #
-# This is the ONLY check that cross-resolves templateRef — i.e. the only one that catches a DAG task
-# pointing at a template nobody added. This repo has no CI, so it will not run unless you run it.
+# This is the only check that cross-resolves templateRef against the FILES IN THIS REPO — i.e. it
+# catches a DAG task pointing at a template that has no matching file here. It says nothing about
+# what is REGISTERED IN THE CLUSTER; that is scripts/check_cluster_drift.sh, which reports
+# `NOT REGISTERED`. Both matter, and for different reasons: a missing file is an authoring mistake,
+# while a missing registration fails every submission until `argo template create` is run.
+# This repo has no CI, so neither will run unless you run it.
 #
 # Usage:  bash scripts/lint_manifests.sh        # from the repo root (needs `argo` on PATH)
 

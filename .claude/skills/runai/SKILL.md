@@ -153,7 +153,7 @@ the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai
 
 | Class | Preemptible? | Behaviour |
 |---|---|---|
-| `very-high` (150) | no | **default when `priorityClassName` is unset on this cluster** — do not rely on omitting the field as a "safe default"; it's the most aggressive non-preemptible tier here, not a neutral one |
+| `very-high` (150) | no | the top non-preemptible tier. **NOT the default for an unset `priorityClassName`** — that claim (present here until 2026-09-16) was never verified; pods observed with no class resolved to priority **0**. See the note below. |
 | `high` (125), `build` (100) | no | must fit the project's **deserved quota**; never evicted |
 | `interactive-preemptible` (75), `train` (50) | yes | may use **over-quota** GPUs; may be evicted → pair with `retryStrategy` |
 
@@ -163,8 +163,13 @@ uses `high` (set 2026-08-06, per cluster-admin guidance, since trait-extractor h
 skip-if-done yet — see issue #37 — so avoiding eviction-triggered whole-batch recomputation
 outweighs bursting above quota for now). The other three stage templates
 (images-downloader/trait-extractor/write-back) stay on **`interactive-preemptible`** —
-**never remove that field outright**, since an unset `priorityClassName` lands at `very-high`
-(150) on this cluster, not something safer. The predictor's GPU jobs typically run *within*
+**never remove that field outright** — but not for the reason recorded here until 2026-09-16.
+What an unset `priorityClassName` resolves to is **unverifiable with these credentials**
+(`priorityclasses` is cluster-scoped and Forbidden to every `argo-user` identity), and Argo pods
+observed with no class resolved to priority **0** — the lowest tier, below `train` (50), not
+`very-high` (150). The old claim traces to PR #41, introduced alongside a `grep` rather than a
+scheduling observation. So the risk of omitting the field is that the pod is **starved**, not that
+it preempts GPU work; either way, declare it explicitly on every template. The predictor's GPU jobs typically run *within*
 quota, so over-quota preemption isn't usually exercised — but if a GPU
 pod is stuck `Pending`/`Unschedulable` with:
 
@@ -195,7 +200,7 @@ set the priority class:
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
 | `argo: command not found` | `argo` is WSL-only here — see §1a. Not installed on Windows. |
-| `argo lint --offline` "fails" on `sleap-roots-pipeline.yaml` | **The manifest is fine, and there IS a cluster-free way to lint it.** Offline lint *does* index sibling files passed on the same command line — it matches `templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while the four templates declare none, so the lookup searches a namespace no template is indexed under and reports `couldn't find workflow template … in namespace "runai-busch-lab"` (exit **1**). Strip `metadata.namespace` from a **temp copy** and all five resolve clean with no cluster: `T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml` → `✔ no linting errors found!` (verified 2026-09-15). Non-offline lint against `runai-busch-lab` with the `argo-user` kubeconfig also passes clean, but needs VPN — prefer the offline recipe for a gate that works anywhere. **Never delete that namespace line from the real file**: Bloom's dispatch depends on the manifest, and `runai_run_pipeline.sh` keeps its default equal to it. Credit: mechanism identified by the `#56`/PR #60 session; an earlier note here claimed offline lint ignored sibling files, which was wrong. |
+| `argo lint --offline` "fails" on `sleap-roots-pipeline.yaml` | **The manifest is fine, and there IS a cluster-free way to lint it.** Offline lint *does* index sibling files passed on the same command line — it matches `templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while the five templates declare none, so the lookup searches a namespace no template is indexed under and reports `couldn't find workflow template … in namespace "runai-busch-lab"` (exit **1**). Strip `metadata.namespace` from a **temp copy** and all six manifests resolve clean with no cluster (`scripts/lint_manifests.sh` does exactly this): `T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml` → `✔ no linting errors found!` (verified 2026-09-15). Non-offline lint against `runai-busch-lab` with the `argo-user` kubeconfig also passes clean, but needs VPN — prefer the offline recipe for a gate that works anywhere. **Never delete that namespace line from the real file**: Bloom's dispatch depends on the manifest, and `runai_run_pipeline.sh` keeps its default equal to it. Credit: mechanism identified by the `#56`/PR #60 session; an earlier note here claimed offline lint ignored sibling files, which was wrong. |
 | `kubectl auth can-i` returns a deprecation warning instead of `yes`/`no` | `kubectl` writes `Warning: Use tokens from the TokenRequest API...` to stderr, which interleaves with the verdict — a bare `\| head -1` captures the warning. Always filter: `kubectl auth can-i <verb> <resource> -n runai-busch-lab 2>/dev/null \| grep -E '^(yes\|no)'` |
 | Need to know what an identity can do | `kubectl auth can-i` under that identity's kubeconfig. Note `argo-user` returns **no** for `get serviceaccounts`/`get secrets`, so you cannot read another ServiceAccount's Role from it — `bloom-workflow`'s RBAC is not verifiable this way (verified 2026-09-15). |
 

@@ -41,7 +41,8 @@ anything new.
 running the DAG. Once Argo starts the workflow, each step's pod needs to report its own result
 back to Argo — and it does that as `bloom-workflow`, set on the Workflow at
 [`sleap-roots-pipeline.yaml`'s `spec.serviceAccountName`](../sleap-roots-pipeline.yaml). None of the
-four stage templates override `serviceAccountName`, so that single value covers every step.
+five workflow templates override `serviceAccountName`, so that single value covers every step
+(four stage templates plus the `exit-gate`, which likewise sets none).
 
 Omit it and **every step fails** with:
 
@@ -123,9 +124,14 @@ labels are the only way to tell workloads apart. `build_workflow_body` already s
 you are dispatching a different kind of work, or two status pollers will trip over each other's
 Workflows.
 
-**The GPU quota is 2, and it is often fully used.** Always set `priorityClassName` explicitly:
-leaving it unset lands at `very-high` (150) on this cluster, the most aggressive non-preemptible
-tier, not a neutral default.
+**The GPU quota is 2, and it is often fully used.** Always set `priorityClassName` explicitly —
+what an unset value resolves to cannot be verified with this repo's credentials, since the
+cluster-scoped `priorityclasses` API is Forbidden to every `argo-user` identity here.
+**Corrected 2026-09-16:** this section previously said an unset value lands at `very-high` (150),
+"the most aggressive non-preemptible tier". That was never verified — `git log -S` traces it to
+PR #41, introduced alongside a `grep` rather than a scheduling observation — and Argo pods observed
+with no class resolved to priority **0**, the *lowest* tier, below `train` (50). Treat the default
+as unknown-and-probably-lowest: declare the class explicitly on every template.
 
 Which value depends on the stage, and this pipeline is deliberately not uniform:
 
@@ -164,7 +170,7 @@ Bloom-dispatched runs the manifest's value is inert; for hand-run `argo submit` 
 
 **Storage is three hand-made directories, and a missing one hangs the run rather than failing it.**
 All three `hostPath` volumes use `type: Directory`, which requires the path to pre-exist —
-deliberately, so a down NFS mount fails loudly instead of silently writing to a node's local disk.
+deliberately, so a down NFS mount cannot silently write to a node's local disk instead.
 Nothing in this repo creates them. The operationally important part for anyone debugging: a pod that
 cannot mount its `hostPath` sits **`Pending`**, not `Failed` or `Error`, so neither `retryStrategy`
 nor `continueOn` applies and the Workflow **hangs** instead of failing. If a run is stalled with no
