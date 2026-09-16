@@ -96,9 +96,14 @@ it, and `get serviceaccounts` returns **no** under both other identities. The ex
    SSO session is equally required, and it demotes `runai login remote-browser` to a
    troubleshooting-table row. Promote it into §1 as the auth model. No command examples change.
 
-3. **Record `kubectl`'s WSL location.** `kubectl` is at `~/bin/kubectl` in WSL and is absent from
-   the non-login PATH, so the skill's own `wsl -e bash -c "..."` pattern fails with
-   `No such file or directory` unless the path is spelled out. This cost real time during the audit.
+3. **Do not touch `README.md`, and do not re-document `kubectl`'s WSL location.** An earlier draft
+   of this design proposed both, on the belief that `kubectl` being at `~/bin/kubectl` and absent
+   from the non-login WSL PATH was undocumented. It is documented — `.claude/skills/runai/SKILL.md`
+   §1a records it, with the PATH export and a warning that concluding a tool is uninstalled from a
+   non-login shell "is a mistake that has actually been made here." That mistake was then made again
+   during this audit, which is a discovery problem, not a documentation gap; §1a is already correct
+   and more precise than a replacement would be. `README.md` likewise already delegates to the skill
+   for exact locations. Both stay untouched.
 
 4. **Leave dated session records alone, with one exception.** The 2026-08-07 handoff's
    "cluster-admin-only to create" gloss is stale, but it quotes an admin accurately ("no *kubectl*
@@ -134,14 +139,12 @@ it, and `get serviceaccounts` returns **no** under both other identities. The ex
 
 **`.claude/skills/runai/SKILL.md`**
 
-- §1: state both requirements (kubeconfig *and* an active SSO session), and give `kubectl`'s
-  `~/bin/` location with the operator-specific caveat the skill already carries for `runai`.
-- Promote `runai login remote-browser` from the §8 troubleshooting table into §1.
+- §1 only: state both requirements — the explicit `KUBECONFIG` it already gives, *and* an active
+  SSO session. Promote `runai login remote-browser` from the §8 troubleshooting table into §1 as
+  the auth model. §1a is already correct and is not touched.
 
-**`README.md`**
-
-- One parenthetical on `kubectl`'s WSL path. Its identity wording at `:42-43` is already correct
-  and becomes the phrasing `cluster-identities.md` mirrors.
+**`README.md`** — no change. Its identity wording at `:42-43` is already correct and becomes the
+phrasing `cluster-identities.md` mirrors; it already delegates CLI locations to the runai skill.
 
 **`docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md`**
 
