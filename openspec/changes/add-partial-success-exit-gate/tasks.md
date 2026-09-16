@@ -278,11 +278,33 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
      the vendored **four**-task DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`, no gate, no
      `continueOn`) — i.e. it would exercise the old code and prove nothing about this change.
      So the Bloom half of 7.4 is only meaningful **after** §8 re-vendors and bumps the pin.
-  2. **The poison scan's identity is not recorded anywhere in this repo.** It needs a `cyl_images`
-     read. Note `scan_12894751` is conspicuously absent from the eight staged keys
-     (`…745`–`…750`, `…752`, `…753`) and from `a4_poc/input/`, which makes it the likely candidate
-     — but that is an inference from a gap in a sequence, not a verified fact, and it must be
-     confirmed against Bloom before being used.
+  2. ~~The poison scan's identity is not recorded anywhere in this repo.~~ **RESOLVED 2026-09-16 —
+     the poison scan is `scan_id = 12894751`.** Identified empirically with `bloomctl`, no DB query
+     needed, and controlled against a known-good scan with the identical invocation:
+
+     ```
+     bloomctl cyl download-for-predict 12894751 <tmp> -p pipeline-staging
+       → Error: 1 of 1 frames failed to download ... no sidecar written        [POISON]
+     bloomctl cyl download-for-predict 12894745 <tmp> -p pipeline-staging
+       → Staged 1/1 frames -> .../scan_12894745 (sidecar: ...scan_metadata.json)   [GOOD]
+     ```
+
+     One `cyl_images` row whose object was never uploaded, and **no sidecar written** — so predict
+     can never discover it, which is exactly why it is absent from the 8-key manifest while
+     `…745`–`…750`/`…752`/`…753` are present.
+
+     **7.4's batch, verified rather than inferred:** poison `12894751` + good `12894745`,
+     `12894746`.
+
+     **Why this had to be re-derived at all — worth not repeating.** The 2026-09-01 run that first
+     demonstrated the poison-scan failure (`sleap-roots-pipeline-jqsf9`) recorded its *outcome* in
+     the roadmap (`0/3`, `Failed`, two good scans stranded) and its *diagnosis* (#56), but never
+     its **inputs**. The only machine-readable copy of the scan ids lived in the Workflow object's
+     `spec.arguments.parameters`, and that object is now `NotFound`: it was dispatched through
+     Bloom's automated path, which stamps a `ttlStrategy`, so it was garbage-collected — while the
+     older hand-submitted runs (`l2247` 2026-08-13, `mtbv5`/`q62vv` 2026-08-10) survive precisely
+     because they carry no TTL. **Record the scan ids of any diagnostic run in the repo, not only
+     the conclusion; a TTL'd Workflow is not a record.**
 
   **Split it:**
   - **7.4a** (runnable now, hand-submitted, scratch paths): DAG reaches write-back; both good
