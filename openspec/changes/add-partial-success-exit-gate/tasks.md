@@ -326,6 +326,14 @@ delta.
   **DONE.** Resolved toward #62's rewrite (literal `NAMESPACE`, shared-namespace note); the ⚠️
   mismatch comment added here is gone, and the `TEMPLATES` entry plus the header recipe survived as
   a separate hunk, with the recipe now on busch-lab and `create` for the gate.
+- [ ] 7b.7 **After #67 merges, point its offline-lint paragraph at `scripts/lint_manifests.sh`.**
+  #67 fixes the wrong "needs a cluster to resolve" explanation and carries the temp-copy recipe
+  inline. It deliberately does *not* reference the script, because `scripts/` does not exist on
+  `main` until this PR lands — documenting it earlier would repeat the very error being fixed. This
+  PR introduces the script, so this PR is where the README should start pointing at it instead of
+  restating the recipe.
+  **Validate:** the README's offline-lint note names `scripts/lint_manifests.sh`, the inline recipe
+  is not duplicated, and the file it names exists in the tree.
 - [ ] 7b.6 Re-run the full local gate after rebasing: `scripts/lint_manifests.sh`,
   `scripts/check_manifests.py`, `openspec validate --strict`.
 
