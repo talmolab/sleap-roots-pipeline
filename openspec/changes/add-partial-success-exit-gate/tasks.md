@@ -220,12 +220,39 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   ```
   **Validate:** four files captured; diff each against `main`'s copy and understand any difference
   before overwriting it — a divergence here is a live #58 instance.
-- [ ] 7.2 Register the gate **first**, then update the other four. `argo template create` for the
-  new one (`update` errors on a nonexistent template); `argo template update` for the rest.
-  Registering the gate first is safe on its own — an unreferenced WorkflowTemplate is inert — and
-  is a hard prerequisite for anything that dispatches the five-task DAG.
-  **Validate:** `argo template get` each; compare against the local file ignoring server-injected
-  metadata (`resourceVersion`, `uid`, `creationTimestamp`, `generation`, `managedFields`).
+- [x] 7.2 **APPLIED 2026-09-16** from a clean `main` checkout at `310aae6` (the squash-merge of
+  PR #60), not from the branch — per #53's precedent. Gate `argo template create`d first, then
+  `argo template update` on the other four. Pre-flight: `argo list --status Running` empty.
+  **Result:** all five registered; `check_cluster_drift.sh` reports all five **IN SYNC**, exit 0.
+  Live pins confirmed: `bloomctl:sha-0614889` ×3 (gate, images-downloader, write-back),
+  `sleap-roots-predict:sha-e025e309…`, `trait-extractor:sha-689cffb`. The gate's `timeout: 600s`,
+  `priorityClassName: interactive-preemptible` and `retryStrategy{limit:2,Always}` all survived
+  registration. Non-offline `argo lint` (which resolves `templateRef` against the *cluster*) now
+  passes on the five-task DAG — independent confirmation of registration.
+  **Rollback pre-image corrected.** An earlier note here said the pre-image "is simply `main`
+  itself". That became WRONG the moment #60 merged, since `main` now carries the new pins. The
+  rollback target is **`3cf4b4f`** (the pre-merge commit), verified before applying: the live cluster was
+  **semantically** equal to `3cf4b4f` on all four templates — equal under
+  `check_cluster_drift.sh`'s normalisation, not byte-for-byte. The raw objects differ by
+  API-server defaulting (`arguments: {}`, `inputs: {}`, `outputs: {}`, `metadata: {}`, `name: ""`)
+  and the cpu rewrite `0.5` → `500m`, which is exactly what that script strips. Live copies also captured to files.
+  To roll back: `argo template delete sleap-roots-exit-gate-template`, then
+  `git checkout 3cf4b4f -- sleap-roots-*-template.yaml` and `argo template update` each.
+  **This apply exposed a real defect in the drift checker**, fixed in PR #73: `argo template
+  create` stamps `workflows.argoproj.io/creator` into `metadata.LABELS` (not annotations, and only
+  on `create` — `update` does not), which the checker did not strip, so the freshly created gate
+  reported DRIFT against an identical file while the four updated ones read IN SYNC. PR #60's
+  review predicted this failure but placed the key in annotations; running it settled where it
+  actually lives. The all-five-IN-SYNC result above is from the fixed checker, and the fix was
+  negative-controlled (from `3cf4b4f` it still reports real drift on all four).
+  **Production effect, measured not assumed.** `salk-bloom` still pins the vendored **four**-task
+  DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`), so production does not run the gate yet — but its
+  vendored DAG uses `templateRef`, so it picked up all three new pins immediately. Read-only NFS
+  inspection beforehand established this is a net improvement, not a risk: `predictions/` and
+  `traits/` had **no** `run_manifest.json` (predict did not forward it pre-#42), so write-back was
+  discovering **unscoped** and re-ingesting 12 `result.json` files — 4 of them foreign leftovers —
+  on every run. predict#42 narrows that to the manifest's 8. All 8 manifest keys had results, so
+  bloom#859's latch was not armed.
 - [x] 7.3 **Gate truth-table probe** — RUN 2026-09-15 in `runai-talmo-lab`. Scratch template name,
   no producers, no GPU, no volumes, no credentials; all objects deleted afterwards.
   **Correction to an earlier note here:** this was first recorded as safe "by construction" because
@@ -246,14 +273,154 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   vector: `(0,0,0)`, `(0,3,0)`, `(3,3,3)`, `(0,1,0)`, `(0,2,0)`, `(0,143,0)`, `(0,,0)`, `(0,-1,0)`.
   **Validate:** `Succeeded` for the first three, `Failed` for the rest. This is the cheapest proof
   of the gate's logic *as deployed*, and it is independent of any other repo's behaviour.
-- [ ] 7.4 **Poison-scan scenario** — re-run 2026-09-01's scenario 3: one scan whose `cyl_images`
+- [ ] 7.4 **BLOCKED as written (assessed 2026-09-16) — must be split. Two independent reasons.**
+  1. **Its Bloom-side criteria are unreachable until §8 lands.** `done_count=2`/`failed_count=1`
+     and the poison scan's `cyl_pipeline_run_scans` row require rows that Bloom's
+     `POST /workflows/pipeline` route creates at *enumerate* time. A hand `argo submit` creates
+     none, so those assertions have nothing to attach to. But dispatching *through* Bloom would run
+     the vendored **four**-task DAG (`SLEAP_ROOTS_PIPELINE_REF=9df1e52…`, no gate, no
+     `continueOn`) — i.e. it would exercise the old code and prove nothing about this change.
+     So the Bloom half of 7.4 is only meaningful **after** §8 re-vendors and bumps the pin.
+  2. ~~The poison scan's identity is not recorded anywhere in this repo.~~ **RESOLVED 2026-09-16 —
+     the poison scan is `scan_id = 12894751`.** Identified empirically with `bloomctl`, no DB query
+     needed, and controlled against a known-good scan with the identical invocation:
+
+     ```
+     bloomctl cyl download-for-predict 12894751 <tmp> -p pipeline-staging
+       → Error: 1 of 1 frames failed to download ... no sidecar written        [POISON]
+     bloomctl cyl download-for-predict 12894745 <tmp> -p pipeline-staging
+       → Staged 1/1 frames -> .../scan_12894745 (sidecar: ...scan_metadata.json)   [GOOD]
+     ```
+
+     One `cyl_images` row whose object was never uploaded, and **no sidecar written** — so predict
+     can never discover it, which is exactly why it is absent from the 8-key manifest while
+     `…745`–`…750`/`…752`/`…753` are present.
+
+     **7.4's batch, verified rather than inferred:** poison `12894751` + good `12894745`,
+     `12894746`.
+
+     **Why this had to be re-derived at all — worth not repeating.** The 2026-09-01 run that first
+     demonstrated the poison-scan failure (`sleap-roots-pipeline-jqsf9`) recorded its *outcome* in
+     the roadmap (`0/3`, `Failed`, two good scans stranded) and its *diagnosis* (#56), but never
+     its **inputs**. The only machine-readable copy of the scan ids lived in the Workflow object's
+     `spec.arguments.parameters`, and that object is now `NotFound`: it was dispatched through
+     Bloom's automated path, which stamps a `ttlStrategy`, so it was garbage-collected — while the
+     older hand-submitted runs (`l2247` 2026-08-13, `mtbv5`/`q62vv` 2026-08-10) survive precisely
+     because they carry no TTL. **Record the scan ids of any diagnostic run in the repo, not only
+     the conclusion; a TTL'd Workflow is not a record.**
+
+  **Split it:**
+  - **7.4a — RUN 2026-09-16 (`srp-t74a-poison-gfzp6`). Every **filesystem** artifact criterion PASSES; the
+    Workflow-phase criterion and the `cyl_trait_sources` check are blocked, by a newly-found bug (#76), not by anything in #60.**
+
+    | node | phase | exitCode |
+    |---|---|---|
+    | `images-downloader` (3 attempts) | Failed | **3** ← partial success in a real DAG, first time |
+    | `predictor` | Succeeded | 0 |
+    | `trait-extractor` | Succeeded | 0 |
+    | `write-back` (3 attempts) | **Failed** | 1 |
+    | `exit-gate` | **Omitted** | — ("omitted: depends condition not met") |
+    | Workflow | **Failed** | — |
+
+    **What passed is the substance of #56.** `images-downloader` exited **3** and **`continueOn`
+    let the DAG advance past a `Failed` producer** — on 2026-09-01 this identical scenario ended
+    `Failed` at 0/3 with both good scans stranded and never reaching the predictor; here the
+    predictor ran and succeeded. Poison scan `scan_12894751` was isolated (no staged dir, no
+    prediction, no result). Both good scans produced `.result.json` with fresh mtimes.
+    `input/run_manifest.json` scoped correctly to `["scan_12894745","scan_12894746"]` with the
+    poison excluded, stamped with **this** run's `pipeline_run_id` — unlike the zero-scan case,
+    which leaves a stale one.
+    The gate's **backward** path also worked exactly as designed: write-back carries no
+    `continueOn`, so the gate was `Omitted`; `Omitted` is `Fulfilled` but not `Completed`, so it
+    did not overwrite `branchPhase` and the Workflow correctly inherited `Failed`. Forward path
+    (7.5, 7.6) and backward path are now both verified live.
+
+    **Why write-back failed — #76.** predict's `.slp` output is not byte-reproducible: two runs of
+    the same scan with identical inputs give the *same* `idempotency_key` (`86573f05b6b34dbf…`) but
+    *different* `.slp` bytes (`8776CDD8…` vs `E8535461…`, identical file sizes). The blob address
+    embeds the idempotency key, so a recompute writes different bytes to the same address and
+    bloomctl refuses to overwrite. Worse, the strict blob upload happens *before* the RPC's
+    `ON CONFLICT (idempotency_key) DO NOTHING` gate, which would have made the re-delivery a
+    harmless no-op — `Ingested 0/2` confirms nothing reached the RPC.
+    Diagnosed by reproducing outside Argo with bloomctl built at the deployed commit `06148896`.
+    That was necessary because **`pods/log` is not granted** to the `argo-user` ServiceAccount
+    (the Role grants `pods`, but Kubernetes treats subresources as separate resource strings), so
+    the cause is invisible from the cluster side. Note `kubectl auth can-i get pods/log` answers
+    "yes" misleadingly — it parses as a pod *named* `log`; use `--subresource=log`, which says no.
+
+    **Ordering caveat, owned:** running 7.4a against a *fresh* scratch tree guaranteed a recompute
+    of scans that 7.6's shared half had ingested under the same key an hour earlier. Had 7.4a run
+    first it would have been the first writer and would likely have passed. The ordering surfaced
+    the bug; it did not cause it.
+
+    **To close 7.4a's Workflow-phase criterion:** either #76 lands, or re-run against scans whose
+    idempotency keys have never been ingested.
+  - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count` and the per-scan `failed`
+    row — these need rows Bloom's dispatch route creates at enumerate time.
+    ⚠️ **`cyl_trait_sources` is NOT in that category** (corrected in the pre-merge audit): those rows
+    are written by **write-back** via `insert_cyl_result_envelope` on *any* dispatch path — this
+    repo's roadmap records a hand-submitted run creating `source_id` 6/7/8 back on 2026-07-30. The
+    reason 7.4a could not check it is simply that write-back Failed all three attempts (#76), not
+    that it requires Bloom dispatch.
+
+  Original instructions follow. Re-run 2026-09-01's scenario 3: one scan whose `cyl_images`
   row points at never-uploaded object-storage content, plus two good scans, one batch.
   **Validate:** the DAG reaches `write-back`; both good scans' `.result.json` land on the NFS mount
   with fresh mtimes and appear in `cyl_trait_sources`; the poison scan's `cyl_pipeline_run_scans`
   row is `failed`; `done_count=2`, `failed_count=1`; Workflow `Succeeded`. Verify by artifact, not
   by workflow phase alone.
-- [ ] 7.5 **Crash-injection scenario — the load-bearing test**, since silently greening real crashes
-  is this design's failure mode. Submit with `scan-ids=not-an-int`, which `parse_scan_ids_flag`
+- [x] 7.5 **RUN 2026-09-16 — PASSED, and it produced the strongest evidence in this change.**
+  Workflow `srp-t75-crash-4qd66`, submitted with `scan-ids=not-an-int` against a **scratch** path
+  tree (`a4_scratch_56/{input,predictions,traits}`, created empty), never the `a4_poc` paths.
+  Terminal after **1908 s (31.8 min)** — `startedAt 2026-09-16T02:44:44Z` → `finishedAt 03:16:32Z`.
+
+  | node | type | phase | `outputs.exitCode` |
+  |---|---|---|---|
+  | `images-downloader` (3 attempts) | Retry | Failed | **1** ("No more retries left") |
+  | `predictor` (4 attempts) | Retry | Failed | **1** |
+  | `trait-extractor` (3 attempts) | Retry | Failed | **1** |
+  | **`write-back`** | Retry | **Succeeded** | **0** |
+  | `exit-gate` (3 attempts) | Retry | Failed | 1 |
+  | Workflow | — | **Failed** | — |
+
+  Gate's resolved `inputs.parameters`: `images-downloader-code='1'`, `predictor-code='1'`,
+  `trait-extractor-code='1'` — real values, **not** empty strings. That is direct live
+  confirmation that `{{tasks.X.exitCode}}` resolves *through* Retry nodes on this controller,
+  which until now was only verified in v3.6.7 source.
+
+  ⚠️ **`write-back` SUCCEEDED while all three producers crashed — so this run is the empirical
+  proof that the gate is load-bearing.** Without it, write-back would have been the DAG's only
+  leaf, it exited 0, and `assessDAGPhase` would have reported the Workflow **`Succeeded`** for a
+  run in which every producer crashed and zero scans were processed. The design doc's claim that a
+  `continueOn`-only change is "strictly worse than today" is no longer an argument from Argo
+  semantics — it is a measurement. The gate received `{1,1,1}`, rejected it, and failed the
+  Workflow correctly.
+  Why write-back exits 0 here: the scratch `traits/` dir is empty and no `run_manifest.json` was
+  written (the crash precedes `write_run_manifest`), so `discover_envelopes` falls back to
+  **unscoped** discovery, finds zero envelopes, and reports success. Worth recording rather than
+  filing: this is exactly the path that makes a total crash greenable, and it is why the gate reads
+  producer exit codes instead of trusting the terminal stage.
+
+  **Isolation held.** All 12 production `a4_poc/traits/*.result.json` mtimes unchanged against the
+  pre-run baseline, and `a4_poc/input/run_manifest.json` untouched (still 2026-09-10). The scratch
+  tree was left **completely empty** with no `run_manifest.json` — independently confirming that a
+  crash exit happens before `write_run_manifest`, which is the reason this test needed a scratch
+  path at all.
+
+  **Not verified:** the gate's stderr diagnostic. `pods/log` is Forbidden to the `argo-user`
+  ServiceAccount in `runai-busch-lab`, so container logs are unreadable with these credentials and
+  the operator-facing message could not be confirmed. Everything above is from node status, not
+  logs.
+
+  **Cost measured:** a crash-class run burns the full retry budget at every stage before the gate
+  can reject — **31.8 min** wall clock and 4 GPU predictor pod schedules on input that cannot succeed.
+  #60 fixed the DAG-killing consequence, not the retry storm; this is the number.
+
+  **Bloom-side assertions NOT done** (see 7.4): a hand `argo submit` creates no
+  `cyl_pipeline_runs`/`cyl_pipeline_run_scans` rows, so `failed_count` and per-scan status have
+  nothing to attach to. Deferred to after §8.
+
+  Original instructions follow. Submit with `scan-ids=not-an-int`, which `parse_scan_ids_flag`
   surfaces as a `ClickException` → **exit 1**.
   ⚠️ **Run this against a scratch input directory, not the default `a4_poc` paths.** Production
   dispatches the vendored copy of this Workflow with the same `hostPath`s, so the default paths are
@@ -272,13 +439,73 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   reachable: no unexpected `cyl_trait_sources` rows, and record exactly which
   `cyl_pipeline_run_scans` rows moved and what `failed_count` became. A `Failed` Workflow does not
   mean nothing was written — capture what was.
-- [ ] 7.6 **Characterise the zero-scan case — a measurement, not a confirmation.** Submit with
-  `scan-ids=""`. The outcome is input-directory-state-dependent and is deliberately *not* asserted
-  anywhere: on a fresh directory predict discovers nothing and exits `1` (gate rejects → `Failed`);
-  on the shared directory it scopes to the leftover `run_manifest.json`, skips everything and exits
-  `0` (gate accepts → `Succeeded`). Run it **both** ways — scratch dir and shared dir.
-  **Validate:** record the actual phase for each, then update the spec, README and design doc to
-  state what was measured. Until then no document may claim either outcome as fact.
+- [x] 7.6 **MEASURED 2026-09-16, both ways. The prediction held exactly, and the outcome is
+  directory-state-dependent as suspected — same submission, opposite verdict.**
+
+  | run | paths | phase | gate params | duration |
+  |---|---|---|---|---|
+  | `srp-t76-zero-scratch-vdkr5` | scratch (the tree 7.5 left empty) | **`Failed`** | `{'0','1','1'}` | 1269 s |
+  | `srp-t76-zero-shared-hrrkz` | real `a4_poc` | **`Succeeded`** 5/5 | `{'0','0','0'}` | 199 s |
+
+  > ⚠️ **Durations corrected before merge.** Earlier drafts of this record read 7.5 as "1290 s
+  > (21.5 min)" and 7.6-scratch as "1290 s". Both came from a background poller's
+  > `TERMINAL after NNNNs` line, which reports the **poller's own** elapsed time (iterations x
+  > sleep), not the Workflow's. For 7.5 the poller was started ~10 min after submission, so it
+  > under-reported by that much. Always take durations from `status.startedAt` /
+  > `status.finishedAt` on the Workflow object. Corrected values above are from those fields.
+
+  **Fresh directory → `Failed`.** `images-downloader` **Succeeded, exit 0** (zero *requested*
+  scans → "nothing to stage"), then `predictor` exit 1 and `trait-extractor` exit 1 (zero
+  *discovered*), `write-back` **Succeeded exit 0**, gate rejected the mixed vector. So the stages
+  genuinely disagree about what "empty" means — the downloader treats zero requested as success,
+  predict and traits treat zero discovered as failure — and the gate converts that disagreement
+  into a definite verdict instead of a silent green.
+  This run is also the **second** independent demonstration that the gate is load-bearing:
+  `write-back` Succeeded again, so without the gate this would have reported `Succeeded` too.
+  And it exercises a vector 7.3 and 7.5 did not — a **mixed** `{0,1,1}` — proving the gate
+  evaluates each producer independently rather than keying off the last or worst one.
+
+  **Shared directory → `Succeeded`.** predict scoped to the leftover `run_manifest.json` (8 keys)
+  rather than discovering nothing, recomputed all 8, traits followed, write-back **exited 0**,
+  gate `{0,0,0}` passed. (Stated as exit 0, not "ingested": 7.5 in this same record is the
+  demonstration that write-back exits 0 having ingested *zero* envelopes. Bloom-side ingestion for
+  this run was not verified — no DB read, and pod logs are unreadable.) **A zero-scan submission therefore reports a fully green Workflow while
+  doing substantial real work on someone else's scan set** — which is #37/#71, measured.
+
+  **Docs to update from this (7.6's own follow-through):** README currently says the zero-scan
+  outcome is "not yet characterised — do not rely on it either way". It is now characterised: both
+  outcomes above, with the mechanism. The spec and design doc carry the same hedge.
+
+- [x] 7.8 **MEASURED 2026-09-16 via `srp-t76-zero-shared-hrrkz` (the first post-bump recompute).
+  PASSES.** Against the pre-run baseline:
+
+  | group | mtime changed | `idempotency_key` changed | `predict_code_sha` after |
+  |---|---|---|---|
+  | the **8 in-manifest** scans | **yes** | **yes** | `e025e309…` (the new pin) |
+  | the **4 out-of-manifest** leftovers (`scan_1009`, `scan_289`, `scan_577`, `scan_6791737`) | **no** | **no** | `4a70e59978cf` (unchanged) |
+
+  So every changed mtime has a changed key explained solely by `predict_code_sha`, and **nothing
+  outside the manifest's `scan_keys` was touched**. No leftover contamination — the #54/#55 signal
+  is clean, and manifest scoping demonstrably bounds the blast radius.
+
+  ⚠️ **Correction to this section's own restatement rationale.** The note below claims 7.8's
+  original criterion ("an unrelated leftover scan's `result.json` mtime is unchanged") was
+  "guaranteed to be violated" by the pin bump. **That was wrong.** The leftovers sit *outside*
+  predict's manifest scope, so they were never candidates for recomputation and the original
+  criterion would have passed. What the pin bump genuinely invalidates is **7.7**'s "every
+  `.result.json` mtime unchanged", which cannot hold on a first post-bump run. The restatement is
+  still the better test — it asserts *which* keys changed and why — but its justification
+  over-generalised from 7.7 to 7.8.
+
+  **Bonus finding: predict#42's manifest forward-copy works, first time ever.**
+  `predictions/run_manifest.json` and `traits/run_manifest.json` were **absent** before this run
+  and are now present, so write-back is manifest-scoped for the first time rather than falling
+  back to unscoped discovery over the whole shared directory.
+  **But both forwarded copies carry `pipeline_run_id: sleap-roots-pipeline-hjg62`** — the *old*
+  run's id, not `srp-t76-zero-shared-hrrkz`. A zero-scan run exits before `write_run_manifest`, so
+  the id was never refreshed, and predict/traits copy it forward verbatim. The 8 results this run
+  rewrote are therefore associated with a manifest naming a different run: #71/bloom#703, observed
+  directly rather than reasoned about.
 > ⚠️ **7.7/7.8 were restated 2026-09-16 (PR #60's review). Their previous pass criteria could not
 > hold, and running them as written would have produced a result that proves nothing.**
 >
@@ -295,25 +522,45 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 > **second** post-bump run the idempotency oracle (by then `predict_code_sha` is stable), and to
 > turn the first run into a measurement of *which* keys changed and why.
 
-- [ ] 7.7 **Idempotent re-delivery — the real batch-oracle signal, on the SECOND post-bump run.**
-  Before 7.4, record for every `{scan}.result.json` under the traits dir: path, mtime, and
-  `provenance.idempotency_key`. After 7.4 completes, re-record. Then re-submit 7.4's exact batch
-  and record a third time.
-  **Validate:** between the *second* and *third* snapshots — i.e. across the re-delivery, with the
-  image pin now stable — Workflow `Succeeded`, **0 GPU pods scheduled**, and **every** mtime and
-  every `idempotency_key` unchanged. That is the standing A4 batch-oracle signal, and it is only
-  meaningful once the code-sha is no longer moving.
-- [ ] 7.8 **Leftover-contamination signal, restated as an attribution check on the FIRST run.**
-  Between the first and second snapshots, mtimes are expected to change. Assert *which*:
-  **Validate:** every `result.json` whose mtime changed must have a changed `idempotency_key` whose
-  only differing input is `predict_code_sha` — i.e. the change is explained by the pin bump and
-  nothing else. And critically: **no file outside the manifest's `scan_keys` may be touched at
-  all.** A changed mtime with an *unchanged* key, or any write outside the declared scan set, is
-  the #54/#55 contamination signal and a hard failure.
-  Note this is measurably weaker than the old (unachievable) criterion, and deliberately so: with
-  the `a4_poc` directories shared across runs and never pruned, the accumulated foreign keys are
-  exactly the files the pin bump invalidates. Recording that honestly is worth more than a green
-  tick from a test that cannot fail for the right reason.
+- [x] 7.7 **RUN 2026-09-16 (`srp-t77-redeliver-t82vr`) — PASSES as an idempotency measurement.**
+  ⚠️ **It is NOT the A4 batch-oracle as originally specified, and an earlier version of this note
+  overstated it** (caught in the pre-merge audit). 7.7 as written says "re-submit **7.4's exact
+  batch**". What actually ran was a **second zero-scan submission** — live
+  `spec.arguments.parameters` shows `scan-ids=` empty, identical in shape to
+  `srp-t76-zero-shared-hrrkz`. So the skip path it exercised depends on predict falling back to the
+  **leftover** `run_manifest.json`, which is the #37/#71 behaviour this very change documents as a
+  defect — not on an explicit batch re-request through the normal path. Every artifact fact below is
+  correct; the claim "the batch-oracle signal is now met" was not. A true batch-oracle run needs an
+  explicit `--parameter scan-ids=…` re-request, and 7.4a's batch is the natural candidate once #76
+  is fixed.
+  Measured with `predict_code_sha` stable (7.6's shared half was the first post-bump recompute; this
+  is the second delivery over the same scan set).
+  Workflow **`Succeeded`** 5/5, gate `{0,0,0}`, 6m54s. Against the pre-run snapshot:
+
+  | check | result |
+  |---|---|
+  | 12 `result.json` mtimes | **all frozen** |
+  | 12 `provenance.idempotency_key`s | **all unchanged** |
+  | 24 `.slp` blobs (SHA256) | **all byte-identical** |
+
+  **The `.slp` blob check was added beyond the original criteria, and it turned out to be the
+  load-bearing one** — it is what explains #76. predict *skipped*, so no new bytes were produced,
+  so write-back's blob upload found identical checksums and succeeded. Contrast 7.4a, where predict
+  *recomputed* at the same key and wrote different bytes to the same address, which collided. Same
+  write-back code, same blob addresses, opposite outcomes, decided purely by skip-vs-recompute.
+  **So re-delivery is idempotent on the skip path and broken on the recompute path** — the precise
+  statement of #76, demonstrated by the pair of runs rather than argued.
+
+  On "**0 GPU pods scheduled**": taken literally that criterion cannot hold, and should be reworded
+  for future use. The `predictor` pod is a DAG task and is *always* scheduled; what the oracle
+  means is that no GPU *inference* happens. Observed: `predictor` ran, exited 0, and performed no
+  work (all 8 scans skipped on matching keys, all artifacts byte-frozen). Measure it as "no
+  artifacts rewritten", not as "no pod scheduled".
+  *(7.8's criteria and its measured result are recorded above, immediately after 7.6, because the
+  run that satisfied it — `srp-t76-zero-shared-hrrkz` — was 7.6's shared half. The criteria were:
+  every `result.json` whose mtime changed must have a changed `idempotency_key` whose only
+  differing input is `predict_code_sha`, and no file outside the manifest's `scan_keys` may be
+  touched at all. Both hold.)*
 
 ## 7b. Rebase onto PR #62 (merges FIRST — this PR rebases onto it)
 
@@ -401,7 +648,8 @@ delta.
 
 ## 9. Record
 
-- [ ] 9.1 Add a roadmap status-log entry **for the day section 7 actually ran**, not at merge, in
+- [x] 9.1 **DONE 2026-09-16.** Roadmap status-log entry added for the day §7 ran, newest-first, with real workflow names, artifact evidence rather than phase, the crash run's `Failed`, what was NOT verified (7.4b's Bloom-side counts), and the restatement that a green Workflow does not mean no scans failed.
+  Original instructions: Add a roadmap status-log entry **for the day section 7 actually ran**, not at merge, in
   this repo's established shape: real workflow names and dates for both the poison-scan and
   crash-injection runs; artifact evidence rather than phase (which `.result.json` files landed with
   fresh mtimes, which `cyl_trait_sources` rows appeared, the poison scan's row reading `failed`,
@@ -409,21 +657,30 @@ delta.
   does **not** change cluster behaviour until `argo template update` runs, stating whether it has.
   State as plainly as the 2026-09-15 entry does: **a green Workflow, or a `complete` run, does not
   mean no scans failed.** If 7.5 was not run, say so — do not record 7.4 alone as "#56 fixed".
-- [ ] 9.2 Close out the roadmap statements this change falsifies: the 2026-09-15 entry's "#56
+- [x] 9.2 **DONE 2026-09-16.** Closed out: the 2026-09-15 entry's "#56 remains open and is the actual blocker" (superseded block added, pointing at #76 as the moved blocker); my own earlier "count is still 4 and still accurate" note, which went stale the moment the gate was registered; the "Genuinely remaining" predictor-pin bullet and its dedup re-run (both done, with the caveat that the mtime-frozen signal is only valid within a fixed `predict_code_sha`); frontier item 1's #772/#56 bullet; and the A4 row's stage chain (now names `exit-gate` as the fifth task and only leaf). Also annotated the A4 row's status cell, which claimed write-back/notify/trigger were still remaining. **Corrected after the pre-merge audit:** an earlier version of this note claimed the grep
+  returned "only dated status-log text". That was false. `roadmap.md:303` is the A4 breakdown
+  sub-table's row literally titled `| **workflow template** |` — undated normative content, and the
+  very row this task names. Its stage chain omitted `exit-gate` and its status still read
+  "Two new DAG tasks needed, neither added yet"; I had updated line 138 (the A4 EPIC row) instead
+  and not noticed. Both now fixed. This is the #62 pattern again — fixed where I looked rather than
+  where the instruction pointed. Lines 188/558 are also non-status-log hits but are harmless prose.
+  Original instructions: Close out the roadmap statements this change falsifies: the 2026-09-15 entry's "#56
   remains open and is the actual blocker"; "none of the **4** registered WorkflowTemplates" (now
   five — #58's scope grew); the "Genuinely remaining, not yet done" predictor-pin bullet (task 1.2)
   and its dedup re-run (task 7.8); the "Next (true frontier, as of 2026-08-31)" section's frontier
   item 1; and the A4 workflow-template row's stage chain.
   **Validate:** `grep -n "four\|#56 remains open\|4 registered" docs/bloom-integration/roadmap.md`
   returns only historical status-log text that was true when written.
-- [ ] 9.3 Record the three deferred follow-ups **with their limitation stated, not just the issue
+- [x] 9.3 **DONE 2026-09-16.** All three recorded with the limitation stated, not just the number (bloom#857 counts-not-status; bloom#859 as a **latch** over never-pruned shared dirs, with the note that it is not armed today; predict#44, plus the observation that predict#42's forward-copy started working today). The local dry-run breakage is recorded with its real failure order — namespace first, then all four templateRefs, not just `exit-gate`.
+  Original instructions: Record the three deferred follow-ups **with their limitation stated, not just the issue
   number**: bloom#857 (run status reads `complete`, not `partial`), bloom#859 (a partial
   predict/traits still fails the Workflow at write-back), predict#44 (forwarded manifest must
   narrow to `ok ∪ skipped`). Also record that the local dry-run path
   (`local_run_pipeline_first_time.sh`, which submits the *cluster* manifest with its own
   four-template list) will hard-fail on the unregistered `templateRef` — knowingly out of scope
   here, tracked by #21.
-- [ ] 9.4 Note that bloom's `staging` → `main` promotion is the production cutover for this DAG, and
+- [x] 9.4 **DONE 2026-09-16.** Recorded that `staging` → `main` is the production cutover, that merging the vendoring PR to `staging` *is* the staging deploy, that the gate template had to be registered first and now is, and that the ordering is one-directional. Also recorded the non-obvious part: production already runs the three new pins (the vendored DAG resolves stages via `templateRef`) while still dispatching the four-task DAG.
+  Original instructions: Note that bloom's `staging` → `main` promotion is the production cutover for this DAG, and
   that the gate template must be registered before it.
 
 ## 10. Final sweep
