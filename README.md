@@ -25,7 +25,7 @@ task — see the table.
 | Tool | Docs | Auth | Use it for |
 |---|---|---|---|
 | `argo` | [Argo CLI reference](https://argo-workflows.readthedocs.io/en/latest/cli/argo/) | `ARGO_TOKEN` + `ARGO_SERVER`, **or** `KUBECONFIG` (Kubernetes mode) | the production path: template registration, `argo submit`, `argo lint`, `argo logs` |
-| `runai` | [Run:AI docs](https://run-ai-docs.nvidia.com/) | interactive SSO — `runai login remote-browser` | interactive/ad-hoc work: `runai workspace submit` / `logs` / `exec` |
+| `runai` | [Run:AI docs](https://run-ai-docs.nvidia.com/) | `KUBECONFIG` **and** interactive SSO — `runai login remote-browser` | interactive/ad-hoc work: `runai workspace submit` / `logs` / `exec` |
 | `kubectl` | [kubectl install](https://kubernetes.io/docs/tasks/tools/) | `KUBECONFIG` | pod inspection, `kubectl auth can-i`, diagnosing failures |
 
 Also required:
@@ -42,9 +42,9 @@ Also required:
 - (Optional, local testing only) Docker Desktop with WSL2 integration — CPU-only, see
   [Local Testing](#-local-testing-docker-desktop--wsl2).
 
-**Which identity does each tool use?** `runai` uses your own SSO login; `argo` and `kubectl` use
-the shared project `argo-user` kubeconfig. Bloom's backend submits as a third identity you don't
-hold. See [Cluster identities](docs/cluster-identities.md) before wiring anything new — picking the
+**Which identity does each tool use?** `runai` needs *both* the shared project `argo-user`
+kubeconfig and your own RunAI SSO login; `argo` and `kubectl` need only the kubeconfig. Bloom's
+backend submits as a third identity you don't hold. See [Cluster identities](docs/cluster-identities.md) before wiring anything new — picking the
 wrong one produces failures that don't look like permission errors.
 
 ---

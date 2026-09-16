@@ -196,12 +196,16 @@ def main() -> int:
 
     # --- Superseded plan bullets --------------------------------------------------------------
     # Every false bullet in that list carries a marker, not only the one that caused this work.
+    # Two markers are in use and both are correct: blockquoted "SUPERSEDED" for a *step* (line
+    # 352, PR #69) and inline "Corrected <date>" for a *bullet* (line 605, PR #60). These are
+    # bullets, so either form counts — the assertion is that the claim is marked, not how.
     plan = read(DRIFT_PLAN).splitlines()
     for lineno in (599, 600, 605):
         line = plan[lineno - 1] if lineno <= len(plan) else ""
+        marked = "SUPERSEDED" in line or re.search(r"Corrected 20\d\d-\d\d-\d\d", line)
         check(
-            f"{DRIFT_PLAN}:{lineno} carries a superseded marker",
-            "SUPERSEDED" in line,
+            f"{DRIFT_PLAN}:{lineno} carries a correction marker",
+            bool(marked),
             True,
         )
 

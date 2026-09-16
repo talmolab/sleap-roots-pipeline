@@ -1,9 +1,10 @@
 # Cluster identities
 
-Three different identities are involved in running this pipeline on the Salk cluster, and picking
+Three Kubernetes identities are involved in running this pipeline on the Salk cluster, and picking
 the wrong one produces failures that don't look like permission problems. This page says what each
-one is, what it can actually do, and how to get access. It also covers the two separate sign-ins
-sitting behind them — Kubernetes RBAC and RunAI SSO — which are not interchangeable.
+one is, what it can actually do, and how to get access. Separately from all three, you have your
+own RunAI SSO login — a different authentication plane, not a fourth Kubernetes identity, and the
+two are not interchangeable.
 
 Namespace throughout: **`runai-busch-lab`** (RunAI project `busch-lab`). `runai-talmo-lab` is still
 live on the cluster but has not been this pipeline's target since 2026-08-13.
@@ -12,22 +13,26 @@ live on the cluster but has not been this pipeline's target since 2026-08-13.
 
 Kubernetes RBAC and RunAI's own identity are separate. A tool may need one or both:
 
-| Tool | Shared `argo-user` kubeconfig | Per-person RunAI SSO |
+| Tool / surface | Kubernetes kubeconfig | Per-person RunAI SSO |
 |---|---|---|
 | `argo` | required | no |
 | `kubectl` | required | no |
 | `runai` | required | **also required** |
-| RunAI console | n/a | required |
+| RunAI console | no — browser SSO only | required |
 
-The kubeconfig is shared across the project. RunAI SSO is per person, and it is not automatic: a
-new person must be added to the `busch-lab` RunAI project by the cluster admin or a project owner
-before they can sign in.
+Operators share one namespace-scoped `argo-user` kubeconfig for the Kubernetes plane; the
+`bloom-pipeline` identity below carries its own. RunAI SSO is per person, and it is not automatic:
+a new person must be added to the `busch-lab` RunAI project by the cluster admin or a project
+owner. Salk SSO will authenticate you regardless — membership is what makes `busch-lab` visible
+and actionable once you are signed in.
+
+Confirmed with the repo owner, 2026-09-15.
 
 The failure this prevents: with no SSO session, `runai` commands fail while `argo` keeps working
 against the same namespace from the same shell. That does not look like an auth problem. Sign in
 with `runai login remote-browser`, then confirm with `runai whoami`.
 
-## The three identities
+## The three Kubernetes identities
 
 | Identity | Who authenticates as it | Can | Cannot | Credential |
 |---|---|---|---|---|
@@ -106,10 +111,13 @@ production. Reuse `services/workflows/k8s_client.py` — `build_workflow_body`, 
 it.** It has `get`/`list` on `workflowtemplates` only. Registration needs `argo-user`, which has
 `create` and `update`. This is the real prerequisite, not the credential.
 
-As of **2026-09-15** all four `sleap-roots-*` templates are registered in `runai-busch-lab`, and the
-registered `sleap-roots-predictor-template` matches this repo's file exactly — same image pin, same
-`secretKeyRef`, same `priorityClassName`, same `gpu-memory`. No drift. Re-check with
-`argo template get <name> -n runai-busch-lab -o yaml` before assuming the cluster matches `main`.
+**Never state in this repo that the cluster matches it.** The namespace is shared and mutable —
+anyone with `argo-user` can re-register a template at any moment, so a parity claim is false as
+soon as it is written. This is not hypothetical: a 2026-09-15 spot-check found the registered
+predictor matching this repo, and within the hour the templates were re-registered from a newly
+merged `main`, leaving both the cluster and that observation ahead of the branch that recorded it.
+Run `scripts/check_cluster_drift.sh` when you need to know; nothing enforces parity between runs
+([#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58)).
 
 **You can read pod logs.** Both `bloom-pipeline` and `argo-user` have `get pods/log`. Note that
 Bloom's own status poller only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), not the
@@ -127,8 +135,17 @@ create one — `bloom-pipeline` has no `secrets` access at all, and `argo-user` 
 `get`, `list` and `create` alike (verified 2026-09-15). Use Credentials → Generic secret in the
 console, Project-scoped to `busch-lab`. RunAI prefixes the resulting Kubernetes Secret name with
 `genericsecret-`, which is why the manifests reference `genericsecret-wandb-api-key` rather than the
-asset name you typed. This needs your own RunAI SSO access — see
-[Two auth planes](#two-auth-planes).
+asset name you typed. Creating them is **self-service** once you have console access — no
+cluster-admin round-trip — but it does need your own RunAI SSO login, so see
+[Two auth planes](#two-auth-planes) first.
+
+Secrets are a fourth hand-made precondition, alongside the three directories below, and they fail
+the same way: a missing Secret leaves the pod `Pending` (or in `CreateContainerConfigError`), never
+`Failed`, so the Workflow hangs rather than erroring. Note also that
+`sleap-roots-pipeline.yaml` hardcodes `genericsecret-bloom-staging-pipeline-credentials`, so a
+*production*-dispatched Workflow mounts the **staging** Bloom credential — the prod account has
+never been created ([#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17)). Dormant
+today because nothing drives prod, not because it is correct.
 
 **If you need a new Kubernetes identity**, `bloom-pipeline-serviceaccount.yaml` is the precedent to
 copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster admin applies
@@ -148,10 +165,10 @@ Nothing here is reachable off the Salk VPN.
 
 **`runai-busch-lab` is shared by Bloom staging *and* production**, distinguished only by an
 environment label stamped on each submitted Workflow, and a production dispatch deployment is live
-in it — verified **2026-09-15**, `bloom_v2_prod-cyl-pipeline-worker-1` and
-`bloom_v2_prod-cyl-status-poller-1` both `Up 6 days` on `bloom-dev.salk.edu`, alongside the staging
-pair. ("Live" means the dispatcher process is running, not that anything is driving it — no
-frontend targets prod yet.) An `argo template update` therefore affects both environments' future
+in it — `bloom_v2_prod-cyl-pipeline-worker-1` and `bloom_v2_prod-cyl-status-poller-1`, last
+confirmed running on `bloom-dev.salk.edu` on 2026-09-15 alongside the staging pair. ("Live" means
+the dispatcher process is running, not that anything is driving it — no frontend targets prod
+yet.) An `argo template update` therefore affects both environments' future
 dispatches, not just your next run. Don't update the `sleap-roots-*` templates unless you mean to.
 
 **You share the submitter identity.** Anything Bloom dispatches arrives as `bloom-pipeline`, so
@@ -169,9 +186,16 @@ PR #41, introduced alongside a `grep` rather than a scheduling observation — a
 with no class resolved to priority **0**, the *lowest* tier, below `train` (50). Treat the default
 as unknown-and-probably-lowest: declare the class explicitly on every template.
 
+The 2 is a **deserved** quota in RunAI's sense, not a hard cap — preemptible work may exceed it.
+That does not help this pipeline's GPU work, though: the predictor is the only GPU-requesting
+stage and it runs non-preemptible `high` (below), so at 2/2 it does not burst above the quota, it
+waits — surfacing as `NonPreemptibleOverQuota`. Confirmed with the repo owner, 2026-09-15.
+
 Which value depends on the stage, and this pipeline is deliberately not uniform:
 
-- The three CPU stages use `interactive-preemptible` (75) — preemptible, may use over-quota GPUs.
+- The four CPU stages use `interactive-preemptible` (75) — preemptible, and permitted to exceed
+  the deserved quota. They request no GPU, so that permission buys this pipeline nothing in GPU
+  terms; it matters for CPU and for scheduling order.
 - **The predictor uses `high` (125), which is non-preemptible, on purpose.** Set per cluster-admin
   guidance 2026-08-06 because `trait-extractor` has no skip-if-done yet
   ([#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)), so an eviction mid-batch
