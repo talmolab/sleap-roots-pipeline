@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -32,6 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # property, and a check whose failure mode is "everything is fine" is worse than no check.
 SH = shutil.which("sh") or shutil.which("bash")
 
+DRIFT_CHECK = "scripts/check_cluster_drift.sh"
 PIPELINE = "sleap-roots-pipeline.yaml"
 GATE = "sleap-roots-exit-gate-template.yaml"
 PRODUCERS = ["images-downloader", "predictor", "trait-extractor"]
@@ -100,6 +102,38 @@ def run_gate(script: str, env_names: list[str], codes: list[str | None]) -> int:
         capture_output=True,
         text=True,
     ).returncode
+
+
+def drift_normalise(doc: dict) -> str:
+    """Run the SHIPPED normalise() body from check_cluster_drift.sh over `doc`.
+
+    Extracted from the script and executed, never reimplemented here, for the same reason
+    run_gate() executes the gate's own script: a retyped copy of the stripping rule would go on
+    passing after the real one changed. Needs no cluster -- normalise() is pure.
+    """
+    src = (ROOT / DRIFT_CHECK).read_text(encoding="utf-8")
+    body = re.search(r"<<'PY'\n(.*?)\nPY\n", src, re.S)
+    if not body:
+        raise SystemExit(f"cannot locate the python body in {DRIFT_CHECK}")
+    with tempfile.TemporaryDirectory() as d:
+        py = Path(d) / "normalise.py"
+        py.write_text(body.group(1), encoding="utf-8")
+        obj = Path(d) / "obj.yaml"
+        obj.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        r = subprocess.run(  # noqa: S603 - fixed argv, no shell, script comes from our own tree
+            [sys.executable, str(py), str(obj)], capture_output=True, text=True
+        )
+        if r.returncode != 0:
+            raise SystemExit(f"{DRIFT_CHECK} normalise() failed: {r.stderr.strip()}")
+        return r.stdout
+
+
+def workflowtemplate(labels: dict, annotations: dict) -> dict:
+    return {
+        "apiVersion": "argoproj.io/v1alpha1",
+        "kind": "WorkflowTemplate",
+        "metadata": {"name": "t", "labels": labels, "annotations": annotations},
+    }
 
 
 def check(label: str, got, want) -> None:
@@ -323,6 +357,59 @@ def main() -> int:
         sorted(re.findall(r"\"(sleap-roots-[a-z-]+-template)\.yaml\"", launcher)),
         sorted(f[:-5] for f in [GATE, *BATCH_STAGES.values()]),
     )
+
+    # --- Drift checker: what it ignores, and what it must NOT ignore ----------------
+    # check_cluster_drift.sh strips registrar-injected metadata so that a freshly `create`d
+    # template does not report DRIFT forever against a byte-identical repo file (`argo template
+    # create` stamps `workflows.argoproj.io/creator` as a LABEL; `kubectl apply` stamps
+    # `kubectl.kubernetes.io/last-applied-configuration`). That strip is the one part of the
+    # checker that can make it BLIND, so it is pinned from both directions.
+    #
+    # The second direction is the one that needs a guard. Both of those namespaces ALSO hold
+    # keys a user sets on purpose -- `workflows.argoproj.io/title` and `/description` (argo
+    # v3.6.7 docs/title-and-description.md, user-set since v3.4.4) and
+    # `kubectl.kubernetes.io/default-container` (v3.6.7 workflow/common/common.go) -- so a broad
+    # prefix sweep over either namespace would report IN SYNC while those genuinely drifted.
+    # Nothing in this repo sets one today, which is exactly why a silent regression here would
+    # go unnoticed until it mattered.
+    project = {"project": "busch-lab"}
+    injected_a = drift_normalise(
+        workflowtemplate(
+            {
+                **project,
+                "workflows.argoproj.io/creator": "svc-a",
+                "workflows.argoproj.io/creator-email": "a@example.org",
+            },
+            {"kubectl.kubernetes.io/last-applied-configuration": '{"a":1}'},
+        )
+    )
+    injected_b = drift_normalise(
+        workflowtemplate(
+            {
+                **project,
+                "workflows.argoproj.io/creator": "svc-b",
+                "workflows.argoproj.io/creator-preferred-username": "b",
+            },
+            {"kubectl.kubernetes.io/last-applied-configuration": '{"b":2}'},
+        )
+    )
+    check("drift checker ignores injected metadata differences", injected_a, injected_b)
+    check(
+        "drift checker strips injected metadata entirely",
+        injected_a,
+        drift_normalise(workflowtemplate(project, {})),
+    )
+    for key, value in (
+        ("workflows.argoproj.io/title", "Build and test"),
+        ("workflows.argoproj.io/description", "what this template does"),
+        ("kubectl.kubernetes.io/default-container", "main"),
+    ):
+        check(
+            f"drift checker still sees drift in user-set {key}",
+            drift_normalise(workflowtemplate(project, {key: value}))
+            != drift_normalise(workflowtemplate(project, {key: f"{value} CHANGED"})),
+            True,
+        )
 
     # --- Reproducibility: pins ------------------------------------------------------
     images: dict[str, str] = {}
