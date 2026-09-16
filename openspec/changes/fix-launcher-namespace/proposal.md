@@ -29,9 +29,11 @@ a stale `project: talmo-lab` label and has no consumer.
 
 ## What Changes
 
-- Change `runai_run_pipeline.sh`'s namespace default from `runai-talmo-lab` to
-  `runai-busch-lab`, as an overridable `NAMESPACE="${NAMESPACE:-runai-busch-lab}"` so a one-off
-  submit into another project stays possible without editing the script.
+- Change `runai_run_pipeline.sh`'s namespace from `runai-talmo-lab` to `runai-busch-lab`, as a
+  plain literal. An env-var override was drafted and removed: `argo submit -n <ns>` does not
+  redirect a submission (verified — `--server-dry-run -n runai-talmo-lab` still yields
+  `metadata.namespace = runai-busch-lab`), so an override could only have moved the template
+  registrations away from the namespace the Workflow still runs in.
 - Update that script's stale header comment block (lines 6-13), which instructs the reader to
   export `~/.kube/kubeconfig-runai-talmo-lab.yaml` and run every `argo template update` against
   `-n runai-talmo-lab`.
@@ -39,17 +41,30 @@ a stale `project: talmo-lab` label and has no consumer.
 
 **BREAKING**: none for automated dispatch (see Why). For a human running the launcher, the target
 namespace changes from `runai-talmo-lab` to `runai-busch-lab` — which is the correction, not a
-regression: submitting into talmo-lab was already wrong for this pipeline, and the `NAMESPACE`
-environment variable preserves the old behaviour for anyone who genuinely wants it.
+regression: submitting into talmo-lab was already wrong for this pipeline, and the Workflow it
+submits has declared `runai-busch-lab` all along. Anyone who genuinely needs another project must
+edit `metadata.namespace` in the manifest and register that project's templates and secrets first;
+there is deliberately no environment-variable shortcut, because one cannot work (see What Changes).
 
 ## Impact
 
 - **Modified capability:** `per-batch-pipeline` — the `Launcher registers all four templates`
-  requirement gains a namespace assertion and two scenarios (default, override).
+  requirement gains a namespace assertion and one new scenario.
+- **⚠️ Delta collision, coordinated:** PR #60 (issue #56, exit-code gate) RENAMES this same
+  requirement to `Launcher registers every workflow template` and adds a fifth template. Agreed
+  with that session: **#60 merges first**, then this delta is rebased onto the renamed requirement
+  so the archiver does not end up with an orphan.
 - **Affected code:** `runai_run_pipeline.sh`; `models-downloader-template.yaml` (deleted).
+- **Shipped in the same PR but outside this change's scope** (documentation and hygiene, no
+  orchestration behaviour): `docs/cluster-identities.md` (new), `README.md`, `openspec/project.md`,
+  `.gitignore`, `bloom-pipeline-serviceaccount.yaml` (comments only),
+  `.claude/commands/{ci-debug,docs-review,review-openspec,review-pr}.md`,
+  `.claude/skills/runai/SKILL.md`, `openspec/specs/per-batch-pipeline/spec.md` (stale
+  `project: talmo-lab` label corrected), and two `docs/superpowers/` files.
 - **Untouched:** `sleap-roots-pipeline.yaml` (already correct), all four
-  `sleap-roots-*-template.yaml` files, every `local-WSL2-*` variant, and
-  `bloom-pipeline-serviceaccount.yaml`.
+  `sleap-roots-*-template.yaml` files, and every `local-WSL2-*` variant — the local Docker-Desktop
+  DAG still runs its own models-downloader stage, tracked as
+  [#61](https://github.com/talmolab/sleap-roots-pipeline/issues/61).
 - **No external prerequisite.** All four WorkflowTemplates are already registered in
   `runai-busch-lab`, and `argo lint sleap-roots-pipeline.yaml` passes clean against that namespace
   (verified live 2026-09-15 under the `argo-user` kubeconfig).

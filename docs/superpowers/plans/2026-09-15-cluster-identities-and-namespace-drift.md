@@ -127,7 +127,7 @@ A sweep of all tracked files found **no** private keys, certificates, JWTs, bear
 2. **The cluster API endpoint is published**, along with `gpu-master:8888`, in `README.md`, `bloom-pipeline-serviceaccount.yaml:166`, `runai_run_pipeline.sh`, and four `roadmap.md` lines. **Decision (Elizabeth, 2026-09-15): leave both as-is.** They are internal-only, unresolvable off the Salk VPN, and already in public git history, so removal is cosmetic rather than remediation — and placeholders would make the README less usable. The forward-looking rule in Global Constraints (do not add *new* endpoints) still applies.
 3. **`README.md:41-46` teaches `--insecure-skip-tls-verify`** as the documented token check. In a public repo that is a bad-practice example, independent of any leak.
 
-Two lower-severity items for Elizabeth to decide, not assumed: a colleague's personal email (`linwang@salk.edu`) appears in a tracked doc, and the service-account identifier `bloom-pipeline-workflows@salk.edu` appears 4 times. Neither is a credential; both are identifiers in a public repo.
+Two lower-severity items, both since decided (see Task 0 Step 7): a colleague's personal `@salk.edu` address appeared in a tracked doc — **removed**, along with the name in the same eviction note — and the service-account identifier `bloom-pipeline-workflows@salk.edu` appears 4 times, **deliberately retained** since it is an account name rather than a credential and the credential docs are useless without it. Neither was ever a secret; both are identifiers in a public repo. Note that removing the personal address is forward-looking only: it remains in git history, so this is hygiene for future readers, not remediation.
 
 ### F9 — No CLI setup instructions distinguishing the two tools
 
@@ -295,9 +295,10 @@ Expected: `README.md` only. The ServiceAccount manifest must be untouched by thi
 Both decided and done ahead of execution; nothing to do here beyond confirming they held:
 
 ```bash
-git ls-files -z | xargs -0 grep -niE 'linwang' 2>/dev/null
+git ls-files -z | xargs -0 grep -niE '<colleague-surname>' 2>/dev/null
 ```
-Expected: no output. A colleague's email and the eviction-context name were removed from
+Expected: no output (substitute the actual surname when running it — don't hard-code a personal
+identifier into this tracked file). A colleague's email and the eviction-context name were removed from
 `docs/superpowers/plans/2026-08-07-handoff-bloom-credential-and-busch-lab.md`, and that file's
 colleague-commentary guardrail was reworded to state the rule without naming anyone. The research
 attribution at `docs/bloom-integration/roadmap.md:447` is deliberately retained — it cites whose
@@ -492,8 +493,12 @@ cd /mnt/c/repos/sleap-roots-pipeline && argo lint sleap-roots-pipeline.yaml'
 `couldn't find workflow template "sleap-roots-images-downloader-template" in namespace
 "runai-busch-lab"`. That is a tool artifact, not a defect: the DAG references its four stages by
 `templateRef` to separately-registered WorkflowTemplates, and offline lint has no cluster to
-resolve them against. **Passing all five YAMLs on one command line does not fix it** — tested
-2026-09-15; offline lint does not index sibling files for `templateRef`. Earlier records in this
+resolve them against. **Correction (2026-09-15, after review):** offline lint *does* index sibling files — it matches
+`templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while
+the templates declare none, so the lookup searches a namespace nothing is indexed under. Strip
+`metadata.namespace` from a **temp copy** and all five lint clean with no cluster:
+`T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml`.
+Prefer that as the gate — it works without VPN. Never strip the line from the real file. Earlier records in this
 repo (including `openspec/changes/archive/2026-08-12-wire-bloom-workflow-sa/tasks.md` step 2.1)
 describe the offline failure as the expected result without noting that the online lint passes
 clean — don't inherit that framing.

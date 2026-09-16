@@ -47,11 +47,16 @@ rm -f workflow_logs_*.txt   # the script writes one per run
 ## 2. Delete the dead models-downloader template
 
 - [x] 2.1 `git rm models-downloader-template.yaml`.
-- [x] 2.2 Validate nothing references it:
+- [x] 2.2 Validate nothing in the **cluster path** references it:
   `grep -rn 'models-downloader-template' --include='*.sh' --include='*.yaml' --include='*.md' .`
-  returns no hits outside `docs/superpowers/`, `openspec/changes/archive/`, and `.worktrees/`.
-  Remove any live reference found in the launcher's `TEMPLATES` list or the README folder-structure
-  block.
+  **Actual result:** two live hits remain, both deliberate —
+  `local-WSL2-models-downloader-template.yaml:4` (`metadata.name: models-downloader-template`) and
+  `local-WSL2-sleap-roots-pipeline.yaml:41` (a `templateRef` to it). Those are the separate
+  Docker-Desktop path in namespace `argo`, which still runs a models-downloader stage; the deletion
+  does not affect them and in fact removes a `metadata.name` collision between the two files. The
+  local↔cluster divergence is tracked as
+  [#61](https://github.com/talmolab/sleap-roots-pipeline/issues/61). Neither launcher's `TEMPLATES`
+  list nor the README folder-structure block ever referenced the deleted file.
 
 ## 3. Static validation
 
@@ -67,10 +72,19 @@ rm -f workflow_logs_*.txt   # the script writes one per run
            sleap-roots-write-back-template.yaml; do echo "--- $f"; argo lint "$f"; done'
   ```
 
-  Expected: all five clean. Without VPN, fall back to `--offline` and expect exactly one error on
-  `sleap-roots-pipeline.yaml` (`couldn't find workflow template ... in namespace`) — that is an
-  offline-lint artifact, not a defect; passing all five files on one command line does not resolve
-  it. Any *other* error is real.
+  Expected: all five clean.
+
+  **Cluster-free alternative (preferred — no VPN needed).** Offline lint matches `templateRef` on
+  (namespace, name); the Workflow declares `namespace: runai-busch-lab` and the templates declare
+  none, so the lookup misses. Strip it from a temp copy and all five resolve:
+
+  ```bash
+  T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"
+  sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"
+  argo lint --offline "$T"/sleap-roots-*.yaml     # -> no linting errors found!
+  ```
+
+  Never strip that line from the real file. Any error other than the namespace miss is real.
 
   **Result 2026-09-15:** all five `no linting errors found!` against `runai-busch-lab` under the
   `argo-user` kubeconfig, including `sleap-roots-pipeline.yaml`.

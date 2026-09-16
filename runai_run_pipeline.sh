@@ -23,11 +23,19 @@ GREEN='\033[1;32m'
 RED='\033[1;31m'
 NC='\033[0m'
 
-# Namespace for the GPU cluster. Must match sleap-roots-pipeline.yaml's metadata.namespace —
-# if they disagree, this script registers templates into one namespace and submits into another.
-# Override for a one-off submit into another project:
-#   NAMESPACE=runai-talmo-lab ./runai_run_pipeline.sh
-NAMESPACE="${NAMESPACE:-runai-busch-lab}"
+# Namespace for the GPU cluster. Keep this equal to sleap-roots-pipeline.yaml's
+# metadata.namespace — if they disagree, this script registers templates into one namespace while
+# the Workflow still lands in the other.
+#
+# Deliberately NOT overridable by an environment variable. An earlier revision offered
+# NAMESPACE=<other> and it could not work: verified 2026-09-15 that `argo submit -n <other>` does
+# NOT redirect the submission — the manifest's metadata.namespace wins (`argo submit
+# --server-dry-run -n runai-talmo-lab -o json` → metadata.namespace = runai-busch-lab). All an
+# override changed was the -n on `argo template create/update`, i.e. it would publish this
+# pipeline's templates into a different project than the one the Workflow runs in. To target
+# another project, edit metadata.namespace in the manifest too, and register the templates and
+# secrets there first.
+NAMESPACE="runai-busch-lab"
 
 # Argo Server in HTTP mode
 export ARGO_SERVER=gpu-master:8888

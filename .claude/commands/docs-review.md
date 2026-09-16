@@ -59,9 +59,12 @@ git diff main...HEAD --stat
 # Find docs that mention a changed manifest, template name, or mount path
 grep -r "sleap-roots-predictor-template\|hostPath\|runai-busch-lab" --include="*.md" .
 
-# Drift check: the namespace changed to runai-busch-lab on 2026-08-13, so any live
-# instruction still naming the old one is stale (historical log entries are fine).
-grep -rn "runai-talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" .
+# Drift check: the target changed to runai-busch-lab / project busch-lab on 2026-08-13, so any
+# live instruction still naming the old one is stale (historical log entries are fine).
+# Match bare `talmo-lab` too, NOT just `runai-talmo-lab` — the project-label form
+# (`project: talmo-lab`) is the one that hid in openspec/specs/ through a whole sweep.
+# `talmolab` is the GitHub org and is always correct, hence the -w style exclusion.
+grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" . | grep -v talmolab
 ```
 
 ### Step 2: Update Affected Documentation
@@ -90,7 +93,7 @@ Ensure documentation covers:
 - [ ] Cluster access / RunAI login + `ARGO_TOKEN` setup
 - [ ] How to create WorkflowTemplates and submit the workflow
 - [ ] Local WSL2 testing path and its limitations (CPU-only)
-- [ ] Volume-path configuration and the `hostPath|runai-busch-lab type: Directory` pre-existence requirement
+- [ ] Volume-path configuration and the `hostPath type: Directory` pre-existence requirement
 - [ ] Troubleshooting (`argo get`/`argo logs`/`kubectl describe`)
 
 ### Step 5: Verify Consistency
@@ -137,7 +140,7 @@ How to run it (`argo submit ...`) with an example.
 
 ### Configuration
 
-Available parameters, annotations (`gpu-fraction`, `preemptible`), and env vars (`ARGO_TOKEN`).
+Available parameters, annotations (`gpu-memory` pod-level; `preemptible` is inert), and env vars (`ARGO_TOKEN`).
 
 ### Troubleshooting
 

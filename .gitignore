@@ -20,14 +20,20 @@ Thumbs.db
 secrets.yaml
 service-account.json
 *kubeconfig*
-*-secrets.txt
 *secrets*.txt
-credentials*
+credentials*.txt
+credentials*.yaml
+credentials*.json
+*token*.txt
+*token*.json
+*.token
 *.pem
 *.crt
 *.key
 .env.*
 !.env.example
+!.env.template
+!.env.sample
 
 # Docker related
 .dockerignore

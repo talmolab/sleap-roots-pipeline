@@ -87,8 +87,10 @@ it.** It has `get`/`list` on `workflowtemplates` only. Registration needs `argo-
 **You can read pod logs.** Both `bloom-pipeline` and `argo-user` have `get pods/log`. Note that
 Bloom's own status poller only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), not the
 reason for a failure — so for diagnosis use the CLI against the namespace rather than Bloom's API.
-Neither identity can `create pods/exec`; only `argo-user` can, so an interactive shell in a running
-step needs that kubeconfig.
+
+**But only `argo-user` can open a shell.** `bloom-pipeline` cannot `create pods/exec`; `argo-user`
+can. So reading logs works from either identity, while `kubectl exec` into a running step needs the
+`argo-user` kubeconfig.
 
 **Set `spec.serviceAccountName: bloom-workflow`** on any Argo DAG you submit — see
 [Submit vs. report back](#submit-vs-report-back).
@@ -121,16 +123,44 @@ labels are the only way to tell workloads apart. `build_workflow_body` already s
 you are dispatching a different kind of work, or two status pollers will trip over each other's
 Workflows.
 
-**The GPU quota is 2, and it is often fully used.** Set `priorityClassName:
-interactive-preemptible` explicitly. Leaving it unset lands at `very-high` (150) on this cluster,
-which is non-preemptible and can evict other people's running sessions. This has come close to
-happening before.
+**The GPU quota is 2, and it is often fully used.** Always set `priorityClassName` explicitly:
+leaving it unset lands at `very-high` (150) on this cluster, the most aggressive non-preemptible
+tier, not a neutral default.
 
-**`metadata.namespace` in `sleap-roots-pipeline.yaml` only affects hand-run `argo submit`.** Bloom's
-`k8s_client.py` resolves the namespace from `WORKFLOWS_K8S_NAMESPACE` and then overwrites
-`body["metadata"]["namespace"]`, because the Kubernetes API rejects a body whose namespace
-disagrees with the URL's namespace segment. The launcher (`runai_run_pipeline.sh`) does read it —
-its default is kept equal to the manifest's value for exactly that reason.
+Which value depends on the stage, and this pipeline is deliberately not uniform:
+
+- The three CPU stages use `interactive-preemptible` (75) — preemptible, may use over-quota GPUs.
+- **The predictor uses `high` (125), which is non-preemptible, on purpose.** Set per cluster-admin
+  guidance 2026-08-06 because `trait-extractor` has no skip-if-done yet
+  ([#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)), so an eviction mid-batch
+  would recompute the whole thing. `sleap-roots-predictor-template.yaml` says "never remove this
+  field outright" — don't "fix" it to `interactive-preemptible` on the strength of the bullet
+  above.
+
+So non-preemptible work in this namespace is normal, not an accident. The consequence: a
+non-preemptible submission here **can evict another project's preemptible session**. That has come
+close to happening — the recorded expectation is to check who holds the quota
+(`kubectl get pods -n runai-busch-lab`) and coordinate with them before submitting
+non-preemptible work, not just to set the field and go.
+
+**`argo submit -n <ns>` does not redirect a Workflow submission — the manifest's
+`metadata.namespace` wins.** This is non-obvious and worth knowing before you trust a `-n` flag.
+Verified 2026-09-15:
+
+```bash
+argo submit --server-dry-run -n runai-talmo-lab -o json sleap-roots-pipeline.yaml
+  # → metadata.namespace = runai-busch-lab
+```
+
+So `-n` governs where `argo template create/update` and `argo list`/`get`/`logs` look, but not
+where a submitted Workflow lands. `runai_run_pipeline.sh` therefore hard-codes
+`NAMESPACE="runai-busch-lab"` with no env-var override: an override could only have moved the
+template registrations away from the namespace the Workflow still runs in.
+
+**Bloom's path is different again.** `k8s_client.py` resolves the namespace from
+`WORKFLOWS_K8S_NAMESPACE` and then *overwrites* `body["metadata"]["namespace"]` itself, because the
+Kubernetes API rejects a body whose namespace disagrees with the URL's namespace segment. So for
+Bloom-dispatched runs the manifest's value is inert; for hand-run `argo submit` it is decisive.
 
 ## Related
 

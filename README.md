@@ -87,8 +87,12 @@ kubectl --server=https://10.7.30.173:6443 \
 ```
 
 Prefer `--certificate-authority` over `--insecure-skip-tls-verify`: skipping verification removes
-the protection that makes sending a bearer token safe. Never commit the token or the CA file —
-both are covered by `.gitignore`.
+the protection that makes sending a bearer token safe.
+
+Never commit the token or the CA file. `.gitignore` covers the obvious filenames (`*token*.txt`,
+`*.token`, `*.crt`, `*.pem`, `*kubeconfig*`, `credentials*.txt`) — but treat that as a backstop,
+not a guarantee: it only matches those patterns, and this repo is public. Keep credentials outside
+the working tree.
 
 If you need the endpoint for a different cluster or context, read it from your own kubeconfig
 rather than copying it, since it travels with the credential:

@@ -157,7 +157,7 @@ immutable tag or digest (never `:latest`), SHALL set a `HOME` environment variab
 set an `ARGO_WORKFLOW_NAME` environment variable sourced from Argo's built-in `{{workflow.name}}`
 variable, SHALL mount a Secret at `$HOME/.bloom/credentials.txt` so `bloomctl`'s credential lookup
 resolves deterministically regardless of the image's runtime user configuration, and SHALL carry
-the same `project: talmo-lab` label the `predictor`/`trait-extractor` templates carry, for
+the same `project: busch-lab` label the `predictor`/`trait-extractor` templates carry, for
 consistency with those templates (note: `sleap-roots-predictor-template.yaml`'s own comment states
 this exact label placement — top-level `WorkflowTemplate.metadata.labels` — is "currently INERT"
 and is not copied onto the pod by Argo; this requirement follows the existing convention rather
@@ -171,7 +171,7 @@ than asserting the label is functionally load-bearing for RunAI quota attributio
 - **AND** both set a `HOME` environment variable
 - **AND** both mount a Secret volume at `$HOME/.bloom/credentials.txt` (matching the `HOME` value
   they set)
-- **AND** both carry a `project: talmo-lab` label
+- **AND** both carry a `project: busch-lab` label
 
 #### Scenario: Both bloomctl templates carry the Argo workflow identity
 
