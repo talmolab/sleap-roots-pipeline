@@ -364,7 +364,7 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 - [x] 7.5 **RUN 2026-09-16 — PASSED, and it produced the strongest evidence in this change.**
   Workflow `srp-t75-crash-4qd66`, submitted with `scan-ids=not-an-int` against a **scratch** path
   tree (`a4_scratch_56/{input,predictions,traits}`, created empty), never the `a4_poc` paths.
-  Terminal after **1290 s (21.5 min)**.
+  Terminal after **1908 s (31.8 min)** — `startedAt 2026-09-16T02:44:44Z` → `finishedAt 03:16:32Z`.
 
   | node | type | phase | `outputs.exitCode` |
   |---|---|---|---|
@@ -405,7 +405,7 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   logs.
 
   **Cost measured:** a crash-class run burns the full retry budget at every stage before the gate
-  can reject — 21.5 min wall clock and 4 GPU predictor pod schedules on input that cannot succeed.
+  can reject — **31.8 min** wall clock and 4 GPU predictor pod schedules on input that cannot succeed.
   #60 fixed the DAG-killing consequence, not the retry storm; this is the number.
 
   **Bloom-side assertions NOT done** (see 7.4): a hand `argo submit` creates no
@@ -436,8 +436,15 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
   | run | paths | phase | gate params | duration |
   |---|---|---|---|---|
-  | `srp-t76-zero-scratch-vdkr5` | fresh scratch | **`Failed`** | `{'0','1','1'}` | 1290 s |
+  | `srp-t76-zero-scratch-vdkr5` | fresh scratch | **`Failed`** | `{'0','1','1'}` | 1269 s |
   | `srp-t76-zero-shared-hrrkz` | real `a4_poc` | **`Succeeded`** 5/5 | `{'0','0','0'}` | 199 s |
+
+  > ⚠️ **Durations corrected before merge.** Earlier drafts of this record read 7.5 as "1290 s
+  > (21.5 min)" and 7.6-scratch as "1290 s". Both came from a background poller's
+  > `TERMINAL after NNNNs` line, which reports the **poller's own** elapsed time (iterations x
+  > sleep), not the Workflow's. For 7.5 the poller was started ~10 min after submission, so it
+  > under-reported by that much. Always take durations from `status.startedAt` /
+  > `status.finishedAt` on the Workflow object. Corrected values above are from those fields.
 
   **Fresh directory → `Failed`.** `images-downloader` **Succeeded, exit 0** (zero *requested*
   scans → "nothing to stage"), then `predictor` exit 1 and `trait-extractor` exit 1 (zero
