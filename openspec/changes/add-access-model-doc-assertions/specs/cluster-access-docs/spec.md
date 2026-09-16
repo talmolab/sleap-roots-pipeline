@@ -66,9 +66,10 @@ and SHALL point at the drift-checking script instead.
 ### Requirement: Documentation assertions run with the repository's other checks
 
 The documentation assertions SHALL be executable from the repository root with no cluster access,
-no VPN and no credentials, SHALL exit non-zero when any assertion fails, and SHALL be invoked by
-the same entry point that runs the manifest assertions, so that a documentation regression is
-caught by the same command as a manifest regression.
+no VPN and no credentials, SHALL exit non-zero when any assertion fails, and SHALL be invoked by a
+shared entry point that also runs the manifest assertions, so that a documentation regression is
+caught by the same command as a manifest regression. That entry point SHALL NOT require `argo` to
+be installed, since neither assertion suite needs it.
 
 #### Scenario: Assertions run offline
 
@@ -79,6 +80,7 @@ caught by the same command as a manifest regression.
 
 #### Scenario: The shared entry point runs both suites
 
-- **WHEN** `scripts/lint_manifests.sh` is run
+- **WHEN** `scripts/check_all.sh` is run
 - **THEN** it runs the documentation assertions as well as the manifest assertions
 - **AND** a failure in either causes a non-zero exit
+- **AND** it succeeds on a machine with no `argo` binary installed

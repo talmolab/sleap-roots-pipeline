@@ -10,9 +10,10 @@ documentation it checks is corrected. `scripts/check_docs.py` is the harness, mo
   anchored on the repo root, a `check(label, condition)` accumulator, a summary line, `sys.exit(1)`
   on any failure. No cluster calls, no network, no credentials.
   - Validate: `python scripts/check_docs.py` runs and reports `0 assertions` without error.
-- [ ] 1.2 Wire it into `scripts/lint_manifests.sh` so one command runs both suites, and a failure
-  in either is fatal.
-  - Validate: `sh scripts/lint_manifests.sh` invokes both; `echo $?` is `0`.
+- [ ] 1.2 Add `scripts/check_all.sh` running both Python suites. It must NOT be wired into
+  `scripts/lint_manifests.sh`, which exits 127 without `argo` on PATH — neither assertion suite
+  needs `argo`, and gating offline checks on it would make them unrunnable on most machines.
+  - Validate: `bash scripts/check_all.sh` runs both; `echo $?` is `0`; works with `argo` absent.
 
 ## 2. Retracted claims cannot reappear (Requirement 1, Scenario 1)
 
