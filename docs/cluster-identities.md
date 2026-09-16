@@ -2,10 +2,30 @@
 
 Three different identities are involved in running this pipeline on the Salk cluster, and picking
 the wrong one produces failures that don't look like permission problems. This page says what each
-one is, what it can actually do, and how to get access.
+one is, what it can actually do, and how to get access. It also covers the two separate sign-ins
+sitting behind them — Kubernetes RBAC and RunAI SSO — which are not interchangeable.
 
 Namespace throughout: **`runai-busch-lab`** (RunAI project `busch-lab`). `runai-talmo-lab` is still
 live on the cluster but has not been this pipeline's target since 2026-08-13.
+
+## Two auth planes
+
+Kubernetes RBAC and RunAI's own identity are separate. A tool may need one or both:
+
+| Tool | Shared `argo-user` kubeconfig | Per-person RunAI SSO |
+|---|---|---|
+| `argo` | required | no |
+| `kubectl` | required | no |
+| `runai` | required | **also required** |
+| RunAI console | n/a | required |
+
+The kubeconfig is shared across the project. RunAI SSO is per person, and it is not automatic: a
+new person must be added to the `busch-lab` RunAI project by the cluster admin or a project owner
+before they can sign in.
+
+The failure this prevents: with no SSO session, `runai` commands fail while `argo` keeps working
+against the same namespace from the same shell. That does not look like an auth problem. Sign in
+with `runai login remote-browser`, then confirm with `runai whoami`.
 
 ## The three identities
 
@@ -16,8 +36,9 @@ live on the cluster but has not been this pipeline's target since 2026-08-13.
 | **`argo-user`** (namespace-scoped, shared across the project) | Operators, by hand | `get`/`list`/`watch pods`, `get pods/log`, `create pods/exec`; `create`/`update workflowtemplates`; `create`/`delete workflows` | `get serviceaccounts`, `get secrets`, `create workflowtaskresults` | `kubeconfig-runai-busch-lab-argo-user.yaml` |
 
 Both the `bloom-pipeline` and `argo-user` rows were verified live on **2026-09-15** with
-`kubectl auth can-i` run under each identity's own kubeconfig — not inferred from a manifest. Rerun
-the checks before relying on them; RBAC is cluster-admin-mutable:
+`kubectl auth can-i` run under each identity's own kubeconfig — every cell, not a spot-check, and
+not inferred from a manifest. Rerun the checks before relying on them; RBAC is
+cluster-admin-mutable:
 
 ```bash
 export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
@@ -85,6 +106,11 @@ production. Reuse `services/workflows/k8s_client.py` — `build_workflow_body`, 
 it.** It has `get`/`list` on `workflowtemplates` only. Registration needs `argo-user`, which has
 `create` and `update`. This is the real prerequisite, not the credential.
 
+As of **2026-09-15** all four `sleap-roots-*` templates are registered in `runai-busch-lab`, and the
+registered `sleap-roots-predictor-template` matches this repo's file exactly — same image pin, same
+`secretKeyRef`, same `priorityClassName`, same `gpu-memory`. No drift. Re-check with
+`argo template get <name> -n runai-busch-lab -o yaml` before assuming the cluster matches `main`.
+
 **You can read pod logs.** Both `bloom-pipeline` and `argo-user` have `get pods/log`. Note that
 Bloom's own status poller only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), not the
 reason for a failure — so for diagnosis use the CLI against the namespace rather than Bloom's API.
@@ -96,11 +122,18 @@ can. So reading logs works from either identity, while `kubectl exec` into a run
 **Set `spec.serviceAccountName: bloom-workflow`** on any Argo DAG you submit — see
 [Submit vs. report back](#submit-vs-report-back).
 
-**There is no per-person RunAI console access.** Work is driven from the `argo` / `runai` CLI
-against a kubeconfig. If you need a new identity, `bloom-pipeline-serviceaccount.yaml` is the
-precedent to copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster
-admin applies it. Note from experience that the applied result may differ from what the manifest
-requests, so verify with `auth can-i` once you have it.
+**Secrets are created in the RunAI console, not with `kubectl`.** No kubeconfig identity here can
+create one — `bloom-pipeline` has no `secrets` access at all, and `argo-user` returns **no** for
+`get`, `list` and `create` alike (verified 2026-09-15). Use Credentials → Generic secret in the
+console, Project-scoped to `busch-lab`. RunAI prefixes the resulting Kubernetes Secret name with
+`genericsecret-`, which is why the manifests reference `genericsecret-wandb-api-key` rather than the
+asset name you typed. This needs your own RunAI SSO access — see
+[Two auth planes](#two-auth-planes).
+
+**If you need a new Kubernetes identity**, `bloom-pipeline-serviceaccount.yaml` is the precedent to
+copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster admin applies
+it. Note from experience that the applied result may differ from what the manifest requests, so
+verify with `auth can-i` once you have it.
 
 **Finding the cluster API endpoint:** read it from your own kubeconfig rather than copying it from
 anywhere — it travels with the credential.
@@ -115,8 +148,11 @@ Nothing here is reachable off the Salk VPN.
 
 **`runai-busch-lab` is shared by Bloom staging *and* production**, distinguished only by an
 environment label stamped on each submitted Workflow, and a production dispatch deployment is live
-in it. An `argo template update` therefore affects both environments' future dispatches, not just
-your next run. Don't update the `sleap-roots-*` templates unless you mean to.
+in it — verified **2026-09-15**, `bloom_v2_prod-cyl-pipeline-worker-1` and
+`bloom_v2_prod-cyl-status-poller-1` both `Up 6 days` on `bloom-dev.salk.edu`, alongside the staging
+pair. ("Live" means the dispatcher process is running, not that anything is driving it — no
+frontend targets prod yet.) An `argo template update` therefore affects both environments' future
+dispatches, not just your next run. Don't update the `sleap-roots-*` templates unless you mean to.
 
 **You share the submitter identity.** Anything Bloom dispatches arrives as `bloom-pipeline`, so
 labels are the only way to tell workloads apart. `build_workflow_body` already stamps
