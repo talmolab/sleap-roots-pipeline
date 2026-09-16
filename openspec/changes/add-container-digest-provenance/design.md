@@ -65,16 +65,33 @@ that too. The residual risk a digest actually closes is recorded in this repo al
 > same commit would silently overwrite it in GHCR unless immutable tags are enabled on that
 > package; unverified from this repo
 
-That is the whole argument. A tag names a commit; only a digest names bytes. Under a tag pin, a
-rebuild of the same commit can change what runs while every reference in the repo still reads
-identically — including the baked `SRP_PREDICT_CODE_SHA` / `SRT_TRAITS_CODE_SHA`, which would be
-unchanged precisely because the commit is unchanged, while the image is not.
+A tag names a commit; only a digest names bytes. Under a tag pin, a rebuild of the same commit can
+change what runs while every reference still reads identically — including the baked
+`SRP_PREDICT_CODE_SHA` / `SRT_TRAITS_CODE_SHA`, unchanged precisely because the commit is unchanged.
+
+Note what that does and does not mean for the idempotency key, since it is easy to overstate: the
+key would be **identical** either way, because the code SHA it hashes is identical. Pinning by digest
+does not change key identity. What it protects is the key's *truthfulness* — without it, skip-if-done
+can match a stored result against a key whose code-SHA input no longer describes the bytes that
+produced it, and accept stale work as done. Provenance has the same shape: the digest is what makes
+the recorded identity refer to bytes rather than to a name someone can re-point.
 
 **Trade-off accepted:** changing `image:` has a larger blast radius than adding env vars alone,
-since it touches how the pod obtains its bytes, and `runai-busch-lab` hosts live production. The
-failure mode is the benign kind — a pull failure is immediate, total and loud
-(`ImagePullBackOff`), cannot half-apply, cannot corrupt data, and reverts in one line. The task plan
-retires even that risk before the cluster is touched, by pulling both references locally first.
+since it touches how the pod obtains its bytes, and `runai-busch-lab` hosts live production.
+
+**A pull failure is NOT loud, and an earlier draft of this document wrongly said it was.** This
+repo's own runbook (`.claude/commands/ci-debug.md`, a file this change also edits) records the real
+behaviour: a pod that cannot pull its image stays `Pending` **forever** — not `Failed`, not `Error`
+— so neither `retryStrategy` nor `continueOn` applies, and because `exit-gate` is the DAG's only
+leaf, an otherwise-complete batch sits `Running` indefinitely and Bloom's status poller never sees a
+terminal phase. Recovery is also not "one line": reverting the repo changes nothing on the cluster,
+so it needs an `argo template update`, a cluster write.
+
+What makes the risk acceptable is therefore not that a failure would be obvious, but that a failure
+is *near-impossible here*: the two digests are byte-identical to what the cluster already runs
+(proven from the kubelet's own `imageID` — see tasks §6), so the apply cannot change which bytes
+execute, and both references are pulled locally before the cluster is touched. The mitigation is
+prevention plus the §6.2 precondition, not detection after the fact.
 
 ## Decision: guard against the vacuous pass
 

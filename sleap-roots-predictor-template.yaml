@@ -118,8 +118,13 @@ spec:
             mountPath: /workspace/output
         # securityContext removed (#25): privileged:true/runAsUser:0 confirmed unnecessary via a
         # live test run — GPU is visible via device-plugin without privileged, and NFS writes
-        # succeeded as the default non-root user. Cluster admission policy also now rejects
-        # `privileged` outright. See design.md's Risks section for the one caveat (that test
+        # succeeded as the default non-root user. NOTE (corrected #70): this comment previously
+        # claimed cluster admission "rejects `privileged` outright". That is overbroad — the
+        # source claim (2026-08-04-gpu-fraction-sizing-design.md) scopes it to
+        # `runai workspace submit`, the RunAI CLI path, NOT Argo-created pods. Falsified live:
+        # the trait-extractor template still sets `privileged: true`/`runAsUser: 0` and its pods
+        # run and Succeed in this namespace. Dropping it here was justified by the test run
+        # above, not by admission. See design.md's Risks section for the one caveat (that test
         # reused an already-writable path, not a fresh one — task 3.4 covers the fresh-path case).
         resources:
           # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).

@@ -24,13 +24,18 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   `org.opencontainers.image.revision` starting with `689cffb`. This digest is **not recorded
   anywhere in this repo** and must be looked up. Note predict tags the full 40-char sha while
   `bloomctl` tags 7 — do not pattern-match one pin from another.
-  ⚠️ **Do not reuse `sha256:e39b4746…`**: that is `bloomctl`'s digest, and a comment on #70
-  misattributes it to the trait-extractor.
+  ⚠️ **Do not reuse `sha256:e39b4746…`**: that is `bloomctl`'s digest. #70's second comment
+  labels it `bloomctl` correctly, but lists it alongside predict's as "the digests already written
+  down" for a change that needs predict + **traits** — implying no lookup is required when the
+  traits digest was recorded nowhere. Taking that list at face value is how the wrong value gets
+  pasted in.
 
 - [x] 1.3 **Pull both literal references locally, before any manifest edit or cluster write** —
   `docker pull ghcr.io/talmolab/sleap-roots-predict:sha-e025e309…@sha256:<d1>` and the
-  trait-extractor equivalent. This is the step that retires the `ImagePullBackOff` risk without
-  exposing production to it.
+  trait-extractor equivalent. This substantially de-risks `ImagePullBackOff` without exposing
+  production to it — but note it exercises **moby/Docker's** reference resolver, while the cluster
+  runs **containerd via CRI**. Both normalise `name:tag@digest` through `distribution/reference`, so
+  the residual risk is small, but it is §7.1 that actually retires it.
   **Validate:** both pulls succeed. If Docker is unavailable, substitute an equivalent resolution of
   the **combined** `tag@digest` string (not the digest alone — resolving by digest does not prove
   the combined form parses).
@@ -66,7 +71,13 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   `bloomctl` digest in the repo. Without these, a cross-wired reference
   (`sleap-roots-predict:…@sha256:<the traits digest>`) passes every consistency check — and pasting
   bloomctl's digest onto a producer is the exact error already made in #70's comment thread.
-  **Validate:** swapping the two producers' digests makes the check fail.
+  **Validate:** swapping *one* producer's digest for the other's makes the check fail (the two are
+  then no longer distinct). ⚠️ A **full** swap — both `image:` and `env:` exchanged on *both*
+  templates — does **not** fail this checker, and must not be claimed as caught: repo paths are
+  still right, the digests are still distinct, and the checker never resolves a digest against its
+  repository. Verified: it exits 0. That mutation is closed by the registry instead — a cross-repo
+  digest 404s, confirmed for both directions — i.e. by tasks 1.3/3.5 and §7.1, exactly as
+  `design.md`'s limitations section already states.
 
 - [x] 2.3 **Mutation matrix** — run after task 3 is green, against a scratch copy of the two
   templates, reverting after each. This is what proves the new assertions *can* fail; fail-first
@@ -80,10 +91,11 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   6. predictor env value set to `""`;
   7. `SRP_PREDICT_CONTAINER_DIGEST` **added** to the trait-extractor (the only way that assertion is
      ever observed red);
-  8. the two producers' digests swapped (covers 2.2).
+  8. one producer's digest replaced by the other's, on both its `image:` and `env:` (covers 2.2).
 
-  **Validate:** all eight mutations fail the checker; the tree is byte-identical to `HEAD`
-  afterwards (`git status --porcelain` empty).
+  **Validate:** all eight mutations fail the checker; the tree is byte-identical afterwards.
+  ⚠️ Do **not** add "both digests fully swapped" to this list as a caught case — it passes (exit
+  0, verified). It is caught by the registry, not here; see 2.2.
 
 - [x] 2.4 **Validate:** `grep -cE 'sha256:[0-9a-f]{64}' scripts/check_manifests.py` returns 0 — the
   "no literal digest in the checker" claim, made runnable.
@@ -96,9 +108,10 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   "inert today" comment untouched — that comment is accurate and belongs to sleap-roots#268.
 
 - [x] 3.2 `sleap-roots-trait-extractor-template.yaml`: same two edits with the digest from 1.2.
-  **Validate:** `python scripts/check_manifests.py` prints `=== ALL 71 ASSERTIONS PASS ===`
-  (58 + 9 from 2.1 + 4 from 2.2). State the literal total, so a silently-skipped assertion cannot
-  satisfy the check.
+  **Validate:** `python scripts/check_manifests.py` prints `=== ALL 73 ASSERTIONS PASS ===`
+  (58 + 15: per producer, digest-pinned / tag-kept / env-once / well-formed / equal / repo-path,
+  plus distinctness, the negative `SRP_` check, and the hostPath-path pin). State the literal
+  total, so a silently-skipped assertion cannot satisfy the check.
 
 - [x] 3.3 Comment both the new `image:` digest and the new env entry. Both templates carry dense
   pin-history comment blocks; a digest appearing with no note breaks that convention. The `image:`
@@ -131,7 +144,7 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   key inputs, and a `sha-<gitsha>` tag can be silently overwritten by a rebuild of the same commit —
   so a digest, not a tag, is what keeps a retry's key identical.
   **Validate:** the corrected text names the code SHA as the key input and the digest as
-  provenance-only, and cites lines 30-33 and 155-156 of the same file, which already state the
+  provenance-only, and cites §2's key-input list (lines 30-33) and line 157's provenance-only statement, which already state the
   correct position.
 
 - [x] 4.2 Apply the **terminology-only** correction at the other four sites — they list the
@@ -178,7 +191,7 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
 
 ## 5. Pre-merge verification
 
-- [x] 5.1 `python scripts/check_manifests.py` → `=== ALL 71 ASSERTIONS PASS ===`.
+- [x] 5.1 `python scripts/check_manifests.py` → `=== ALL 73 ASSERTIONS PASS ===`.
 
 - [x] 5.2 `openspec validate add-container-digest-provenance --strict` passes.
 
@@ -187,14 +200,30 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   **Validate:** the signature matches what `proposal.md` states (note it is keyword-only).
 
 - [x] 5.4 Open the PR with `/pr-description`, referencing this change-id and `Closes #70`.
-  Per `.claude/commands/pr-description.md`'s three-state convention, anything not yet run is `[~]`,
-  never `[x]`.
+  Per `.claude/commands/pr-description.md`'s three-state convention — `[x]` verified green, `[!]`
+  pre-existing issue on `main`, `[ ]` not yet verified — anything not yet run stays `[ ]`, never
+  `[x]`.
 
 ## 6. Apply to the cluster — do not leave this parked
 
 A merged-but-unapplied template change is the #51/#53 pattern where repo and cluster diverged for
-weeks. ⚠️ `runai-busch-lab` is shared by Bloom staging **and** production; every
-`argo template update` is production-visible.
+weeks. ⚠️ `runai-busch-lab` is shared by Bloom staging **and** production, and the vendored Workflow
+resolves every stage by unversioned `templateRef` name — so `argo template update` changes what
+**every subsequent dispatch runs, staging and production alike, instantly**, with no Bloom-side
+deploy.
+
+**Why this particular apply is nonetheless safe — the argument to rely on.** The digests being
+pinned are byte-identical to what production already runs. Verified from the cluster's own kubelet
+rather than from this repo's homework: completed predictor and trait-extractor pods across
+`gpu-node7`, `gpu-node9` and `gpu-node12` report
+
+    imageID  ghcr.io/talmolab/sleap-roots-predict@sha256:4d4064c6…
+    imageID  ghcr.io/talmolab/sleap-roots-trait-extractor@sha256:ab5a1f43…
+
+which are exactly the two digests this change pins. containerd's content store is digest-keyed and
+both references resolve to the same manifest, so the apply is a no-op at the storage layer: it
+cannot change which bytes execute. Do **not** justify the apply by §7 instead — §7 runs on a scratch
+tree *after* §6, so it does not cover the production window between them.
 
 - [ ] 6.1 **Apply from a checkout refreshed to the merged SHA.** The shared `main` checkout on this
   machine sits at `3cf4b4f`, which still pins the **pre-#56** predictor image
@@ -203,22 +232,34 @@ weeks. ⚠️ `runai-busch-lab` is shared by Bloom staging **and** production; e
   `git status --porcelain` is empty, and `kubectl config current-context` is the
   `runai-busch-lab` argo-user context.
 
-- [ ] 6.2 **Capture the rollback pre-image before any write** — `check_cluster_drift.sh`'s own
+- [ ] 6.2 **Confirm no Workflow is `Running` first.** Argo resolves a `templateRef` at *node
+  creation* time, so a Workflow already past `images-downloader` but not yet at `predictor` would
+  pick up the new template mid-run. Bytes-identical (see §6.0) makes that harmless to *execution*,
+  but it yields a half-provenanced run — predict envelope empty, traits envelope populated — which
+  would be misread as a threading bug when §7.3 reads it back.
+  **Validate:** `argo list -n runai-busch-lab` shows no `Running` workflow, and there are no
+  `CronWorkflows` that could start one mid-apply.
+
+- [ ] 6.3 **Capture the rollback pre-image before any write** — `check_cluster_drift.sh`'s own
   header says to run it before as well as after, precisely because it doubles as that pre-image.
   Dump both live templates to the scratchpad (**not** the repo root, which does not ignore `*.yaml`):
   `argo template get <name> -n runai-busch-lab -o yaml > <scratch>/pre-<name>.yaml`.
+  ⚠️ Strip `metadata.{managedFields,resourceVersion,uid,generation,creationTimestamp}` before
+  treating the dump as replayable — feeding a stale `resourceVersion` back through
+  `argo template update` is a known footgun. Prefer rollback-from-SHA (§6.6) as the primary path
+  and keep the dump as a diagnostic reference.
   **Validate:** `bash scripts/check_cluster_drift.sh` reports drift on **exactly** the two producer
   templates and IN SYNC on the other three. Anything else means something drifted independently and
   this apply would erase it — stop and investigate.
 
-- [ ] 6.3 `argo template update` both edited templates in `runai-busch-lab`.
+- [ ] 6.4 `argo template update` both edited templates in `runai-busch-lab`.
   **Validate:** each command reports the template updated.
 
-- [ ] 6.4 `bash scripts/check_cluster_drift.sh`.
+- [ ] 6.5 `bash scripts/check_cluster_drift.sh`.
   **Validate:** reports in-sync for all five templates. Hardened in #73 — it now fails loudly rather
   than printing `IN SYNC` when its own normaliser breaks.
 
-- [ ] 6.5 Record the rollback procedure in the PR: `argo template update` from the
+- [ ] 6.6 Record the rollback procedure in the PR: `argo template update` from the
   `<scratch>/pre-*.yaml` dumps, or from the pre-merge SHA (`561d057` unless `main` moves first —
   record it at apply time, never assume it later; #56 had to correct exactly this claim after the
   fact). Trigger: any `ImagePullBackOff` or unexplained `Pending` in §7. Note the repo revert alone
@@ -248,9 +289,15 @@ nothing here.
   get pods/log` misleadingly answers `yes` because it parses as a resource name — `--subresource=log`
   correctly answers `no`, and a real fetch is Forbidden). Node status is the evidence.
 
-- [ ] 7.2 **While the pods still exist** (Argo podGC/TTL will remove them), capture the kubelet's
-  own view: `kubectl get pod <pod> -n runai-busch-lab -o jsonpath='{.status.containerStatuses[*].imageID}'`
-  for both producers.
+- [ ] 7.2 **While the pods still exist** (Argo podGC/TTL will remove them), capture **both** the
+  reference as admitted and the kubelet's own resolution, for each producer:
+  `kubectl get pod <pod> -n runai-busch-lab -o jsonpath='{.spec.containers[*].image}{"
+"}{.status.containerStatuses[*].imageID}'`.
+  Capturing `spec…image` as well as `imageID` makes this a direct test of whether anything rewrote
+  the reference on admission — a RunAI mutating webhook is demonstrably active on pods in this
+  namespace (it injects `pod-group-name`, `received-resource-type` and other fields), and the
+  webhook set cannot be enumerated with this repo's credentials (cluster-scoped reads are
+  Forbidden), so "it does not touch `image:`" is observed for the tag-only form, not proven.
   **Validate:** each `imageID` digest equals the digest pinned in the corresponding deployed
   template. This is the **only** independent witness in the whole plan that the recorded digest is
   the image that actually ran; without it, 7.3 merely round-trips a human-typed string.
@@ -265,7 +312,7 @@ nothing here.
 
 - [ ] 7.4 **If §7 cannot run** (no cluster access, no suitable new scan), record it as
   `BLOCKED — <reason>, unblocked by <who/what>` rather than `[x]`, and do **not** run §6 either: the
-  apply is justified only by the verification that follows it. The PR keeps `[~]` on both sections.
+  apply is justified only by the verification that follows it. The PR keeps `[ ]` on both sections.
 
 ## 8. Record what was observed
 
@@ -275,9 +322,13 @@ nothing here.
   convention the log records what was **observed, after the fact**, not what was expected at merge.
   This is a post-merge repo edit, so it is a second, small PR (the #60 → #75 shape).
 
-- [ ] 8.2 Comment on #70 correcting its second comment, which cites `sha256:e39b4746…` as the
-  trait-extractor's digest when that is `bloomctl`'s.
-  **Validate:** the digest recorded in the comment is byte-identical to the one verified in 1.2.
+- [ ] 8.2 Comment on #70 recording the verified trait-extractor digest, so the next reader does
+  not have to re-derive it. Note precisely what the second comment gets wrong: it does **not**
+  misattribute `sha256:e39b4746…` (it labels that `bloomctl` correctly) — it presents predict's and
+  bloomctl's digests as "already written down" for a change needing predict + traits, when the
+  traits digest was recorded nowhere in this repo.
+  **Validate:** the digest recorded in the comment is byte-identical to the one verified in 1.2, and
+  the comment quotes #70 accurately rather than paraphrasing it.
 
 - [ ] 8.3 Archive the change (`/cleanup-merged`) **after** §6 and §7, never before — the spec delta
   describes deployed reality, so archiving earlier records an aspiration. Verify every item above is

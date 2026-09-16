@@ -58,9 +58,11 @@ took reading the live NFS output to notice.
 `sha-<sha>`" to "digest required", which makes both currently-shipping manifests non-conformant
 until this change's own edits land, and introduces a new runtime failure mode
 (`ImagePullBackOff` on a malformed reference) in a namespace shared with Bloom production. The
-failure is immediate, total, cannot half-apply, cannot corrupt data, and reverts in one line, and
-the task plan proves the reference pulls locally *before* the cluster is touched. Recorded here so
-the judgement is visible rather than merely absent.
+failure cannot half-apply and cannot corrupt data — but note it would **not** be loud: a pod that
+cannot pull stays `Pending` forever rather than failing, hanging the batch (see `design.md`). What
+makes it acceptable is that the pinned digests are byte-identical to what the cluster already runs,
+and that both references are pulled locally *before* the cluster is touched. Recorded here so the
+judgement is visible rather than merely absent.
 
 **Explicitly out of scope: `ARGO_WORKFLOW_UID` / `ARGO_NODE_ID`.** An earlier comment on #70
 proposed batching them here so one `argo template update` would cover the whole template side.

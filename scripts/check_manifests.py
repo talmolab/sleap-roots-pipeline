@@ -46,15 +46,20 @@ DIGEST_ENV_BY_STAGE = {
     "predictor": "SRP_PREDICT_CONTAINER_DIGEST",
     "trait-extractor": "SRT_TRAITS_CONTAINER_DIGEST",
 }
-# Expected repository path per provenance-emitting stage. Without this, a reference carrying the
-# *other* producer's digest -- or bloomctl's, the exact mistake made in #70's own comment thread --
-# satisfies every consistency check below.
+# Expected repository path per provenance-emitting stage. Without this, a producer pointed at the
+# wrong repository entirely -- while its own image/env digests still agree -- satisfies every other
+# consistency check below.
 PRODUCER_REPO_BY_STAGE = {
     "predictor": "ghcr.io/talmolab/sleap-roots-predict",
     "trait-extractor": "ghcr.io/talmolab/sleap-roots-trait-extractor",
 }
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_DIGEST_RE = re.compile(r"@(sha256:[0-9a-f]{64})$")
+# The digest is what resolves, but the spec also requires the commit tag to survive alongside it:
+# it is what makes the dense pin-history comments in both templates readable. Without this, a
+# digest-pinned reference could drop the tag -- or, worse, carry `:latest@sha256:...`, which the
+# `endswith(":latest")` test below cannot see once a digest is appended.
+COMMIT_TAG_RE = re.compile(r":sha-[0-9a-f]{7,40}@sha256:[0-9a-f]{64}$")
 BATCH_STAGES = {
     "images-downloader": "sleap-roots-images-downloader-template.yaml",
     "predictor": "sleap-roots-predictor-template.yaml",
@@ -204,6 +209,21 @@ def main() -> int:
         "hostPath volumes are type Directory",
         sorted({v["hostPath"]["type"] for v in wf["spec"]["volumes"] if "hostPath" in v}),
         ["Directory"],
+    )
+    # A scratch-tree test run requires hand-editing these paths (they are not parameterised), while
+    # the same working copy is used to `argo submit` -- exactly the state in which a stray
+    # `git commit -a` lands. Nothing else would catch it: the drift checker only reads
+    # `sleap-roots-*-template.yaml`, `argo lint` is path-agnostic, and salk-bloom's vendored copy
+    # takes `spec.volumes` verbatim, so a committed scratch path would silently redirect
+    # production dispatch. Pin the paths.
+    check(
+        "hostPath volumes point at the a4_poc tree, not a scratch tree",
+        sorted(
+            v["name"]
+            for v in wf["spec"]["volumes"]
+            if "hostPath" in v and "/pipeline_orchestration_tests/a4_poc/" not in v["hostPath"]["path"]
+        ),
+        [],
     )
 
     # --- Requirement: A partial-success exit does not terminate the batch ------------
@@ -433,9 +453,11 @@ def main() -> int:
     images: dict[str, str] = {}
     for fname in [GATE, *BATCH_STAGES.values()]:
         images[fname] = load(fname)["spec"]["templates"][0]["container"]["image"]
+    # Compare the pre-`@` part: once a reference carries a digest, `repo:latest@sha256:...` no
+    # longer *ends* with ":latest" and would sail past a naive endswith test.
     check(
         "no manifest pins :latest",
-        [f for f, i in images.items() if i.endswith(":latest")],
+        [f for f, i in images.items() if i.split("@", 1)[0].endswith(":latest")],
         [],
     )
     # Every bloomctl reference must agree -- the gate reuses the image, so a half-done bump
@@ -460,6 +482,7 @@ def main() -> int:
         m = IMAGE_DIGEST_RE.search(image)
         # A bare `@sha256:` substring test would admit `@sha256:zzz`; require the full 64 hex.
         check(f"{stage} image is digest-pinned", bool(m), True)
+        check(f"{stage} image keeps its sha-<sha> tag beside the digest", bool(COMMIT_TAG_RE.search(image)), True)
         image_digest = m.group(1) if m else f"<{stage} image: carries no @sha256 digest>"
 
         entry = [e for e in env if e.get("name") == env_name]
@@ -477,20 +500,17 @@ def main() -> int:
             PRODUCER_REPO_BY_STAGE[stage],
         )
 
-    # Cross-wiring guard: two real, distinct digests, neither of them a bloomctl pin.
-    check(
-        "the two producer digests are real and distinct",
-        len(set(producer_digests.values())),
-        2,
-    )
-    bloomctl_digests = {
-        m.group(1) for i in bloomctl if (m := IMAGE_DIGEST_RE.search(i)) is not None
-    }
-    check(
-        "no producer digest collides with a bloomctl pin",
-        sorted(s for s, d in producer_digests.items() if d in bloomctl_digests),
-        [],
-    )
+    # Cross-wiring guard. "distinct", not "real": nothing here establishes that a digest exists in
+    # the registry -- that is the deliberate offline trade-off design.md records, closed by the
+    # round-trip at pin time. The label says only what the check delivers.
+    #
+    # There is deliberately NO "digest collides with a bloomctl pin" assertion. All three bloomctl
+    # references are tag-pinned, so the set of bloomctl digests is empty and such a check could
+    # never fail -- a guard that greens unconditionally while naming a real mistake is worse than
+    # no guard, which is the whole argument of this change. The working cross-wiring guards are the
+    # repository-path assertion above (catches a producer pointed at the wrong repo) and the
+    # equality assertion (catches a foreign digest pasted into either side alone).
+    check("the two producer digests are distinct", len(set(producer_digests.values())), 2)
     # predict's digest reaches the traits envelope threaded through predict's own manifest, never
     # from the trait-extractor pod's env -- so setting it here would fabricate, not record.
     te_env = load(BATCH_STAGES["trait-extractor"])["spec"]["templates"][0]["container"].get("env", []) or []
