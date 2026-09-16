@@ -186,7 +186,7 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
   container digest is among its inputs.
   **Validate:** the signature matches what `proposal.md` states (note it is keyword-only).
 
-- [ ] 5.4 Open the PR with `/pr-description`, referencing this change-id and `Closes #70`.
+- [x] 5.4 Open the PR with `/pr-description`, referencing this change-id and `Closes #70`.
   Per `.claude/commands/pr-description.md`'s three-state convention, anything not yet run is `[~]`,
   never `[x]`.
 
