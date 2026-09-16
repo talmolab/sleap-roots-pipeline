@@ -307,10 +307,51 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
      the conclusion; a TTL'd Workflow is not a record.**
 
   **Split it:**
-  - **7.4a** (runnable now, hand-submitted, scratch paths): DAG reaches write-back; both good
-    scans' `.result.json` land with fresh mtimes; the poison scan produces no result; the gate
-    receives `{3,0,0}`; Workflow `Succeeded`. Verifiable entirely from Argo node status + NFS
-    artifacts, which is what this repo can see.
+  - **7.4a — RUN 2026-09-16 (`srp-t74a-poison-gfzp6`). Every artifact criterion PASSES; only the
+    Workflow-phase criterion is blocked, by a newly-found bug (#76), not by anything in #60.**
+
+    | node | phase | exitCode |
+    |---|---|---|
+    | `images-downloader` (3 attempts) | Failed | **3** ← partial success in a real DAG, first time |
+    | `predictor` | Succeeded | 0 |
+    | `trait-extractor` | Succeeded | 0 |
+    | `write-back` (3 attempts) | **Failed** | 1 |
+    | `exit-gate` | **Omitted** | — ("omitted: depends condition not met") |
+    | Workflow | **Failed** | — |
+
+    **What passed is the substance of #56.** `images-downloader` exited **3** and **`continueOn`
+    let the DAG advance past a `Failed` producer** — on 2026-09-01 this identical scenario ended
+    `Failed` at 0/3 with both good scans stranded and never reaching the predictor; here the
+    predictor ran and succeeded. Poison scan `scan_12894751` was isolated (no staged dir, no
+    prediction, no result). Both good scans produced `.result.json` with fresh mtimes.
+    `input/run_manifest.json` scoped correctly to `["scan_12894745","scan_12894746"]` with the
+    poison excluded, stamped with **this** run's `pipeline_run_id` — unlike the zero-scan case,
+    which leaves a stale one.
+    The gate's **backward** path also worked exactly as designed: write-back carries no
+    `continueOn`, so the gate was `Omitted`; `Omitted` is `Fulfilled` but not `Completed`, so it
+    did not overwrite `branchPhase` and the Workflow correctly inherited `Failed`. Forward path
+    (7.5, 7.6) and backward path are now both verified live.
+
+    **Why write-back failed — #76.** predict's `.slp` output is not byte-reproducible: two runs of
+    the same scan with identical inputs give the *same* `idempotency_key` (`86573f05b6b34dbf…`) but
+    *different* `.slp` bytes (`8776CDD8…` vs `E8535461…`, identical file sizes). The blob address
+    embeds the idempotency key, so a recompute writes different bytes to the same address and
+    bloomctl refuses to overwrite. Worse, the strict blob upload happens *before* the RPC's
+    `ON CONFLICT (idempotency_key) DO NOTHING` gate, which would have made the re-delivery a
+    harmless no-op — `Ingested 0/2` confirms nothing reached the RPC.
+    Diagnosed by reproducing outside Argo with bloomctl built at the deployed commit `06148896`.
+    That was necessary because **`pods/log` is not granted** to the `argo-user` ServiceAccount
+    (the Role grants `pods`, but Kubernetes treats subresources as separate resource strings), so
+    the cause is invisible from the cluster side. Note `kubectl auth can-i get pods/log` answers
+    "yes" misleadingly — it parses as a pod *named* `log`; use `--subresource=log`, which says no.
+
+    **Ordering caveat, owned:** running 7.4a against a *fresh* scratch tree guaranteed a recompute
+    of scans that 7.6's shared half had ingested under the same key an hour earlier. Had 7.4a run
+    first it would have been the first writer and would likely have passed. The ordering surfaced
+    the bug; it did not cause it.
+
+    **To close 7.4a's Workflow-phase criterion:** either #76 lands, or re-run against scans whose
+    idempotency keys have never been ingested.
   - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count`, the per-scan `failed` row,
     and the `cyl_trait_sources` entries.
 
