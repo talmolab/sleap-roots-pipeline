@@ -14,6 +14,11 @@
 #         default namespace: runai-busch-lab
 # Exit:   0 = in sync, 1 = real drift, 2 = could not reach the cluster.
 #
+# Ignored by design: metadata stamped by whatever REGISTERED the object rather than by this
+# repo -- `argo template create` writes a `workflows.argoproj.io/creator*` LABEL, `kubectl
+# apply` writes `kubectl.kubernetes.io/last-applied-configuration`. Nothing else in those two
+# namespaces is ignored; see the INJECTED_* note below for why that line is drawn narrowly.
+#
 # Requires the busch-lab kubeconfig (WSL): ~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
 # See .claude/skills/runai/SKILL.md §1 — argo/kubectl live in WSL, not Windows.
 
@@ -38,6 +43,41 @@ normalise() {
   python3 - "$1" <<'PY'
 import sys, yaml
 
+# Keys injected into metadata.labels / metadata.annotations by whatever registered the object,
+# not by this repo. `argo template create` stamps `workflows.argoproj.io/creator` (a LABEL, on
+# create only -- `update` does not add it), and `kubectl apply` stamps
+# `kubectl.kubernetes.io/last-applied-configuration`. Either one makes an otherwise-identical
+# template report DRIFT forever, which is the cry-wolf behaviour this script exists to avoid.
+# Observed live 2026-09-16: registering the exit-gate template with `create` produced exactly
+# this false positive while the four `update`d templates stayed clean.
+#
+# These are deliberately NARROW, not a `workflows.argoproj.io/` + `kubectl.kubernetes.io/`
+# prefix sweep. Both of those namespaces also hold keys a user sets ON PURPOSE, which a broad
+# sweep would make undriftable: `workflows.argoproj.io/title` and `/description` are documented
+# user-set annotations (argo-workflows v3.6.7 docs/title-and-description.md, since v3.4.4), and
+# `kubectl.kubernetes.io/default-container` is user-set too (v3.6.7 workflow/common/common.go).
+# The CHECK FAILED guard below refuses to report sync when normalise() fails, on the grounds
+# that a check whose failure mode is "everything is fine" is worse than no check; a broad
+# prefix would reintroduce exactly that failure mode for those keys. The trade is deliberate: if a future
+# Argo injects a key this list misses, the check cries wolf and names the key -- loud, and a
+# one-line fix. A broad prefix instead fails silently, reporting IN SYNC on genuine drift.
+#
+# `creator` stays a prefix so it covers the whole injected family without a blind spot:
+# v3.6.7 defines exactly LabelKeyCreator, LabelKeyCreatorEmail and LabelKeyCreatorPreferredUsername
+# (workflow/common/common.go) -- only `creator` appears under a ServiceAccount token, the other
+# two under SSO -- and nothing user-settable lives under that prefix.
+INJECTED_PREFIXES = ("workflows.argoproj.io/creator",)
+INJECTED_KEYS = ("kubectl.kubernetes.io/last-applied-configuration",)
+
+
+def strip_injected(d):
+    return {
+        k: v
+        for k, v in d.items()
+        if not k.startswith(INJECTED_PREFIXES) and k not in INJECTED_KEYS
+    }
+
+
 def clean(o):
     if isinstance(o, dict):
         out = {}
@@ -45,6 +85,8 @@ def clean(o):
             if k in ("resourceVersion", "uid", "creationTimestamp", "generation",
                      "managedFields", "selfLink", "namespace", "status"):
                 continue
+            if k in ("labels", "annotations") and isinstance(v, dict):
+                v = strip_injected(v)
             v = clean(v)
             # API-server defaulting: empty containers and empty names are not content.
             if v in ({}, [], "", None) and k in ("arguments", "inputs", "outputs", "metadata",
