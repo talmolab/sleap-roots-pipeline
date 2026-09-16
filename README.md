@@ -140,8 +140,12 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed at `gpu-master:8888`.
 
 > `runai-talmo-lab` remains live on the cluster but is no longer this pipeline's target (changed
-> 2026-08-13). `runai_run_pipeline.sh` defaults to `runai-busch-lab`; override with
-> `NAMESPACE=runai-talmo-lab ./runai_run_pipeline.sh` only if you genuinely need it.
+> 2026-08-13). `runai_run_pipeline.sh` hard-codes `runai-busch-lab`, and **there is no environment
+> variable to override it** — setting `NAMESPACE` has no effect. That is deliberate: `argo submit
+> -n <ns>` does not redirect a submission (the manifest's `metadata.namespace` wins), so an
+> override could only have moved the template registrations away from the namespace the Workflow
+> still runs in. Targeting another project means editing `metadata.namespace` in the manifest and
+> registering that project's templates *and* secrets first.
 >
 > ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
 > `argo template create`/`update` here affects both environments' future runs — see
