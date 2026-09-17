@@ -107,7 +107,7 @@ spec:
         # object (#58). Cost: this pin must move in lockstep with
         # sleap-roots-images-downloader-template.yaml and sleap-roots-write-back-template.yaml —
         # bump all three together.
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-0614889
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-28034f6
         # IfNotPresent, not the Always the other bloomctl templates use: those pull every run to
         # catch a silently-overwritten sha- tag, which matters for code that actually runs. This
         # task uses only /bin/sh, and it is the terminal single-point-of-failure — a registry
