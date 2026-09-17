@@ -289,8 +289,24 @@ argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 ```bash
 argo list -n runai-busch-lab
 argo get <workflow-name> -n runai-busch-lab
-argo logs <workflow-name> -n runai-busch-lab --tail 100
+argo logs <workflow-name> -n runai-busch-lab --tail 100 2>&1
 ```
+
+> ⚠️ **Logs need the `bloom-pipeline` kubeconfig, not `argo-user`.** `argo-user` is denied
+> `get pods --subresource=log`, so under the operator kubeconfig every command below returns no log
+> output at all. Worse, **`argo logs` exits `0` when it is denied** — it writes the `Forbidden` to
+> *stderr* only and leaves stdout empty, so `argo logs <wf> | grep ...` looks exactly like a
+> successful run that logged nothing, and `$?` will not tell you otherwise. Always capture `2>&1`.
+> To actually read logs:
+>
+> ```bash
+> export KUBECONFIG=~/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml
+> kubectl logs <pod-name> -n runai-busch-lab
+> ```
+>
+> This is the failure the identity note above warns about — it does not look like a permission
+> error. See [Cluster identities](docs/cluster-identities.md) for the measured capability matrix.
+> Nobody can `kubectl exec`; use `runai workspace exec` against your own SSO session instead.
 
 Check pod logs:
 

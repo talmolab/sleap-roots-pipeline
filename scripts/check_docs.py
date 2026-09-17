@@ -154,6 +154,27 @@ def main() -> int:
         bool(re.search(r"[Nn]obody can (open a shell|exec)", ident)),
         True,
     )
+    # The correction is only useful where the reader actually runs a log command. README's
+    # Troubleshooting block is that place, and it told the reader to run `argo logs` under the
+    # operator kubeconfig with no hint that it cannot work -- the same claim, unfixed, one file
+    # over. `argo logs` exits 0 when denied (verified 2026-09-17 under argo-user: exit 0, the
+    # Forbidden on stderr, stdout empty), so this is the one denial that survives both a
+    # `$?` check and a stdout pipe.
+    check(
+        "README: troubleshooting points at the bloom-pipeline kubeconfig for logs",
+        "kubeconfig-bloom-pipeline-busch-lab.yaml" in readme,
+        True,
+    )
+    check(
+        "README: troubleshooting warns that argo logs exits 0 when denied",
+        bool(re.search(r"`argo logs` exits `0` when it is denied", readme)),
+        True,
+    )
+    check(
+        "README: troubleshooting log command captures stderr",
+        "argo logs <workflow-name> -n runai-busch-lab --tail 100 2>&1" in readme,
+        True,
+    )
     check(
         "cluster-identities: names the identity that can actually read logs",
         "`bloom-pipeline` kubeconfig" in ident,
