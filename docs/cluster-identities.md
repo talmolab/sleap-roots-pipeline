@@ -36,9 +36,9 @@ with `runai login remote-browser`, then confirm with `runai whoami`.
 
 | Identity | Who authenticates as it | Can | Cannot | Credential |
 |---|---|---|---|---|
-| **`bloom-pipeline`** | Bloom's backend, from *outside* the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `workflows`; `get`/`list` on `workflowtemplates`; `get`/`list`/`watch` on `pods`; `get pods/log` | `create`/`update workflowtemplates`; `delete`/`update workflows`; `create pods/exec`; `create workflowtaskresults`; `secrets`, `configmaps`, `nodes`, `serviceaccounts`; anything outside this namespace | `kubeconfig-bloom-pipeline-busch-lab.yaml`, deployed to Bloom as `WORKFLOWS_K8S_TOKEN` / `_CA_CERT` / `_API_URL` |
+| **`bloom-pipeline`** | Bloom's backend, from *outside* the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `workflows`; `get`/`list` on `workflowtemplates`; `get`/`list`/`watch` on `pods`; `get pods --subresource=log` | `create`/`update workflowtemplates`; `delete`/`update workflows`; `create pods`; `create pods --subresource=exec`; `create workflowtaskresults`; `secrets`, `configmaps`, `nodes`, `serviceaccounts`; anything outside this namespace | `kubeconfig-bloom-pipeline-busch-lab.yaml`, deployed to Bloom as `WORKFLOWS_K8S_TOKEN` / `_CA_CERT` / `_API_URL` |
 | **`bloom-workflow`** | Each DAG step's own pod, via `spec.serviceAccountName` | `workflowtaskresults` `create`/`patch` — reported by the cluster admin, not read from the cluster (see [What isn't verified](#what-isnt-verified)) | it is not a submitting identity; nobody holds a kubeconfig for it | none — set once on the Workflow, Argo does the rest |
-| **`argo-user`** (namespace-scoped, shared across the project) | Operators, by hand | `get`/`list`/`watch pods`, `get pods/log`, `create pods/exec`; `create`/`update workflowtemplates`; `create`/`delete workflows` | `get serviceaccounts`, `get secrets`, `create workflowtaskresults` | `kubeconfig-runai-busch-lab-argo-user.yaml` |
+| **`argo-user`** (namespace-scoped, shared across the project) | Operators, by hand | `get`/`list`/`watch pods`; `create`/`update workflowtemplates`; `get`/`list workflowtemplates`; `create`/`delete workflows`; `create pods` | `get pods --subresource=log`; `create pods --subresource=exec`; `get serviceaccounts`, `get`/`list`/`create secrets`, `create workflowtaskresults` | `kubeconfig-runai-busch-lab-argo-user.yaml` |
 
 Both the `bloom-pipeline` and `argo-user` rows were verified live on **2026-09-15** with
 `kubectl auth can-i` run under each identity's own kubeconfig — every cell, not a spot-check, and
@@ -47,8 +47,14 @@ cluster-admin-mutable:
 
 ```bash
 export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
-kubectl auth can-i get pods/log -n runai-busch-lab 2>/dev/null | grep -E '^(yes|no)'
+kubectl auth can-i get pods --subresource=log -n runai-busch-lab 2>/dev/null | grep -E '^(yes|no)'
 ```
+
+> **Use `--subresource=`, never `pods/log`.** In `kubectl auth can-i`, everything after the slash
+> is a resource *name*, not a subresource — `get pods/log` asks "can I get a pod **named** `log`",
+> which merely mirrors bare `pods` access and answers `yes` for any identity that can read pods.
+> This is not theoretical: three claims on this page were "verified" with the slash form and were
+> wrong. `argo-user` answers `yes` to `get pods/log` and **`no`** to `get pods --subresource=log`.
 
 > Filter stderr. `kubectl` prints `Warning: Use tokens from the TokenRequest API...` on stderr,
 > which interleaves with the answer — a bare `| head -1` captures the warning instead of the
@@ -119,13 +125,20 @@ merged `main`, leaving both the cluster and that observation ahead of the branch
 Run `scripts/check_cluster_drift.sh` when you need to know; nothing enforces parity between runs
 ([#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58)).
 
-**You can read pod logs.** Both `bloom-pipeline` and `argo-user` have `get pods/log`. Note that
-Bloom's own status poller only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), not the
-reason for a failure — so for diagnosis use the CLI against the namespace rather than Bloom's API.
+**Pod logs need the `bloom-pipeline` kubeconfig — not `argo-user`.** This is the opposite of what
+you would guess from `argo-user` being the operator identity, and the opposite of what this page
+said until 2026-09-16. Measured under each kubeconfig with `--subresource=log`: `bloom-pipeline`
+**yes**, `argo-user` **no**. So the identity that can submit and delete workflows cannot read a
+single line of their output, while the one Bloom holds can. Note also that Bloom's status poller
+only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), never the reason for a failure —
+so diagnosis means `kubectl logs` under the `bloom-pipeline` kubeconfig, not Bloom's API.
 
-**But only `argo-user` can open a shell.** `bloom-pipeline` cannot `create pods/exec`; `argo-user`
-can. So reading logs works from either identity, while `kubectl exec` into a running step needs the
-`argo-user` kubeconfig.
+**Nobody can exec.** `create pods --subresource=exec` is **no** under both identities, so there is
+no `kubectl exec` route into a running step from any credential in this repo. `argo-user` *can*
+`create pods` outright, which is why the slash form `create pods/exec` misleadingly answers `yes`
+— it is asking about a pod *named* `exec`. For an interactive shell use `runai workspace exec`
+against your own SSO session (see [Two auth planes](#two-auth-planes)), which is a different plane
+entirely and is what the runai skill has always recommended.
 
 **Set `spec.serviceAccountName: bloom-workflow`** on any Argo DAG you submit — see
 [Submit vs. report back](#submit-vs-report-back).

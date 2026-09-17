@@ -76,6 +76,8 @@ Everything else in the manifest held exactly: workflows `create`/`get`/`list`/`w
 `delete`/`update` no; workflowtemplates `get`/`list` yes, `create`/`update` no; secrets,
 configmaps, nodes, serviceaccounts all no.
 
+⚠️ **Corrected 2026-09-16 — the `pods/log` and `pods/exec` cells in both tables above are wrong.** They were measured with `kubectl auth can-i get pods/log`, where everything after the slash is parsed as a resource *name*, not a subresource — so the query asked "can I get a pod **named** `log`" and merely mirrored bare `pods` access. Re-measured with `--subresource=`: `argo-user` **cannot** read logs and **cannot** exec (it answers `yes` to both slash forms only because it can `create pods` and `get pods` outright); `bloom-pipeline` **can** read logs and cannot exec. Nobody can exec. Every other cell in these tables held on re-measurement. See `docs/cluster-identities.md` and `openspec/changes/add-access-model-doc-assertions/`.
+
 The manifest describes what was *requested*; the cluster holds what was *granted*. The doc must
 state the granted set and say where it came from, and `bloom-pipeline-serviceaccount.yaml`'s
 "intentionally omitted" comment needs a correction noting it no longer describes reality

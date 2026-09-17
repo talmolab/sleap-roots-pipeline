@@ -27,6 +27,32 @@ Two authentication planes; a tool may need one or both. Confirmed with the repo 
 Project membership gates what you can *see and do* in `busch-lab`; Salk SSO authenticates you
 regardless. Creating RunAI Generic secrets is self-service for anyone with console access.
 
+## The measurement was wrong too
+
+After the docs were corrected, the RBAC numbers themselves turned out to be wrong — not stale,
+*mis-measured*. `kubectl auth can-i get pods/log` does not ask about the log subresource. Everything
+after the slash is parsed as a resource **name**, so the query asks "can I get a pod named `log`"
+and simply mirrors bare `pods` access. Measured 2026-09-16 under both kubeconfigs:
+
+| Query | `argo-user` | `bloom-pipeline` |
+|---|---|---|
+| `get pods/log` (slash) | yes | yes |
+| `get pods --subresource=log` | **no** | yes |
+| `create pods/exec` (slash) | yes | no |
+| `create pods --subresource=exec` | **no** | no |
+| `create pods` (bare) | yes | no |
+
+The slash form tracks the bare-`pods` row exactly in both columns, which is the tell. Corrected:
+**`argo-user` cannot read logs and cannot exec; `bloom-pipeline` can read logs; nobody can exec.**
+Every other cell held on re-measurement — only the two subresource cells moved.
+
+This is the sharpest instance of the pattern this change exists to address. The earlier audit ran
+32 `auth can-i` queries, reported "every cell, not a spot-check", and was believed *because* it
+was live-verified. Running a command is not the same as running the right command, and a confident
+provenance stamp on a wrong measurement is worse than no stamp — it ends further questioning. The
+assertions now guard the command as well as the conclusion: the doc may not contain an
+`auth can-i` example using the slash form, and may not restate the claims it produced.
+
 ## Decisions
 
 1. **Assertions, not prose.** Every claim this change makes about the docs is an assertion in

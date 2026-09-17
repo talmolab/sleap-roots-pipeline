@@ -127,6 +127,39 @@ def main() -> int:
         True,
     )
 
+    # --- Subresource RBAC: the claim AND the command that establishes it ----------------------
+    # `kubectl auth can-i get pods/log` does NOT ask about the log subresource. Everything after
+    # the slash is parsed as a resource NAME, so it asks "can I get a pod named 'log'" and merely
+    # mirrors bare `pods` access. Measured 2026-09-16 under both kubeconfigs: argo-user answers
+    # `yes` to the slash form and `no` to `--subresource=log`. Three claims in this doc were
+    # verified with the wrong command and were wrong. The doc must not teach that command, and
+    # must not restate the conclusions it produced.
+    check(
+        "cluster-identities: auth can-i examples use --subresource, not the slash form",
+        bool(re.search(r"auth can-i \w+ pods/(log|exec)", ident)),
+        False,
+    )
+    check(
+        "cluster-identities: does not claim argo-user can read logs",
+        "Both `bloom-pipeline` and `argo-user` have `get pods/log`" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: does not claim argo-user can exec",
+        "only `argo-user` can open a shell" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: states that nobody can exec",
+        bool(re.search(r"[Nn]obody can (open a shell|exec)", ident)),
+        True,
+    )
+    check(
+        "cluster-identities: names the identity that can actually read logs",
+        "`bloom-pipeline` kubeconfig" in ident,
+        True,
+    )
+
     # --- Requirement: documented inventory matches the manifests ------------------------------
     templates = registered_templates()
     check("repo has the expected template count", len(templates), 5)
@@ -199,15 +232,22 @@ def main() -> int:
     # Two markers are in use and both are correct: blockquoted "SUPERSEDED" for a *step* (line
     # 352, PR #69) and inline "Corrected <date>" for a *bullet* (line 605, PR #60). These are
     # bullets, so either form counts — the assertion is that the claim is marked, not how.
-    plan = read(DRIFT_PLAN).splitlines()
-    for lineno in (599, 600, 605):
-        line = plan[lineno - 1] if lineno <= len(plan) else ""
-        marked = "SUPERSEDED" in line or re.search(r"Corrected 20\d\d-\d\d-\d\d", line)
-        check(
-            f"{DRIFT_PLAN}:{lineno} carries a correction marker",
-            bool(marked),
-            True,
+    # Anchored on the claim text, not the line number: an earlier version of this assertion keyed
+    # on lines 599/600/605 and broke the moment a paragraph was inserted above them. A test that
+    # fails when an unrelated edit shifts a file is a test that gets deleted.
+    plan_lines = read(DRIFT_PLAN).splitlines()
+    false_bullets = {
+        "bloom-pipeline can read logs": "You will not get pod logs through the Bloom path",
+        "no per-person console access": "There is no per-person RunAI console access;",
+        "unset priority class": "Deserved GPU quota is 2.",
+    }
+    for name, claim in false_bullets.items():
+        hits = [ln for ln in plan_lines if claim in ln]
+        check(f"drift plan: the {name!r} bullet is still present to annotate", len(hits), 1)
+        marked = hits and (
+            "SUPERSEDED" in hits[0] or re.search(r"Corrected 20\d\d-\d\d-\d\d", hits[0])
         )
+        check(f"drift plan: {name!r} bullet carries a correction marker", bool(marked), True)
 
     if _failures:
         print(f"\n=== {len(_failures)} FAILED, {_passes} passed ===")
