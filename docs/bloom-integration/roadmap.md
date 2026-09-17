@@ -568,6 +568,75 @@ Adversarial 4-lens review. Resolutions:
     > **all 12** plus all 24 `.slp` blobs, which is the real idempotency oracle. One caveat this
     > surfaced: the "mtime stays frozen" signal is only valid *within* a fixed `predict_code_sha` —
     > across a pin bump a recompute of in-scope scans is correct behaviour, not contamination.
+- **2026-09-17** — **Three PRs merged and the repo↔cluster divergence closed; §8 confirmed
+  already done; 7.4b run for the first time and it fails on bloom#875, not on #56.**
+  Records what was observed, including two of my own errors.
+  - **Divergence closed.** The cluster had been running `bloomctl:sha-28034f6` on all three
+    bloomctl templates since salk-bloom #871 merged (2026-09-17 UTC, fixing srp#76) while `main`
+    still said `sha-0614889` — the #51/#53 pattern again, and the reason
+    [#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58) exists. [PR #79]
+    (https://github.com/talmolab/sleap-roots-pipeline/pull/79) reconciled the repo (no
+    `argo template update` needed — the cluster was already there), then
+    [#78](https://github.com/talmolab/sleap-roots-pipeline/pull/78) (container-digest env vars)
+    and [#74](https://github.com/talmolab/sleap-roots-pipeline/pull/74) (cluster access model)
+    merged. `check_cluster_drift.sh` from a clean `main` checkout: **all five IN SYNC**, exit 0.
+    Verified from a clean tree at the merged commit, because "IN SYNC" once meant "in sync with an
+    unmerged branch" — which is how the divergence went unnoticed for weeks.
+  - **#79 merged without its provenance comment**, so `main` briefly asserted
+    `-> sha-0614889 ... Digest sha256:e39b4746...` as the newest changelog line while pinning
+    `sha-28034f6` (digest `ee39fd04...`). Fixed directly on `main`; both bloomctl templates now
+    carry the real provenance plus the load-bearing caveat that #871's idempotency gate **fails
+    open** on a missing grant and reports that as a per-scan `warning`.
+  - **The recorded rollback target was a trap.** Task 7.2 said `git checkout 3cf4b4f --
+    sleap-roots-*-template.yaml`; `3cf4b4f` pins `sha-3659705`, so following it verbatim would have
+    downgraded bloomctl **two** bumps and silently reverted #871 (reopening srp#76), bloom#830 (the
+    exit-3 code the gate exists to read) and bloom#774. Second time that instruction went stale, so
+    it now carries a re-derivation procedure rather than a corrected ref.
+  - **#78 applied and verified structurally, not yet empirically.** `argo template update` on the
+    two producer templates; both deployed objects carry a digest env var **equal to the digest on
+    their own `image:` line** (`4d4064c6...`, `ab5a1f43...`, both resolved independently from
+    GHCR), and the deployed images' code reads those exact names (predict `e025e309...`
+    `output_contract.py:226`, traits `689cffb8...` `envelope.py:73`). **Observed live for the first
+    time:** `gpu-node12` pulled the digest-pinned reference `...predict:sha-e025e309...@sha256:
+    4d4064c6...`, confirming `name:tag@digest` normalises through containerd/CRI — previously only
+    reasoned about. What is still **unverified** is a `result.json` actually carrying a digest: all
+    12 envelopes still read `""`, correctly, because predict skipped on unchanged keys (#78's own
+    spec documents that as expected-not-defect). Needs a scan that recomputes.
+  - **§8 was already done; only its checkboxes were stale.** salk-bloom `origin/staging` vendors
+    the five-task DAG at `SLEAP_ROOTS_PIPELINE_REF=310aae63...`, byte-identical to
+    `sleap-roots-pipeline.yaml` both at that pin **and** at `main` — that second comparison being
+    the one salk-bloom's CI cannot make, since it only ever diffs against the pinned commit.
+  - **7.4b — the first Bloom-dispatched five-task run.** `pipeline_run_id=9`, Argo
+    `sleap-roots-pipeline-fkfkz`, `Succeeded`. Poison `12894751` isolated at download
+    (`images-downloader` exit **3**, three attempts), `continueOn` advanced the DAG, all four
+    downstream nodes exit `0`, gate passed on `{0,3}` and emitted its diagnostic. **But
+    `done_count=0`, `failed_count=3`** — not 2/1 — with all three rows `source_id=None`, while the
+    two good scans' envelopes exist and are correct (`source_id` 83/84). That is
+    **bloom#875**, a gap salk-bloom #871 filed against itself and whose every step its design doc
+    predicted; this run is the first live reproduction, recorded as a comment there. Live it is
+    worse than the design's phrasing: *every* scan reads `failed`, so `failed_count=3` on
+    `scan_count=3` is indistinguishable from total failure — and the exit-gate tells operators to
+    check exactly that field.
+    **My error:** running two hand-submitted re-delivery tests first
+    (`sleap-roots-pipeline-7wxm2`, `-bxpmt`) ingested those envelopes and consumed the clean DB
+    state a 2/1 result needed. A clean re-test needs **new** synthetic scans in
+    `A4-PIPELINE-E2E-TEST`; all nine existing ones are ingested or poison.
+  - **srp#76 remains unverified live.** Both re-delivery runs had predict skip, so the `.slp` bytes
+    were identical to what blob storage held and a checksum collision was impossible — the
+    precondition (a recompute writing *different* bytes at an unchanged key) never existed. The
+    runs did prove re-delivery is idempotent at the DB level (identical `source_id`s 83–90 across
+    both), and no `WARNING` line appeared, so #871's gate did not fail open.
+  - **The invocation is now written down** (`scripts/dispatch_bloom_run.sh`), because it never was.
+    Earlier dispatches recorded outcomes and diagnoses but not the call, so reconstructing it cost
+    most of a session and produced two wrong guesses of my own: `staging.bloom.salk.edu` without
+    `:8443` (which reaches **production** — same host, prod's wildcard cert, handshake succeeds)
+    and `/api/workflows/pipeline` (which reaches Kong). `/api` is Supabase; `/workflows` is the
+    workflows service; `api_url`/`anon_key` bootstrap from the public `…:8443/api/client-info`.
+  - **Also confirmed live:** #71's manifest leak on the real dispatch path (3 scans requested, an
+    8-key manifest written under this run's id, 8 envelopes delivered); bloom#864
+    (`provenance.pipeline_run_id` still `None` after a Bloom-dispatched run); bloom#859's latch
+    still **not** armed; and bloom#716 is implemented in `status_poller.py` despite the issue
+    being open — the counts above were populated, they were simply populated wrongly.
 - **2026-09-16** — **#56 merged and applied to the cluster; its fix is now verified live in both
   directions. The poison-scan scenario's Argo half works. The scenario as a whole still does not
   complete, for a newly-found and unrelated reason ([#76](https://github.com/talmolab/sleap-roots-pipeline/issues/76)).**

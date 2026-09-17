@@ -371,14 +371,67 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
     **To close 7.4a's Workflow-phase criterion:** either #76 lands, or re-run against scans whose
     idempotency keys have never been ingested.
-  - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count` and the per-scan `failed`
-    row — these need rows Bloom's dispatch route creates at enumerate time.
-    **STATUS 2026-09-17: §8 is no longer the blocker — it is done (8.1/8.2 above, verified).**
-    What blocks 7.4b now is purely the dispatch credential: `POST /workflows/pipeline` requires a
-    Supabase **user JWT** (`services/workflows/auth.py::require_supabase_user`), and the counts it
-    must then read live in `cyl_pipeline_runs`/`cyl_pipeline_run_scans`. A hand-submitted
-    `argo submit` cannot substitute — those rows only exist when Bloom's route enumerates the
-    batch, which is the whole point of 7.4b as distinct from 7.4a.
+  - **7.4b — RUN 2026-09-17, Bloom-dispatched. Four of six criteria PASS. The two count
+    criteria FAIL, and the cause is bloom#875, not anything in #56.**
+
+    **The invocation, recorded because the previous dispatches never were** (see the 2026-09-01
+    note below — only outcomes were kept, so the call had to be reconstructed from scratch):
+    `POST https://staging.bloom.salk.edu:8443/workflows/pipeline` as `bloom-pipeline-workflows`,
+    body `{"target_level":"scan_ids","target_id":null,"scan_ids":[12894751,12894745,12894746]}`.
+    → `pipeline_run_id=9`, Argo `sleap-roots-pipeline-fkfkz`, 20:27:02Z→20:30:09Z.
+    Wrapped as `scripts/dispatch_bloom_run.sh`; two base-URL traps are documented in its header
+    and cost real time to find:
+    - **`:8443` is not optional.** Staging and production share `staging.bloom.salk.edu`; without
+      the port you reach *production's* Caddy and the TLS handshake still succeeds against prod's
+      wildcard cert, so you dispatch against prod believing it is staging.
+    - **`/workflows` is NOT behind `/api`.** `/api` is self-hosted Supabase behind Kong (that is
+      what `BLOOM_API_URL` in the credentials profile holds); `/api/workflows/pipeline` returns
+      Kong's `{"message":"Unauthorized"}`, while `/workflows/pipeline` returns
+      `{"detail":"Authorization Bearer token required"}` — `auth.py`'s own wording, which is how
+      to tell the two apart. `api_url`/`anon_key` bootstrap from the PUBLIC
+      `…:8443/api/client-info`, so only `BLOOM_EMAIL`/`BLOOM_PASSWORD` are secret.
+
+    | criterion | expected | observed |
+    |---|---|---|
+    | DAG reaches `write-back` | yes | **PASS** |
+    | poison isolated at download | exit 3 | **PASS** — `FAILED scan_12894751: 1 of 1 frames failed to download`, exit `3` on all three attempts |
+    | `continueOn` advances the DAG | yes | **PASS** — predictor/trait-extractor/write-back/exit-gate all exit `0` |
+    | Workflow phase | `Succeeded` | **PASS** |
+    | poison's `cyl_pipeline_run_scans` row | `failed` | **PASS** |
+    | `done_count`/`failed_count` | `2`/`1` | **FAIL — `0`/`3`** |
+
+    **The failure is bloom#875, a gap salk-bloom #871 filed against itself.** Its
+    `fix-cyl-redelivery-blob-collision/design.md` Risks section predicted every step before it had
+    ever been observed: the no-op branch keys its `cyl_pipeline_run_scans` UPDATE on
+    `(argo_workflow_name, source_id)`, a freshly dispatched row has `source_id IS NULL`, the UPDATE
+    matches zero rows, the envelope is reported `failed` with `retriable=False`, the non-zero exit
+    is therefore suppressed, and end-of-batch reconciliation closes the scan `failed` — so
+    `failed_count` counts scans whose traits and blobs are complete. All three rows came back
+    `source_id=None`; `source_id=83`/`84` (the good scans' real, correct envelopes) appear only in
+    write-back's stderr. **This run is the first live reproduction**; recorded as a comment on
+    bloom#875 rather than a new issue.
+    ⚠️ **Worse than the design's phrasing implies.** It says `failed_count` counts *a* complete
+    scan; live, **every** scan reads `failed` — including the genuinely-failed poison — so
+    `failed_count=3` on `scan_count=3` is indistinguishable from "all three failed". That matters
+    because the exit-gate this change added prints `Check cyl_pipeline_runs.failed_count` on every
+    partial-success run: it points operators at the one field that is wrong on this path, so both
+    signals a reader is told to trust disagree with the data.
+
+    **Precondition, stated so the result is not over-read:** the two good scans had already been
+    ingested earlier the same day by two hand-submitted re-delivery runs
+    (`sleap-roots-pipeline-7wxm2`, `-bxpmt`), so this was a re-delivery at unchanged idempotency
+    keys — exactly bloom#875's trigger. Running those first consumed the clean DB state a 2/1
+    result needed. A clean re-test requires scan_ids with no prior envelope, i.e. **new** synthetic
+    scans in `A4-PIPELINE-E2E-TEST` (`experiment_id 12880747`); all nine existing ones are either
+    ingested or the poison. Reachable without that confound, though: any re-run of a completed
+    batch under a fresh `pipeline_run_id` does it, which is ordinary retry behaviour.
+
+    **Also confirmed live by this run**, both orthogonal to #56:
+    - **#71's manifest leak, now on the real dispatch path.** Three scans requested; the manifest
+      written under `run_id=sleap-roots-pipeline-fkfkz` holds **8** keys, and write-back delivered
+      all eight — six outside the request.
+    - **bloom#864.** `provenance.pipeline_run_id` is still `None` in both good scans'
+      `result.json` after a Bloom-dispatched run, not merely after hand-submitted ones.
     ⚠️ Note for whoever runs it: `sleap-roots-pipeline.yaml` **hardcodes** the `a4_poc` NFS paths
     in `spec.volumes` (deliberately shared, so cluster-side skip-if-done works). Only `scan-ids` is
     a parameter. So a run cannot be pointed at a fresh output directory to force recomputation —
