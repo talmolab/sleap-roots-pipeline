@@ -373,6 +373,17 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
     idempotency keys have never been ingested.
   - **7.4b** (after §8, Bloom-dispatched): `done_count`/`failed_count` and the per-scan `failed`
     row — these need rows Bloom's dispatch route creates at enumerate time.
+    **STATUS 2026-09-17: §8 is no longer the blocker — it is done (8.1/8.2 above, verified).**
+    What blocks 7.4b now is purely the dispatch credential: `POST /workflows/pipeline` requires a
+    Supabase **user JWT** (`services/workflows/auth.py::require_supabase_user`), and the counts it
+    must then read live in `cyl_pipeline_runs`/`cyl_pipeline_run_scans`. A hand-submitted
+    `argo submit` cannot substitute — those rows only exist when Bloom's route enumerates the
+    batch, which is the whole point of 7.4b as distinct from 7.4a.
+    ⚠️ Note for whoever runs it: `sleap-roots-pipeline.yaml` **hardcodes** the `a4_poc` NFS paths
+    in `spec.volumes` (deliberately shared, so cluster-side skip-if-done works). Only `scan-ids` is
+    a parameter. So a run cannot be pointed at a fresh output directory to force recomputation —
+    making predict recompute requires choosing scan_ids with no existing predictions under
+    `a4_poc/predictions`, which needs the DB to enumerate.
     ⚠️ **`cyl_trait_sources` is NOT in that category** (corrected in the pre-merge audit): those rows
     are written by **write-back** via `insert_cyl_result_envelope` on *any* dispatch path — this
     repo's roadmap records a hand-submitted run creating `source_id` 6/7/8 back on 2026-07-30. The
@@ -642,7 +653,18 @@ delta.
 
 ## 8. Cross-repo lockstep (after this PR merges)
 
-- [ ] 8.1 Open the companion `salk-bloom` PR: copy the merged file **byte-exact**
+- [x] 8.1 **DONE — verified live 2026-09-17, not merely assumed.** `salk-bloom` `origin/staging`
+  carries the vendored five-task DAG at
+  `services/workflows/vendored/sleap-roots-pipeline.yaml` with **5 `templateRef`s**, and
+  `SLEAP_ROOTS_PIPELINE_REF` = `310aae63c4db4cc1eb608a4d7801031f0061106d` (40 chars, this
+  change's own merge SHA — no longer the `9df1e52daf…` the instruction below describes).
+  Byte-equality checked both ways: the vendored copy is **identical** to
+  `sleap-roots-pipeline.yaml` at the pinned `310aae6` *and* at `main` `9418941`. That second
+  comparison is the load-bearing one — it says the vendored copy has not gone stale, because this
+  file has not changed since #60 despite #74/#78/#79 landing on top of it. `salk-bloom`'s CI only
+  ever diffs the vendored copy against the *pinned* commit, so it cannot tell you that; the
+  check has to be made against upstream `main` by hand, as here.
+  Original instructions: Open the companion `salk-bloom` PR: copy the merged file **byte-exact**
   (`git show main:sleap-roots-pipeline.yaml > services/workflows/vendored/sleap-roots-pipeline.yaml`
   — do not retype or reformat; the drift check compares bytes and `.gitattributes` forces LF) and
   set `services/workflows/vendored/SLEAP_ROOTS_PIPELINE_REF` to this PR's **40-char** merge SHA
@@ -652,7 +674,14 @@ delta.
   **Validate:** `python3 scripts/check_vendored_workflow_drift.py` **and** the full
   `services/workflows` pytest suite — the drift check compares bytes and will pass green while
   `test_build_workflow_body_dag_references_all_four_templates_in_order` is red.
-- [ ] 8.2 **Hard ordering constraint**, one-directional: the `exit-gate` WorkflowTemplate must be
+- [x] 8.2 **SATISFIED — the constraint held, verified 2026-09-17.** The `exit-gate`
+  WorkflowTemplate is registered in `runai-busch-lab` and reads IN SYNC against `main`
+  (`scripts/check_cluster_drift.sh`, all five templates), so the deployed vendored five-task DAG's
+  `templateRef` resolves. Ordering was respected: the gate was registered under task 7.2
+  (2026-09-16) *before* the vendored copy shipped. Note the rollback rule below is still live —
+  deleting the gate template would break every dispatch on both staging and production while the
+  vendored copy references it.
+  Original instructions: **Hard ordering constraint**, one-directional: the `exit-gate` WorkflowTemplate must be
   registered in `runai-busch-lab` (task 7.2) **before** any vendored five-task DAG is deployed. If
   the vendored copy ships first, every batch dispatch fails at submit time with an unresolvable
   `templateRef` — and since prod and staging share the namespace, that is a simultaneous prod and
