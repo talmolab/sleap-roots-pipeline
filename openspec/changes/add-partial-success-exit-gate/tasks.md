@@ -199,6 +199,10 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   to revert, `git checkout main -- sleap-roots-*-template.yaml` and `argo template update` each.
   That is more durable than a tarball, and it is only valid because the sync was verified — do not
   assume it again later, re-run the script.
+  ⚠️ **Superseded as a rollback instruction; kept only as the 2026-09-15 record.** "`main` is the
+  pre-image" held only while cluster and `main` were in sync. It stopped being true when #60 merged,
+  and again when the cluster was bumped to `bloomctl:sha-28034f6` ahead of the repo (see 7.2). Use
+  7.2's re-derivation procedure instead of any ref recorded here.
   The checker is semantic, not textual: the API server defaults `arguments: {}`/`inputs: {}`/
   `outputs: {}`/`metadata: {}`, injects `namespace`, and rewrites `cpu: '0.5'` to `cpu: 500m`, all of
   which make a naive diff report all four as drifted. Validated both ways — from `main` it reports
@@ -238,6 +242,18 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   and the cpu rewrite `0.5` → `500m`, which is exactly what that script strips. Live copies also captured to files.
   To roll back: `argo template delete sleap-roots-exit-gate-template`, then
   `git checkout 3cf4b4f -- sleap-roots-*-template.yaml` and `argo template update` each.
+  ⚠️ **RE-DERIVE THIS TARGET BEFORE USING IT — it is a snapshot of the pre-image as of this apply,
+  not a standing instruction, and as of 2026-09-17 it is already stale.** `3cf4b4f` pins
+  `bloomctl:sha-3659705`; the cluster now runs `sha-28034f6` (bumped live 2026-09-17, reconciled
+  into the repo by #79). Running the line above verbatim today would downgrade bloomctl by **two**
+  bumps and silently revert three separate fixes this change depends on: salk-bloom #871 (reopening
+  srp#76 — re-delivery fails at blob upload), bloom#830 (`ctx.exit(0 if result.ok else 3)`, the
+  partial-success code the whole gate reads) and bloom#774 (per-scan status marking). Note this is
+  the *second* time this exact instruction has gone stale — 7.1 recorded the pre-image as "simply
+  `main` itself" and that became wrong the moment #60 merged. Treat any recorded rollback ref here
+  as evidence of what was live on the stated date only. Before rolling back: read the live pins
+  (`kubectl get workflowtemplate <name> -n runai-busch-lab -o jsonpath='{.spec.templates[0].container.image}'`),
+  find the commit that actually matches them, and roll back to that — not to a ref named in a note.
   **This apply exposed a real defect in the drift checker**, fixed in PR #73: `argo template
   create` stamps `workflows.argoproj.io/creator` into `metadata.LABELS` (not annotations, and only
   on `create` — `update` does not), which the checker did not strip, so the freshly created gate

@@ -17,6 +17,18 @@
 # NOTE the tag is 7 chars: bloomcli's CI tags `sha-$(git rev-parse --short HEAD)` and its runner
 # abbreviates shorter than a local checkout does — `sha-0614889` resolves, `sha-06148896` 404s.
 # Verify a bump against GHCR directly; do not derive the tag from a local `git rev-parse --short`.
+# Bumped 2026-09-17 (#79): sha-0614889 -> sha-28034f6 (salk-bloom #871, merge commit 28034f6d,
+# 2026-09-17 UTC). Digest
+# sha256:ee39fd04a250ee533bde24248dfa2b28cd4a23bd0a89614c462d3f11e40d0a7d.
+# THIS stage's code (`cyl batch-download-for-predict`) is unchanged by #871 — the bump is here only
+# because the lockstep rule requires all three bloomctl pins to move together. The actual fix is in
+# write-back; see sleap-roots-write-back-template.yaml for what it changes.
+# Applied to the cluster BEFORE this repo caught up: all three templates ran sha-28034f6 live while
+# `main` still said sha-0614889, so scripts/check_cluster_drift.sh reported DRIFT on gate,
+# images-downloader and write-back until #79 merged. That is the #51/#53 pattern (#58) — while such
+# a divergence is open the drift check cannot serve as a gate, because an intended divergence is
+# indistinguishable from a real one. Re-derive the current pin from the cluster before using any
+# recorded rollback target.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:

@@ -13,6 +13,20 @@
 # does not affect a partial images-downloader — write_run_manifest excludes failed scans, so the
 # poison scan never enters the manifest — but a partial predict/traits will fail the Workflow here.
 # Tracked as bloom#859.
+# Bumped 2026-09-17 (#79): sha-0614889 -> sha-28034f6 (salk-bloom #871, merge commit 28034f6d).
+# Digest sha256:ee39fd04a250ee533bde24248dfa2b28cd4a23bd0a89614c462d3f11e40d0a7d. This bump changes
+# THIS stage's code (`cyl/ingest.py`, `cyl/_batch.py`): `batch-ingest-result` now checks the
+# idempotency gate (`source_already_ingested`) immediately before `upload_pending_blobs`, so
+# re-delivering an envelope at an unchanged idempotency key skips an upload the RPC's
+# `ON CONFLICT (idempotency_key) DO NOTHING` would discard anyway. Before it, the strict
+# refuse-to-overwrite blob check ran first and failed the stage, because predict's `.slp` output is
+# not byte-reproducible — identical inputs give an identical key but different bytes at the same
+# address (srp#76, still OPEN pending live verification here).
+# Caveat, load-bearing: the gate FAILS OPEN. If its `cyl_trait_sources` read grant is missing the
+# check cannot be answered, the stage falls back to the old unguarded upload-then-RPC path, and
+# srp#76 returns. #871 surfaces that as a per-scan `warning` in both the summary and the JSON
+# report specifically because the log sink it would otherwise go to is unreadable under Argo — so
+# treat a `WARNING <scan_key>:` line in this stage's output as "the fix is not in effect".
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
