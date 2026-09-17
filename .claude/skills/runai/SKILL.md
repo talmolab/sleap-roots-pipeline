@@ -19,13 +19,19 @@ exec-ing into a live pod, or diagnosing scheduling.
 
 ## 1. WSL command execution pattern
 
-RunAI runs in **WSL**, not Windows PowerShell, and needs an explicit KUBECONFIG:
+RunAI runs in **WSL**, not Windows PowerShell, and needs **two** things: an explicit KUBECONFIG
+*and* an active SSO session. The kubeconfig is shared across the project; the SSO login is yours
+personally.
 
 ```bash
 wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml && \
   runai <command>"
 ```
 
+- **The kubeconfig alone is not enough.** `runai` commands fail until you have signed in with
+  `runai login remote-browser` (confirm with `runai whoami`). `argo` and `kubectl` need only the
+  kubeconfig — which is why `argo` keeps working in the very shell where `runai` is failing on auth.
+  See `docs/cluster-identities.md` → "Two auth planes".
 - `runai` is assumed on `PATH`; if your install isn't, use its absolute path (e.g.
   `"$HOME/.runai/bin/runai"`). **Verify the `KUBECONFIG` path and the `runai` binary location
   in your own WSL environment** before constructing commands — these are operator-specific.

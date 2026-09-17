@@ -1,28 +1,60 @@
 # Cluster identities
 
-Three different identities are involved in running this pipeline on the Salk cluster, and picking
+Three Kubernetes identities are involved in running this pipeline on the Salk cluster, and picking
 the wrong one produces failures that don't look like permission problems. This page says what each
-one is, what it can actually do, and how to get access.
+one is, what it can actually do, and how to get access. Separately from all three, you have your
+own RunAI SSO login — a different authentication plane, not a fourth Kubernetes identity, and the
+two are not interchangeable.
 
 Namespace throughout: **`runai-busch-lab`** (RunAI project `busch-lab`). `runai-talmo-lab` is still
 live on the cluster but has not been this pipeline's target since 2026-08-13.
 
-## The three identities
+## Two auth planes
+
+Kubernetes RBAC and RunAI's own identity are separate. A tool may need one or both:
+
+| Tool / surface | Kubernetes kubeconfig | Per-person RunAI SSO |
+|---|---|---|
+| `argo` | required | no |
+| `kubectl` | required | no |
+| `runai` | required | **also required** |
+| RunAI console | no — browser SSO only | required |
+
+Operators share one namespace-scoped `argo-user` kubeconfig for the Kubernetes plane; the
+`bloom-pipeline` identity below carries its own. RunAI SSO is per person, and it is not automatic:
+a new person must be added to the `busch-lab` RunAI project by the cluster admin or a project
+owner. Salk SSO will authenticate you regardless — membership is what makes `busch-lab` visible
+and actionable once you are signed in.
+
+Confirmed with the repo owner, 2026-09-15.
+
+The failure this prevents: with no SSO session, `runai` commands fail while `argo` keeps working
+against the same namespace from the same shell. That does not look like an auth problem. Sign in
+with `runai login remote-browser`, then confirm with `runai whoami`.
+
+## The three Kubernetes identities
 
 | Identity | Who authenticates as it | Can | Cannot | Credential |
 |---|---|---|---|---|
-| **`bloom-pipeline`** | Bloom's backend, from *outside* the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `workflows`; `get`/`list` on `workflowtemplates`; `get`/`list`/`watch` on `pods`; `get pods/log` | `create`/`update workflowtemplates`; `delete`/`update workflows`; `create pods/exec`; `create workflowtaskresults`; `secrets`, `configmaps`, `nodes`, `serviceaccounts`; anything outside this namespace | `kubeconfig-bloom-pipeline-busch-lab.yaml`, deployed to Bloom as `WORKFLOWS_K8S_TOKEN` / `_CA_CERT` / `_API_URL` |
+| **`bloom-pipeline`** | Bloom's backend, from *outside* the cluster (`bloom-dev`) | `create`/`get`/`list`/`watch` on `workflows`; `get`/`list` on `workflowtemplates`; `get`/`list`/`watch` on `pods`; `get pods --subresource=log` | `create`/`update workflowtemplates`; `delete`/`update workflows`; `create pods`; `create pods --subresource=exec`; `create workflowtaskresults`; `secrets`, `configmaps`, `nodes`, `serviceaccounts`; anything outside this namespace | `kubeconfig-bloom-pipeline-busch-lab.yaml`, deployed to Bloom as `WORKFLOWS_K8S_TOKEN` / `_CA_CERT` / `_API_URL` |
 | **`bloom-workflow`** | Each DAG step's own pod, via `spec.serviceAccountName` | `workflowtaskresults` `create`/`patch` — reported by the cluster admin, not read from the cluster (see [What isn't verified](#what-isnt-verified)) | it is not a submitting identity; nobody holds a kubeconfig for it | none — set once on the Workflow, Argo does the rest |
-| **`argo-user`** (namespace-scoped, shared across the project) | Operators, by hand | `get`/`list`/`watch pods`, `get pods/log`, `create pods/exec`; `create`/`update workflowtemplates`; `create`/`delete workflows` | `get serviceaccounts`, `get secrets`, `create workflowtaskresults` | `kubeconfig-runai-busch-lab-argo-user.yaml` |
+| **`argo-user`** (namespace-scoped, shared across the project) | Operators, by hand | `get`/`list`/`watch pods`; `create`/`update workflowtemplates`; `get`/`list workflowtemplates`; `create`/`delete workflows`; `create pods` | `get pods --subresource=log`; `create pods --subresource=exec`; `get serviceaccounts`, `get`/`list`/`create secrets`, `create workflowtaskresults` | `kubeconfig-runai-busch-lab-argo-user.yaml` |
 
 Both the `bloom-pipeline` and `argo-user` rows were verified live on **2026-09-15** with
-`kubectl auth can-i` run under each identity's own kubeconfig — not inferred from a manifest. Rerun
-the checks before relying on them; RBAC is cluster-admin-mutable:
+`kubectl auth can-i` run under each identity's own kubeconfig — every cell, not a spot-check, and
+not inferred from a manifest. Rerun the checks before relying on them; RBAC is
+cluster-admin-mutable:
 
 ```bash
 export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
-kubectl auth can-i get pods/log -n runai-busch-lab 2>/dev/null | grep -E '^(yes|no)'
+kubectl auth can-i get pods --subresource=log -n runai-busch-lab 2>/dev/null | grep -E '^(yes|no)'
 ```
+
+> **Use `--subresource=`, never `pods/log`.** In `kubectl auth can-i`, everything after the slash
+> is a resource *name*, not a subresource — `get pods/log` asks "can I get a pod **named** `log`",
+> which merely mirrors bare `pods` access and answers `yes` for any identity that can read pods.
+> This is not theoretical: three claims on this page were "verified" with the slash form and were
+> wrong. `argo-user` answers `yes` to `get pods/log` and **`no`** to `get pods --subresource=log`.
 
 > Filter stderr. `kubectl` prints `Warning: Use tokens from the TokenRequest API...` on stderr,
 > which interleaves with the answer — a bare `| head -1` captures the warning instead of the
@@ -85,22 +117,53 @@ production. Reuse `services/workflows/k8s_client.py` — `build_workflow_body`, 
 it.** It has `get`/`list` on `workflowtemplates` only. Registration needs `argo-user`, which has
 `create` and `update`. This is the real prerequisite, not the credential.
 
-**You can read pod logs.** Both `bloom-pipeline` and `argo-user` have `get pods/log`. Note that
-Bloom's own status poller only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), not the
-reason for a failure — so for diagnosis use the CLI against the namespace rather than Bloom's API.
+**Never state in this repo that the cluster matches it.** The namespace is shared and mutable —
+anyone with `argo-user` can re-register a template at any moment, so a parity claim is false as
+soon as it is written. This is not hypothetical: a 2026-09-15 spot-check found the registered
+predictor matching this repo, and within the hour the templates were re-registered from a newly
+merged `main`, leaving both the cluster and that observation ahead of the branch that recorded it.
+Run `scripts/check_cluster_drift.sh` when you need to know; nothing enforces parity between runs
+([#58](https://github.com/talmolab/sleap-roots-pipeline/issues/58)).
 
-**But only `argo-user` can open a shell.** `bloom-pipeline` cannot `create pods/exec`; `argo-user`
-can. So reading logs works from either identity, while `kubectl exec` into a running step needs the
-`argo-user` kubeconfig.
+**Pod logs need the `bloom-pipeline` kubeconfig — not `argo-user`.** This is the opposite of what
+you would guess from `argo-user` being the operator identity, and the opposite of what this page
+said until 2026-09-16. Measured under each kubeconfig with `--subresource=log`: `bloom-pipeline`
+**yes**, `argo-user` **no**. So the identity that can submit and delete workflows cannot read a
+single line of their output, while the one Bloom holds can. Note also that Bloom's status poller
+only surfaces Workflow *phases* (`Running`/`Succeeded`/`Failed`), never the reason for a failure —
+so diagnosis means `kubectl logs` under the `bloom-pipeline` kubeconfig, not Bloom's API.
+
+**Nobody can exec.** `create pods --subresource=exec` is **no** under both identities, so there is
+no `kubectl exec` route into a running step from any credential in this repo. `argo-user` *can*
+`create pods` outright, which is why the slash form `create pods/exec` misleadingly answers `yes`
+— it is asking about a pod *named* `exec`. For an interactive shell use `runai workspace exec`
+against your own SSO session (see [Two auth planes](#two-auth-planes)), which is a different plane
+entirely and is what the runai skill has always recommended.
 
 **Set `spec.serviceAccountName: bloom-workflow`** on any Argo DAG you submit — see
 [Submit vs. report back](#submit-vs-report-back).
 
-**There is no per-person RunAI console access.** Work is driven from the `argo` / `runai` CLI
-against a kubeconfig. If you need a new identity, `bloom-pipeline-serviceaccount.yaml` is the
-precedent to copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster
-admin applies it. Note from experience that the applied result may differ from what the manifest
-requests, so verify with `auth can-i` once you have it.
+**Secrets are created in the RunAI console, not with `kubectl`.** No kubeconfig identity here can
+create one — `bloom-pipeline` has no `secrets` access at all, and `argo-user` returns **no** for
+`get`, `list` and `create` alike (verified 2026-09-15). Use Credentials → Generic secret in the
+console, Project-scoped to `busch-lab`. RunAI prefixes the resulting Kubernetes Secret name with
+`genericsecret-`, which is why the manifests reference `genericsecret-wandb-api-key` rather than the
+asset name you typed. Creating them is **self-service** once you have console access — no
+cluster-admin round-trip — but it does need your own RunAI SSO login, so see
+[Two auth planes](#two-auth-planes) first.
+
+Secrets are a fourth hand-made precondition, alongside the three directories below, and they fail
+the same way: a missing Secret leaves the pod `Pending` (or in `CreateContainerConfigError`), never
+`Failed`, so the Workflow hangs rather than erroring. Note also that
+`sleap-roots-pipeline.yaml` hardcodes `genericsecret-bloom-staging-pipeline-credentials`, so a
+*production*-dispatched Workflow mounts the **staging** Bloom credential — the prod account has
+never been created ([#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17)). Dormant
+today because nothing drives prod, not because it is correct.
+
+**If you need a new Kubernetes identity**, `bloom-pipeline-serviceaccount.yaml` is the precedent to
+copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster admin applies
+it. Note from experience that the applied result may differ from what the manifest requests, so
+verify with `auth can-i` once you have it.
 
 **Finding the cluster API endpoint:** read it from your own kubeconfig rather than copying it from
 anywhere — it travels with the credential.
@@ -115,8 +178,11 @@ Nothing here is reachable off the Salk VPN.
 
 **`runai-busch-lab` is shared by Bloom staging *and* production**, distinguished only by an
 environment label stamped on each submitted Workflow, and a production dispatch deployment is live
-in it. An `argo template update` therefore affects both environments' future dispatches, not just
-your next run. Don't update the `sleap-roots-*` templates unless you mean to.
+in it — `bloom_v2_prod-cyl-pipeline-worker-1` and `bloom_v2_prod-cyl-status-poller-1`, last
+confirmed running on `bloom-dev.salk.edu` on 2026-09-15 alongside the staging pair. ("Live" means
+the dispatcher process is running, not that anything is driving it — no frontend targets prod
+yet.) An `argo template update` therefore affects both environments' future
+dispatches, not just your next run. Don't update the `sleap-roots-*` templates unless you mean to.
 
 **You share the submitter identity.** Anything Bloom dispatches arrives as `bloom-pipeline`, so
 labels are the only way to tell workloads apart. `build_workflow_body` already stamps
@@ -133,9 +199,16 @@ PR #41, introduced alongside a `grep` rather than a scheduling observation — a
 with no class resolved to priority **0**, the *lowest* tier, below `train` (50). Treat the default
 as unknown-and-probably-lowest: declare the class explicitly on every template.
 
+The 2 is a **deserved** quota in RunAI's sense, not a hard cap — preemptible work may exceed it.
+That does not help this pipeline's GPU work, though: the predictor is the only GPU-requesting
+stage and it runs non-preemptible `high` (below), so at 2/2 it does not burst above the quota, it
+waits — surfacing as `NonPreemptibleOverQuota`. Confirmed with the repo owner, 2026-09-15.
+
 Which value depends on the stage, and this pipeline is deliberately not uniform:
 
-- The three CPU stages use `interactive-preemptible` (75) — preemptible, may use over-quota GPUs.
+- The four CPU stages use `interactive-preemptible` (75) — preemptible, and permitted to exceed
+  the deserved quota. They request no GPU, so that permission buys this pipeline nothing in GPU
+  terms; it matters for CPU and for scheduling order.
 - **The predictor uses `high` (125), which is non-preemptible, on purpose.** Set per cluster-admin
   guidance 2026-08-06 because `trait-extractor` has no skip-if-done yet
   ([#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)), so an eviction mid-batch

@@ -25,7 +25,7 @@ task — see the table.
 | Tool | Docs | Auth | Use it for |
 |---|---|---|---|
 | `argo` | [Argo CLI reference](https://argo-workflows.readthedocs.io/en/latest/cli/argo/) | `ARGO_TOKEN` + `ARGO_SERVER`, **or** `KUBECONFIG` (Kubernetes mode) | the production path: template registration, `argo submit`, `argo lint`, `argo logs` |
-| `runai` | [Run:AI docs](https://run-ai-docs.nvidia.com/) | interactive SSO — `runai login remote-browser` | interactive/ad-hoc work: `runai workspace submit` / `logs` / `exec` |
+| `runai` | [Run:AI docs](https://run-ai-docs.nvidia.com/) | `KUBECONFIG` **and** interactive SSO — `runai login remote-browser` | interactive/ad-hoc work: `runai workspace submit` / `logs` / `exec` |
 | `kubectl` | [kubectl install](https://kubernetes.io/docs/tasks/tools/) | `KUBECONFIG` | pod inspection, `kubectl auth can-i`, diagnosing failures |
 
 Also required:
@@ -42,9 +42,9 @@ Also required:
 - (Optional, local testing only) Docker Desktop with WSL2 integration — CPU-only, see
   [Local Testing](#-local-testing-docker-desktop--wsl2).
 
-**Which identity does each tool use?** `runai` uses your own SSO login; `argo` and `kubectl` use
-the shared project `argo-user` kubeconfig. Bloom's backend submits as a third identity you don't
-hold. See [Cluster identities](docs/cluster-identities.md) before wiring anything new — picking the
+**Which identity does each tool use?** `runai` needs *both* the shared project `argo-user`
+kubeconfig and your own RunAI SSO login; `argo` and `kubectl` need only the kubeconfig. Bloom's
+backend submits as a third identity you don't hold. See [Cluster identities](docs/cluster-identities.md) before wiring anything new — picking the
 wrong one produces failures that don't look like permission errors.
 
 ---
@@ -289,8 +289,24 @@ argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 ```bash
 argo list -n runai-busch-lab
 argo get <workflow-name> -n runai-busch-lab
-argo logs <workflow-name> -n runai-busch-lab --tail 100
+argo logs <workflow-name> -n runai-busch-lab --tail 100 2>&1
 ```
+
+> ⚠️ **Logs need the `bloom-pipeline` kubeconfig, not `argo-user`.** `argo-user` is denied
+> `get pods --subresource=log`, so under the operator kubeconfig every command below returns no log
+> output at all. Worse, **`argo logs` exits `0` when it is denied** — it writes the `Forbidden` to
+> *stderr* only and leaves stdout empty, so `argo logs <wf> | grep ...` looks exactly like a
+> successful run that logged nothing, and `$?` will not tell you otherwise. Always capture `2>&1`.
+> To actually read logs:
+>
+> ```bash
+> export KUBECONFIG=~/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml
+> kubectl logs <pod-name> -n runai-busch-lab
+> ```
+>
+> This is the failure the identity note above warns about — it does not look like a permission
+> error. See [Cluster identities](docs/cluster-identities.md) for the measured capability matrix.
+> Nobody can `kubectl exec`; use `runai workspace exec` against your own SSO session instead.
 
 Check pod logs:
 

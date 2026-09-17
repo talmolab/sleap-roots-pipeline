@@ -76,6 +76,8 @@ Everything else in the manifest held exactly: workflows `create`/`get`/`list`/`w
 `delete`/`update` no; workflowtemplates `get`/`list` yes, `create`/`update` no; secrets,
 configmaps, nodes, serviceaccounts all no.
 
+⚠️ **Corrected 2026-09-16 — the `pods/log` and `pods/exec` cells in both tables above are wrong.** They were measured with `kubectl auth can-i get pods/log`, where everything after the slash is parsed as a resource *name*, not a subresource — so the query asked "can I get a pod **named** `log`" and merely mirrored bare `pods` access. Re-measured with `--subresource=`: `argo-user` **cannot** read logs and **cannot** exec (it answers `yes` to both slash forms only because it can `create pods` and `get pods` outright); `bloom-pipeline` **can** read logs and cannot exec. Nobody can exec. Every other cell in these tables held on re-measurement. See `docs/cluster-identities.md` and `openspec/changes/add-access-model-doc-assertions/`.
+
 The manifest describes what was *requested*; the cluster holds what was *granted*. The doc must
 state the granted set and say where it came from, and `bloom-pipeline-serviceaccount.yaml`'s
 "intentionally omitted" comment needs a correction noting it no longer describes reality
@@ -596,8 +598,8 @@ The document has five sections, in this order:
    - If Bloom dispatches your workflows, you need no new credential. Reuse `services/workflows/k8s_client.py` (`build_workflow_body` / `submit_workflow` / `get_workflow_status`); the token is already deployed as `WORKFLOWS_K8S_TOKEN`/`_CA_CERT`/`_API_URL` for staging and prod.
    - Your WorkflowTemplates must be registered in the namespace first. `bloom-pipeline` cannot do this — it has `get`/`list` on `workflowtemplates` only. Use the shared project `argo-user` kubeconfig.
    - Any Argo DAG you submit needs `spec.serviceAccountName: bloom-workflow` or every step fails on results reporting.
-   - You will not get pod logs through the Bloom path: `bloom-pipeline` has no `pods`/`pods/log` and the status poller only surfaces Workflow phases. For a new ServiceAccount with log access, copy `bloom-pipeline-serviceaccount.yaml` and ask the cluster admin.
-   - There is no per-person RunAI console access; work is driven from the `argo`/`runai` CLI against a kubeconfig.
+   - You will not get pod logs through the Bloom path: `bloom-pipeline` has no `pods`/`pods/log` and the status poller only surfaces Workflow phases. For a new ServiceAccount with log access, copy `bloom-pipeline-serviceaccount.yaml` and ask the cluster admin. ⚠️ **Corrected 2026-09-15:** the applied `bloom-pipeline` identity **does** have `get`/`list`/`watch pods` and `get pods/log` — verified live under its own kubeconfig, and documented in `docs/cluster-identities.md`. The manifest's "intentionally omitted" comment describes the request, not the grant. Do not send anyone to the cluster admin for a capability they already hold.
+   - ⚠️ **Corrected 2026-09-15:** ~~There is no per-person RunAI console access; work is driven from the `argo`/`runai` CLI against a kubeconfig.~~ Both halves are wrong. Per-person RunAI console access exists via SSO, and `runai` needs that SSO session *in addition to* the shared kubeconfig, while `argo`/`kubectl` need only the kubeconfig. This was an unsourced assertion that shipped into `docs/cluster-identities.md`; see `openspec/changes/add-access-model-doc-assertions/`.
    - The cluster API endpoint is not published in this repo. Read it from your own kubeconfig with `kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'` — it travels with the credential. The Argo Server endpoint (`gpu-master:8888`) is in `runai_run_pipeline.sh`. Neither is reachable off the Salk VPN.
 
 5. **`## Namespace facts that bite`** —
