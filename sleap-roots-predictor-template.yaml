@@ -73,7 +73,11 @@ spec:
         # Watch out (predict#44): predict still forwards the manifest unchanged rather than
         # narrowing it to `ok ∪ skipped`. Now that #56 lets the DAG reach traits after a partial
         # predict, a predict-failed scan becomes a misattributed *trait-extraction* failure.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24
+        # Digest-pinned 2026-09-16 (#70). The tag names a commit; only the digest names bytes --
+        # a `sha-<gitsha>` tag is immutable in NAME only, and a rebuild of the same commit can
+        # silently overwrite it in GHCR. The digest below is the source of truth for
+        # SRP_PREDICT_CONTAINER_DIGEST in `env:`; `scripts/check_manifests.py` fails if they drift.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24@sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"
@@ -87,6 +91,18 @@ spec:
           # identity. This is the prerequisite for that check; see sleap-roots-predict#44.
           - name: ARGO_WORKFLOW_NAME
             value: "{{workflow.name}}"
+          # #70: NOT inert -- predict reads this today (`sleap_roots_predict/output_contract.py`,
+          # resolve_identity(..., "SRP_PREDICT_CONTAINER_DIGEST")), falling back to "" when unset,
+          # which is why every envelope recorded predict_code_sha but not the image. The value MUST
+          # equal the digest pinned on this file's own `image:` line; check_manifests.py enforces
+          # that and derives the expected value by parsing that line, so nothing is hardcoded.
+          # At every future pin bump, re-verify against the registry before editing either line:
+          #   TOK=$(curl -s "https://ghcr.io/token?scope=repository:talmolab/sleap-roots-predict:pull&service=ghcr.io" | python -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json" \
+          #     https://ghcr.io/v2/talmolab/sleap-roots-predict/manifests/<tag> | grep -i docker-content-digest
+          # Not an idempotency-key input, so changing it forces no recompute.
+          - name: SRP_PREDICT_CONTAINER_DIGEST
+            value: "sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
@@ -102,8 +118,13 @@ spec:
             mountPath: /workspace/output
         # securityContext removed (#25): privileged:true/runAsUser:0 confirmed unnecessary via a
         # live test run — GPU is visible via device-plugin without privileged, and NFS writes
-        # succeeded as the default non-root user. Cluster admission policy also now rejects
-        # `privileged` outright. See design.md's Risks section for the one caveat (that test
+        # succeeded as the default non-root user. NOTE (corrected #70): this comment previously
+        # claimed cluster admission "rejects `privileged` outright". That is overbroad — the
+        # source claim (2026-08-04-gpu-fraction-sizing-design.md) scopes it to
+        # `runai workspace submit`, the RunAI CLI path, NOT Argo-created pods. Falsified live:
+        # the trait-extractor template still sets `privileged: true`/`runAsUser: 0` and its pods
+        # run and Succeed in this namespace. Dropping it here was justified by the test run
+        # above, not by admission. See design.md's Risks section for the one caveat (that test
         # reused an already-writable path, not a fresh one — task 3.4 covers the fresh-path case).
         resources:
           # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).

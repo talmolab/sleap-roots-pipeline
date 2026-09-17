@@ -73,7 +73,7 @@ control-plane direction is the *only* thing Tailscale/firewall affects; the data
    `cyl_pipeline_runs` via **Supabase Realtime**.
 5. Resume (crash/preemption): each stage is a **skip-if-done loop** over a durable checkpoint —
    predictions on the shared mount (predict), source rows in Bloom (write-back) — plus Argo
-   `retryStrategy`, atomic writes, and a pinned container digest per run.
+   `retryStrategy`, atomic writes, and a digest-pinned producer image per run (§8).
 
 ## 4. Components (by repo)
 
@@ -86,8 +86,10 @@ control-plane direction is the *only* thing Tailscale/firewall affects; the data
 
 **sleap-roots-pipeline (this repo — Argo):**
 - Per-batch `WorkflowTemplate`: `download-all → predict-all(warm) → traits+writeback → notify`, with
-  `retryStrategy`, an **Argo semaphore** for GPU-batch concurrency (§9), a pinned image digest, and
-  the shared-mount volume.
+  `retryStrategy`, an **Argo semaphore** for GPU-batch concurrency (§9), a digest-pinned producer
+  image, and the shared-mount volume. (As of #70 the two producers are digest-pinned; the
+  `bloomctl`-based stages — `images-downloader`, `write-back`, `exit-gate` — remain tag-pinned.
+  Only the exit-gate's pin is tracked, as #72; the other two are untracked.)
 - The submit contract the workflows service targets (workflow name = `pipeline_run_id`+batch,
   labels `pipeline_run_id`/`scan set`).
 
@@ -187,8 +189,19 @@ skips 1–24 (checksum-verified), re-predicts 25, finishes 26–40. Net cost: on
 never the batch.
 
 **Required for correctness:** atomic temp→rename writes; **checksum-verified** skip (not
-existence-only); shared mount; **pinned container digest** per run (so a retry recomputes an
-identical key and recognizes done work); Argo `retryStrategy` (crash/OOM/preempt).
+existence-only); shared mount; a **digest-pinned producer image** per run; Argo `retryStrategy`
+(crash/OOM/preempt).
+
+On that third item, stated precisely, because two earlier versions of this line got it wrong. The
+container digest is **not** an idempotency-key input — see §2's key-input list and §7, both of which
+already say so. Nor is pinning what makes a retry recompute an *identical* key: the images bake
+`SRP_PREDICT_CODE_SHA` / `SRT_TRAITS_CODE_SHA` from `${{ github.sha }}`, so a rebuild of the same
+commit bakes the same code SHA and yields the same key with or without a digest pin. What the digest
+buys is that an identical key is **truthful**. A `sha-<gitsha>` tag is immutable in *name* only, so
+a rebuild can put different bytes behind an unchanged reference; skip-if-done would then match a
+stored result against a key whose code-SHA input no longer describes the code that produced it, and
+silently accept stale work as done. The digest makes the key's inputs actually identify the bytes
+that ran — it protects the *validity* of the skip, not the *identity* of the key.
 
 > **Known gap (2026-07-27):** [bloom #533](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/533) — `bloomctl cyl batch-download-for-predict`'s skip-if-done check has no lock/lease, so two concurrent invocations against the same `out_dir` (e.g. a stale retry pod + a fresh one) can both pass the skip check and clobber each other's writes. Skip-if-done alone doesn't prevent concurrent writers; only atomicity does. Deferred to the not-yet-built dispatch worker (bloom #404) + Argo's own `retryStrategy`, not a bolted-on bloomctl-side lock.
 

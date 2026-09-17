@@ -40,9 +40,12 @@ change-breakdown table for the full remaining list.
   `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits
 - **Bash** — launchers (`runai_run_pipeline.sh` for the cluster,
   `local_run_pipeline_first_time.sh` for local Docker Desktop + WSL2 testing)
-- **Docker** — stage images are built in their own repos and *consumed* here. They currently
-  publish to **GitLab** (`registry.gitlab.com/salk-tm/{models-downloader, sleap-roots-predict,
-  sleap-roots-traits}`); migration to **GHCR** is the roadmap A0 target (not yet done)
+- **Docker** — stage images are built in their own repos and *consumed* here. Every cluster
+  template pulls from **GHCR**: `ghcr.io/talmolab/{sleap-roots-predict, sleap-roots-trait-extractor}`
+  for the two producers, and `ghcr.io/salk-harnessing-plants-initiative/bloomctl` for the
+  `images-downloader`, `write-back` and `exit-gate` stages. The GitLab registry
+  (`registry.gitlab.com/salk-tm/...`) survives only in the three stale `local-WSL2-*` templates,
+  which also still reference a `models-downloader` stage the cluster DAG no longer has (#21)
 
 No Python package, no Node package, no build step, and (currently) no CI — the artifacts
 are YAML manifests and shell scripts.
@@ -61,8 +64,10 @@ are YAML manifests and shell scripts.
   template names. (Note: the local-WSL2 predictor template still pins `nvidia.com/gpu: 1`
   despite WSL2 GPU being unavailable — a known stale spot, not a parity rule.) When you change
   one, check the other for *path* drift.
-- **Pin images by tag/digest**, never `:latest` — this is the **target** convention for
-  reproducibility (full provenance/idempotency is A4, not yet implemented).
+- **Pin images by tag/digest**, never `:latest`. The two producer templates
+  (`predictor`, `trait-extractor`) MUST be pinned by `@sha256:` digest, because each injects a
+  digest env var validated against that line; the `bloomctl` stages remain tag-pinned (the exit-gate's pin is tracked as #72; images-downloader
+  and write-back are untracked).
 - Shell scripts should be safe (`set -euo pipefail`) and must never echo `ARGO_TOKEN` or
   other secrets.
 
@@ -169,9 +174,9 @@ git/GitHub/OpenSpec/docs commands.
 
 - **RunAI GPU cluster** (`gpu-master:8888` Argo server, `runai-busch-lab` namespace);
   requires `runai login` + an exported `ARGO_TOKEN`.
-- **Stage container images** (currently `registry.gitlab.com/salk-tm/...`; GHCR is the A0
-  target), built/published by sibling repos: `models-downloader`, `sleap-roots-predict`,
-  `sleap-roots-traits` (trait-extractor).
+- **Stage container images**, all on GHCR: `sleap-roots-predict` and `sleap-roots` (which
+  publishes `sleap-roots-trait-extractor`) under `ghcr.io/talmolab`, and `bloomctl` under
+  `ghcr.io/salk-harnessing-plants-initiative`.
 - **`argo` CLI** and **`kubectl`** for template creation, submission, and log retrieval.
 - (Planned, A4) **Bloom** (local server) as the scan-ingest event source and write-back
   target, via the `sleap-roots-contracts` `ResultEnvelope` contract.

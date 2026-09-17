@@ -98,8 +98,9 @@ clean up manually) rather than `runai training` (auto-terminates on completion).
 | Memory | `--cpu-memory-request 32G` |
 | Always re-pull image | `--image-pull-policy Always` |
 
-Only the **predictor** stage needs a GPU; `models-downloader` and `trait-extractor` are
-CPU-only. The predictor template uses a **pod-level** `gpu-memory: "8192"` annotation with **no**
+Only the **predictor** stage needs a GPU; every other stage — `images-downloader`,
+`trait-extractor`, `write-back` and `exit-gate` — is CPU-only. (This line previously named
+`models-downloader`, a stage the cluster DAG no longer has; see §5.) The predictor template uses a **pod-level** `gpu-memory: "8192"` annotation with **no**
 `nvidia.com/gpu` resource (fixed in
 [issue #25](https://github.com/talmolab/sleap-roots-pipeline/issues/25) — it previously pinned an
 inert *object-level* `gpu-fraction: "0.5"` annotation alongside a hard `nvidia.com/gpu: 1`, which
@@ -109,37 +110,48 @@ WorkflowTemplate object's own `metadata.annotations` (top of the file) never is.
 
 ## 5. Stage images
 
-Current registry is **GitLab** (`registry.gitlab.com/salk-tm/...`); the roadmap A0 target is to
-migrate these to GHCR, not yet done — so use the GitLab refs until then.
+Every cluster template pulls from **GHCR**. The GitLab registry
+(`registry.gitlab.com/salk-tm/...`) is historical — it survives only in the three stale
+`local-WSL2-*` templates, which are not registered to any cluster.
 
 | Stage | Image |
 |---|---|
-| models-downloader | `registry.gitlab.com/salk-tm/models-downloader:<tag>` |
-| predictor (GPU) | `registry.gitlab.com/salk-tm/sleap-roots-predict:<tag>` |
-| trait-extractor | `registry.gitlab.com/salk-tm/sleap-roots-traits:<tag>` |
+| images-downloader | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
+| predictor (GPU) | `ghcr.io/talmolab/sleap-roots-predict:<tag>@sha256:<digest>` |
+| trait-extractor | `ghcr.io/talmolab/sleap-roots-trait-extractor:<tag>@sha256:<digest>` |
+| write-back | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
+| exit-gate | `ghcr.io/salk-harnessing-plants-initiative/bloomctl:<tag>` |
 
-Pin a tag/digest — never `:latest`. Confirm the tag exists in the registry before submitting.
+There is no `models-downloader` stage in the cluster DAG — it was dropped when the DAG was
+rewritten to warm-predict → traits; only the local-WSL2 variant still references one.
+
+Pin a tag/digest — never `:latest`. The two producers must carry an `@sha256:` digest, which is
+what their `SRP_PREDICT_CONTAINER_DIGEST` / `SRT_TRAITS_CONTAINER_DIGEST` env vars are validated
+against; the `bloomctl` stages are tag-pinned (the exit-gate's tag pin is tracked as #72; the
+images-downloader and write-back pins are not yet tracked). Confirm the reference resolves in the registry
+before submitting.
 
 ## 6. Example — run the predictor stage interactively
 
-The predictor reads three container dirs — `/workspace/images_input`, `/workspace/models_input`,
-`/workspace/output` — which are also its entrypoint's positional args. **Mount the host dirs
-to those exact container paths.** Note the non-obvious remap: the *models-downloader output*
-dir (`models_downloader_output`) is what feeds the predictor's `models_input`.
+The predictor reads **two** container dirs — `/workspace/images_input` and `/workspace/output` —
+which are also its entrypoint's positional args. **Mount the host dirs to those exact container
+paths.** There is no models mount: the warm-batch predict image loads models in-process from the
+wandb registry, and the cluster template declares no models-input `volumeMount` (the spec requires
+it SHALL NOT). The older three-dir form, with a `models_downloader_output → models_input` remap,
+predates that rewrite and the current image will reject it.
 
 ```bash
 wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml && \
 runai workspace submit srp-predict-test \
   -p busch-lab \
-  --image registry.gitlab.com/salk-tm/sleap-roots-predict:<tag> \
+  --image ghcr.io/talmolab/sleap-roots-predict:<tag> \
   --image-pull-policy Always \
   --gpu-memory-request 8192M \
   --cpu-core-request 8 \
   --cpu-memory-request 16G \
   --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/images_downloader_output,mount=/workspace/images_input,mount-propagation=HostToContainer \
-  --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/models_downloader_output,mount=/workspace/models_input,mount-propagation=HostToContainer \
   --host-path path=/hpi/hpi_dev/users/eberrigan/<dataset>/predictions,mount=/workspace/output,mount-propagation=HostToContainer,readwrite \
-  -- bash -c '<predict entrypoint> /workspace/images_input /workspace/models_input /workspace/output; sleep infinity'"
+  -- bash -c '<predict entrypoint> /workspace/images_input /workspace/output; sleep infinity'"
 ```
 
 `sleep infinity` keeps the pod alive after the run so you can `runai workspace exec` in to
@@ -196,7 +208,7 @@ set the priority class:
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
 | Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7 |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
-| `ImagePullBackOff` | confirm the `registry.gitlab.com/salk-tm/...` tag exists; test `docker pull` of the same tag |
+| `ImagePullBackOff` | confirm the `ghcr.io/...` reference resolves; test `docker pull` of the exact string in `image:`, digest included |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
 | `argo: command not found` | `argo` is WSL-only here — see §1a. Not installed on Windows. |
