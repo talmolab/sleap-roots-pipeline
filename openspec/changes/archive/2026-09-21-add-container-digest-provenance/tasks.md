@@ -367,13 +367,15 @@ nothing here.
 
 ## 8. Record what was observed
 
-- [ ] 8.1 Add a `docs/bloom-integration/roadmap.md` status-log entry recording **both** the
+- [x] 8.1 **DONE — two entries, both after the fact.** The 2026-09-17 entry records the baseline (12 envelopes, empty provenance fields) and the apply; the 2026-09-21 entry records §7's read-back, including 7.2's `imageID` witness. Landed as direct-to-`main` commits (`29cd92d`, `06811ea`) rather than the anticipated small PR, since `main` was already the working branch for the reconciliation work.
+  Original instructions: Add a `docs/bloom-integration/roadmap.md` status-log entry recording **both** the
   2026-09-16 baseline (12 envelopes, six empty provenance fields) — which otherwise survives only in
   this proposal and is lost when the change is archived — and the digests read back in 7.3. Per
   convention the log records what was **observed, after the fact**, not what was expected at merge.
   This is a post-merge repo edit, so it is a second, small PR (the #60 → #75 shape).
 
-- [ ] 8.2 Comment on #70 recording the verified trait-extractor digest, so the next reader does
+- [x] 8.2 **DONE 2026-09-21.** Commented on #70 with `sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369` — byte-identical to 1.2's — plus the `imageID` confirmation that it is the image that ran. Quoted #70's second comment verbatim rather than paraphrasing, and stated the miss precisely: it labels `sha256:e39b4746…` as `bloomctl` correctly; the problem is that it offers **predict + bloomctl** as the digests "already written down" for a change needing **predict + traits**.
+  Original instructions: Comment on #70 recording the verified trait-extractor digest, so the next reader does
   not have to re-derive it. Note precisely what the second comment gets wrong: it does **not**
   misattribute `sha256:e39b4746…` (it labels that `bloomctl` correctly) — it presents predict's and
   bloomctl's digests as "already written down" for a change needing predict + traits, when the
@@ -381,6 +383,7 @@ nothing here.
   **Validate:** the digest recorded in the comment is byte-identical to the one verified in 1.2, and
   the comment quotes #70 accurately rather than paraphrasing it.
 
-- [ ] 8.3 Archive the change (`/cleanup-merged`) **after** §6 and §7, never before — the spec delta
+- [x] 8.3 **DONE 2026-09-21, in the required order** — §6 applied 2026-09-17 and §7 verified 2026-09-21, both before archiving, so the spec delta describes deployed reality rather than an aspiration. Archive ordering also checked against the two sibling unarchived changes: their `per-batch-pipeline` deltas modify disjoint requirements (this change: predictor and trait-extractor; `add-partial-success-exit-gate`: the DAG and the launcher), so no archive-last-wins clause loss is possible between them.
+  Original instructions: Archive the change (`/cleanup-merged`) **after** §6 and §7, never before — the spec delta
   describes deployed reality, so archiving earlier records an aspiration. Verify every item above is
   `- [x]` or explicitly `BLOCKED` first.

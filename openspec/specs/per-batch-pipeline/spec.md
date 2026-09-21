@@ -3,62 +3,15 @@
 ## Purpose
 TBD - created by archiving change add-per-batch-argo-workflow. Update Purpose after archive.
 ## Requirements
-### Requirement: Four-stage per-batch DAG
-
-The pipeline Workflow SHALL define a four-task DAG: `images-downloader` (root) → `predictor` →
-`trait-extractor` → `write-back`, with each stage depending on the one before it. The Workflow
-SHALL declare a `scan-ids` argument parameter that `images-downloader` consumes, so the batch a run
-processes is a caller-supplied input rather than a hardcoded scan. The Workflow SHALL set
-`spec.serviceAccountName: bloom-workflow` so every step's pod can report its results back to Argo.
-Its `hostPath` volumes SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS
-mount fails the pod loudly instead of silently writing output to the node's local disk. Because
-this file is the only canonical, correctly-complete definition of this Workflow's shape — and is
-independently reconstructed programmatically elsewhere (`salk-bloom`'s dispatch worker) with no
-built-in mechanism to detect drift between the two — the file SHALL carry a header comment stating
-plainly that it is vendored (pinned to a commit SHA, CI-checked for drift) by `salk-bloom` for
-programmatic dispatch, so an editor of its `volumes`/`entrypoint`/`serviceAccountName`/DAG
-structure is warned at the point of editing rather than discovering the drift only when a real
-batch dispatch fails.
-
-#### Scenario: Workflow runs all four stages in order
-
-- **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
-- **THEN** its DAG has exactly four tasks: `images-downloader`, `predictor`, `trait-extractor`,
-  `write-back`
-- **AND** `predictor` lists `images-downloader` in its `dependencies`
-- **AND** `trait-extractor` lists `predictor` in its `dependencies`
-- **AND** `write-back` lists `trait-extractor` in its `dependencies`
-- **AND** the Workflow declares a `scan-ids` entry under `arguments.parameters`
-
-#### Scenario: Workflow sets bloom-workflow as its ServiceAccount
-
-- **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
-- **THEN** `spec.serviceAccountName` is `bloom-workflow`
-- **AND** none of the four stage templates override `serviceAccountName` at the template level
-
-#### Scenario: hostPath volumes fail loudly on a down NFS mount
-
-- **WHEN** the Workflow's `volumes` are inspected
-- **THEN** `images-input-dir`, `predictions-output-dir`, and `traits-output-dir` all declare
-  `hostPath.type: Directory`
-- **AND** none of the three declares `type: DirectoryOrCreate`
-
-#### Scenario: File carries a cross-repo vendoring guardrail
-
-- **WHEN** `sleap-roots-pipeline.yaml` is inspected
-- **THEN** its header comments name `salk-bloom` as vendoring a pinned copy of this file for
-  programmatic dispatch
-- **AND** the comment names the drift-check mechanism (a CI check comparing the vendored copy
-  against this file at the pinned commit)
-- **AND** the comment states that changing this file's `volumes`, `entrypoint`,
-  `serviceAccountName`, or DAG structure requires updating the vendored copy and its pinned
-  reference in `salk-bloom`
-
 ### Requirement: Predictor runs the warm GHCR predict container
 
 The `predictor` template SHALL run the rebuilt warm-batch predict container (the
 `sleap-roots-predict` GHCR image), invoked as `<image> <input_dir> <output_dir>` with a
-`WANDB_API_KEY` environment variable sourced from a Kubernetes secret. The template SHALL NOT
+`WANDB_API_KEY` environment variable sourced from a Kubernetes secret. Its image reference SHALL
+be pinned by `@sha256:` digest, retaining the `sha-<sha>` tag alongside it for readability; a
+tag-only reference is no longer sufficient, because a `sha-<gitsha>` tag is immutable in name only
+(a rebuild of the same commit can overwrite it in GHCR) and because the digest env var this
+template injects is validated against the digest in this line. The template SHALL NOT
 mount a model-input directory (models load in-process from the wandb registry). It SHALL request
 a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value, not a whole-GPU
 `resources.limits.nvidia.com/gpu` and not a relative `gpu-fraction`), SHALL explicitly set
@@ -69,7 +22,8 @@ a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value,
 #### Scenario: Predictor template uses the GHCR predict image with WANDB key and no models mount
 
 - **WHEN** `sleap-roots-predictor-template.yaml` is inspected
-- **THEN** the container image is the `sleap-roots-predict` GHCR image pinned by digest or `sha-<sha>` (not `:latest`)
+- **THEN** the container image is the `sleap-roots-predict` GHCR image pinned by `@sha256:` digest
+  (not `:latest`, and not a bare `sha-<sha>` tag)
 - **AND** its `args` are the input and output directory mount paths only (no models-input argument)
 - **AND** it sets `WANDB_API_KEY` from a `secretKeyRef`
 - **AND** it declares no models-input `volumeMount`
@@ -112,13 +66,16 @@ a fractional GPU via a pod-level `gpu-memory` annotation (an absolute MiB value,
 
 The `trait-extractor` template SHALL run `ghcr.io/talmolab/sleap-roots-trait-extractor`, passing
 only the input and output directory paths as `args` (the image's `ENTRYPOINT` is
-`["python","-m","trait_extractor"]`). It SHALL read the predictor's output mount as its input and
-write its results to a separate output mount.
+`["python","-m","trait_extractor"]`). Its image reference SHALL be pinned by `@sha256:` digest,
+retaining the `sha-<sha>` tag alongside it for readability; a tag-only reference is no longer
+sufficient, for the same two reasons given for the predictor. It SHALL read the predictor's output
+mount as its input and write its results to a separate output mount.
 
 #### Scenario: Trait-extractor template uses the GHCR image via the module entry
 
 - **WHEN** `sleap-roots-trait-extractor-template.yaml` is inspected
-- **THEN** the container image is `ghcr.io/talmolab/sleap-roots-trait-extractor` pinned by digest or `sha-<sha>`
+- **THEN** the container image is `ghcr.io/talmolab/sleap-roots-trait-extractor` pinned by
+  `@sha256:` digest (not a bare `sha-<sha>` tag)
 - **AND** its `args` are exactly the input and output mount paths (no `python /workspace/src/main.py` prefix)
 - **AND** its input mount is the same volume the predictor writes its predictions to
 
@@ -188,12 +145,81 @@ than asserting the label is functionally load-bearing for RunAI quota attributio
   the actual generated workflow name (e.g. `sleap-roots-pipeline-abc12`), not the literal
   unresolved string `{{workflow.name}}`
 
-### Requirement: Launcher registers all four templates
+### Requirement: Per-batch DAG with a terminal exit-code gate
+
+The pipeline Workflow SHALL define a five-task DAG: four processing stages — `images-downloader`
+(root) → `predictor` → `trait-extractor` → `write-back` — followed by a terminal `exit-gate` task
+depending on `write-back`. Each task SHALL depend on the one before it, and `exit-gate` SHALL be
+the only task that no other task depends on, so the Workflow's final phase is determined by the
+gate rather than by any stage's own node phase. The Workflow SHALL declare a `scan-ids` argument
+parameter that `images-downloader` consumes, so the batch a run processes is a caller-supplied
+input rather than a hardcoded scan. The Workflow SHALL set `spec.serviceAccountName:
+bloom-workflow` so every step's pod can report its results back to Argo. Its `hostPath` volumes
+SHALL use `type: Directory`, not `type: DirectoryOrCreate`, so a down NFS mount cannot silently
+write output to the node's local disk. Note the resulting failure mode is a **hang, not a loud
+failure**: a pod that cannot mount its `hostPath` sits `Pending`, not `Failed` or `Error`, so
+neither `retryStrategy` nor `continueOn` applies. The DAG SHALL use
+`dependencies:`, never `depends:`, since the latter is all-or-nothing per DAG template and would
+forbid `continueOn` on every task in it. Because this file is the only canonical,
+correctly-complete definition of this Workflow's shape — and is independently reconstructed
+programmatically elsewhere (`salk-bloom`'s dispatch worker) with no built-in mechanism to detect
+drift between the two — the file SHALL carry a header comment stating plainly that it is vendored
+(pinned to a commit SHA, CI-checked for drift) by `salk-bloom` for programmatic dispatch, so an
+editor of its `volumes`/`entrypoint`/`serviceAccountName`/DAG structure is warned at the point of
+editing rather than discovering the drift only when a real batch dispatch fails.
+
+#### Scenario: Workflow runs the four processing stages in order, then the gate
+
+- **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
+- **THEN** its DAG has exactly five tasks: `images-downloader`, `predictor`, `trait-extractor`,
+  `write-back`, `exit-gate`
+- **AND** `predictor` lists `images-downloader` in its `dependencies`
+- **AND** `trait-extractor` lists `predictor` in its `dependencies`
+- **AND** `write-back` lists `trait-extractor` in its `dependencies`
+- **AND** `exit-gate` lists `write-back` in its `dependencies`
+- **AND** `exit-gate` is the only task that no other task lists in its `dependencies`
+- **AND** the Workflow declares a `scan-ids` entry under `arguments.parameters`
+
+#### Scenario: DAG uses dependencies, not depends
+
+- **WHEN** the Workflow's DAG tasks are inspected
+- **THEN** no task declares a `depends` field
+- **AND** every task with a predecessor declares `dependencies`
+
+#### Scenario: Workflow sets bloom-workflow as its ServiceAccount
+
+- **WHEN** the Workflow (`sleap-roots-pipeline.yaml`) is inspected
+- **THEN** `spec.serviceAccountName` is `bloom-workflow`
+- **AND** none of the five workflow templates override `serviceAccountName` at the template level
+
+#### Scenario: hostPath volumes require their path to pre-exist
+
+- **WHEN** the Workflow's `volumes` are inspected
+- **THEN** `images-input-dir`, `predictions-output-dir`, and `traits-output-dir` all declare
+  `hostPath.type: Directory`
+- **AND** none of the three declares `type: DirectoryOrCreate`
+- **AND** the consequence is documented as a `Pending` hang rather than a pod failure, since
+  `assessNodeStatus` maps `PodPending` unconditionally to `NodePending` at v3.6.7
+
+#### Scenario: File carries a cross-repo vendoring guardrail
+
+- **WHEN** `sleap-roots-pipeline.yaml` is inspected
+- **THEN** its header comments name `salk-bloom` as vendoring a pinned copy of this file for
+  programmatic dispatch
+- **AND** the comment names the drift-check mechanism (a CI check comparing the vendored copy
+  against this file at the pinned commit)
+- **AND** the comment states that changing this file's `volumes`, `entrypoint`,
+  `serviceAccountName`, or DAG structure requires updating the vendored copy and its pinned
+  reference in `salk-bloom`
+
+### Requirement: Launcher registers every workflow template
 
 The cluster launcher (`runai_run_pipeline.sh`) SHALL register the `images-downloader`, `predictor`,
-`trait-extractor`, and `write-back` templates. Its target namespace SHALL equal
-`sleap-roots-pipeline.yaml`'s own `metadata.namespace` (`runai-busch-lab`), so that the namespace it
-registers templates into is the namespace the Workflow it submits actually runs in.
+`trait-extractor`, `write-back`, and `exit-gate` templates.
+
+Its target namespace SHALL equal `sleap-roots-pipeline.yaml`'s own `metadata.namespace`
+(`runai-busch-lab`), so that the namespace it registers templates into is the namespace the Workflow
+it submits actually runs in.
 
 That value SHALL NOT be overridable by an environment variable. `argo submit -n <ns>` does not
 redirect a submission — the manifest's `metadata.namespace` wins — so an override could only move
@@ -201,17 +227,328 @@ the template registrations away from the namespace the Workflow still lands in. 
 project requires editing the manifest as well, and registering that project's templates and secrets
 first.
 
-#### Scenario: Launcher's TEMPLATES list contains all four stage templates
+#### Scenario: Launcher's TEMPLATES list contains every workflow template
 
 - **WHEN** `runai_run_pipeline.sh` is inspected
-- **THEN** its registered `TEMPLATES` list contains all four template files: the images-downloader,
-  predictor, trait-extractor, and write-back templates
+- **THEN** its registered `TEMPLATES` list contains all five template files: the images-downloader,
+  predictor, trait-extractor, write-back, and exit-gate templates
 - **AND** it references no models-downloader template
 
-#### Scenario: Launcher targets the busch-lab namespace
+#### Scenario: Launcher registers into the namespace the Workflow runs in
 
-- **WHEN** `runai_run_pipeline.sh` is inspected
-- **THEN** its `NAMESPACE` value is `runai-busch-lab`
-- **AND** that value equals `sleap-roots-pipeline.yaml`'s `metadata.namespace`
-- **AND** it is a literal, not an environment-variable expansion
+- **WHEN** `runai_run_pipeline.sh` and `sleap-roots-pipeline.yaml` are inspected
+- **THEN** the launcher's `NAMESPACE` value is `runai-busch-lab`
+- **AND** that value equals the Workflow's `metadata.namespace`
+
+#### Scenario: The launcher's namespace is a literal, not an environment-variable expansion
+
+- **WHEN** `runai_run_pipeline.sh`'s `NAMESPACE` assignment is inspected
+- **THEN** it is a plain literal value
+- **AND** it contains no parameter expansion or default-value syntax that would let an environment
+  variable redirect where templates are registered
+
+### Requirement: A partial-success exit does not terminate the batch
+
+Each of the three producer tasks — `images-downloader`, `predictor`, `trait-extractor` — SHALL
+declare `continueOn: {failed: true}` on the task itself in the DAG, so that a stage which completes
+its batch while isolating one or more per-scan failures does not prevent the remaining stages from
+running on the scans that succeeded.
+
+`continueOn` SHALL declare `failed` only, and SHALL NOT declare `error`. A `Failed` node means the
+container ran and exited non-zero, which covers both the partial-success exit code and RunAI
+eviction; an `Error` node means the stage never ran at all (image pull failure, wait-container
+death, pod deleted), and the DAG must stop rather than continue on data that was never produced.
+
+`continueOn` SHALL be declared on the failing task itself, never on a downstream task, since Argo
+applies it to that task's dependents and placing it downstream both fails to have the intended
+effect and triggers a known upstream defect.
+
+`write-back` SHALL NOT declare `continueOn`, since `bloomctl cyl batch-ingest-result` has no
+partial-success exit code and there is nothing to let through.
+
+The producer templates' `retryStrategy` blocks SHALL retain `retryPolicy: Always` with their
+existing limits, and SHALL NOT declare a `retryStrategy.expression`. Argo's whole-step retry is
+currently the only scan-level retry mechanism that exists in any producer, so suppressing retries
+on the partial-success code would permanently isolate a scan that a further attempt would have
+completed.
+
+#### Scenario: Producer tasks tolerate a failed node
+
+- **WHEN** the Workflow's DAG tasks are inspected
+- **THEN** `images-downloader`, `predictor` and `trait-extractor` each declare
+  `continueOn.failed: true`
+- **AND** none of them declares `continueOn.error`
+- **AND** `write-back` declares no `continueOn` at all
+
+#### Scenario: Producer retry strategies are unchanged and expression-free
+
+- **WHEN** the three producer templates are inspected
+- **THEN** each retains `retryPolicy: Always`
+- **AND** none declares a `retryStrategy.expression`
+
+#### Scenario: A partially-failing stage lets the remaining scans through
+
+- **WHEN** a batch is submitted in which one scan fails permanently and the others succeed, and a
+  producer stage therefore exits with the partial-success code after exhausting its retries
+- **THEN** the downstream stages run
+- **AND** the scans that succeeded reach `write-back` and are ingested
+- **AND** the failed scan is recorded as `failed` at the run level
+
+#### Scenario: A stage that never ran stops the DAG
+
+- **WHEN** a producer's pod fails to start at all, producing an `Error` rather than a `Failed` node
+- **THEN** the DAG does not proceed past that stage
+- **AND** `exit-gate` is `Omitted` and inherits the failure
+- **AND** the Workflow's final phase is `Failed`
+
+### Requirement: An exit-code gate determines the Workflow's final phase
+
+The DAG SHALL include a terminal `exit-gate` task, backed by
+`sleap-roots-exit-gate-template.yaml`, which receives each producer's real exit code and exits
+non-zero unless every one of them is either `0` (all scans succeeded) or the partial-success code
+`3`. Because `continueOn` keys only on a node's phase and cannot read exit codes, without this gate
+an exhausted-retry crash would be indistinguishable from a partial success and would report the
+Workflow `Succeeded`.
+
+The gate SHALL receive the exit codes as **three separately-named** input parameters, one per
+producer, and SHALL NOT receive them as a single delimiter-joined value — splitting a joined value
+in a shell silently collapses an empty field, so a missing code would pass undetected.
+
+The gate SHALL perform the comparison inside its container against an explicit allowlist of the
+accepted values, and SHALL NOT use a `when:` expression, because `when:` is evaluated by govaluate
+rather than expr, so integer-coercion helpers are unavailable and a mixed string/number comparison
+is a parse error.
+
+The gate SHALL reject any value that is not exactly one of the accepted codes — including an empty
+value and an unsubstituted `{{tasks.<name>.exitCode}}` placeholder.
+
+Every producer the gate references SHALL remain an ancestor of the gate, since task-scope references
+resolve only through a task's ancestry. That constraint is enforced at three independent layers, each
+catching something the others do not: a static ancestry assertion over the manifests; Argo's own
+`validateDAGTaskArgumentDependency`, which rejects a non-ancestor reference at **both** lint and
+submission time (verified — it reports `missing dependency '<task>' for parameter '<name>'`, so a
+broken ancestry cannot reach the cluster silently); and the gate's allowlist.
+
+The allowlist remains necessary because it covers a case the validator cannot: a task that *is* a
+valid ancestor but produced no `outputs.exitCode` — reachable when a node is `Failed` without its
+main container having terminated. There the gate receives an empty or unsubstituted value at
+runtime, and rejecting anything outside the accepted set is what converts it into a visible
+failure.
+
+#### Scenario: Gate accepts success and partial success
+
+- **WHEN** every producer exits either `0` or `3`
+- **AND** `write-back` exits `0`
+- **THEN** the `exit-gate` task exits `0`
+- **AND** the Workflow's final phase is `Succeeded`
+
+#### Scenario: Gate rejects a crash-class exit
+
+- **WHEN** any producer exits with a code other than `0` or `3` after exhausting its retries — for
+  example `1` (crash), `2` (usage error) or `143` (`SIGTERM`, once retries are spent)
+- **THEN** the `exit-gate` task exits non-zero
+- **AND** the Workflow's final phase is `Failed`
+
+#### Scenario: Gate rejects an empty or unresolved exit code
+
+- **WHEN** the value the gate receives for any producer is empty, absent, a literal
+  `{{tasks.<name>.exitCode}}` placeholder, or anything else outside the accepted set
+- **THEN** the `exit-gate` task exits non-zero
+- **AND** the Workflow's final phase is `Failed`
+
+#### Scenario: Gate reads the last attempt's code through a retry node
+
+- **WHEN** a producer task carries a `retryStrategy` and its final attempt exits with a given code
+- **THEN** the value the gate receives for that producer is that final attempt's exit code, not an
+  empty string
+
+#### Scenario: Gate receives three named parameters, not a joined value or a when expression
+
+- **WHEN** the `exit-gate` DAG task is inspected
+- **THEN** it passes three separately-named `arguments.parameters`, one per producer, each carrying
+  that producer's `exitCode`
+- **AND** it declares no `when` field
+
+#### Scenario: Every producer the gate references is an ancestor of it
+
+- **WHEN** the Workflow's DAG is inspected
+- **THEN** every task named in a `{{tasks.<name>.exitCode}}` reference in the `exit-gate` task's
+  `arguments.parameters` is reachable from `exit-gate` by transitively following `dependencies`
+
+#### Scenario: A failing write-back fails the Workflow through the gate
+
+- **WHEN** `write-back` fails after exhausting its retries
+- **THEN** `exit-gate` is `Omitted` and inherits the failure
+- **AND** the Workflow's final phase is `Failed`
+
+#### Scenario: The gate attests machinery completion, not data completeness
+
+- **WHEN** the `exit-gate` task and its template are inspected
+- **THEN** the template declares no `volumeMounts`, so the gate cannot observe whether any output
+  was written
+- **AND** the gate's decision is derived solely from the producers' exit codes
+- **AND** a passing gate therefore attests that every producer stage completed acceptably, and does
+  **not** attest that any scan was processed or that any output landed
+
+### Requirement: The exit-gate template runs without data or credential access
+
+`sleap-roots-exit-gate-template.yaml` SHALL pin its container image by immutable tag or digest
+(never `:latest`), and SHALL override `command`, because the reused image's `ENTRYPOINT` is the
+`bloomctl` CLI with no `CMD` — an args-only template would run `bloomctl <script>` and fail every
+Workflow, including successful ones.
+
+The template SHALL declare no `volumeMounts`, so Argo attaches neither the `hostPath` data volumes
+nor the credentials Secret to its pod, and SHALL NOT set `HOME`: the gate reads no data and makes
+no Bloom API call.
+
+The template SHALL declare an explicit `priorityClassName`, since the priority an Argo pod receives
+with none declared cannot be verified from this repo's credentials (the cluster-scoped
+`priorityclasses` API is Forbidden to the `argo-user` identities) and pods observed with none
+resolved to priority `0` — the lowest tier, below `train`. It SHALL declare a
+`retryStrategy` with `retryPolicy: Always` **and a `backoff`**, since it is the DAG's only leaf: a
+transient gate-pod failure would otherwise report a fully-successful batch as `Failed`, and
+retrying immediately against a still-contended cluster spends the whole budget in seconds. It SHALL
+declare `resources` requests, so the pod is not BestEffort QoS. It SHALL carry the same `project`
+label the other stage templates carry — for consistency only; object-level metadata is not copied
+onto the pod and is inert for quota attribution, which RunAI derives from the namespace.
+
+#### Scenario: Gate template overrides the image entrypoint and pins its image
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** its container declares a `command`
+- **AND** its image is pinned by an immutable `sha-<sha>` tag or digest, not `:latest`
+
+#### Scenario: Gate template reaches no data and no credentials
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** its container declares no `volumeMounts`
+- **AND** it sets no `HOME` environment variable
+- **AND** it declares no `serviceAccountName` at the template level
+
+#### Scenario: Gate template declares its scheduling and resilience fields
+
+- **WHEN** `sleap-roots-exit-gate-template.yaml` is inspected
+- **THEN** it declares an explicit `priorityClassName`
+- **AND** it declares a `retryStrategy` whose `retryPolicy` is `Always`
+- **AND** that `retryStrategy` declares a `backoff.duration`
+- **AND** it declares `resources.requests`
+- **AND** it carries a `project` label matching the other stage templates
+
+### Requirement: Every producer carries the Argo workflow identity
+
+Every batch-processing stage template SHALL set an `ARGO_WORKFLOW_NAME` environment variable
+sourced from Argo's built-in `{{workflow.name}}` — `images-downloader`, `predictor`,
+`trait-extractor` and `write-back` alike.
+
+The two `bloomctl` stages already consume it. The `predictor` and `trait-extractor` stages do not
+consume it yet, and it is inert for them today; it is required because the stage directories are
+fixed, shared `hostPath`s and `run_manifest.json` accumulates `scan_keys` across every run that
+writes into them. Once a producer stage can be reached after an upstream failure, the manifest a
+stage is scoped by may belong to a different run, and a stage has no way to detect that without
+knowing its own workflow identity. Carrying it is the prerequisite for any run-scope validation.
+
+#### Scenario: All four batch-processing templates carry ARGO_WORKFLOW_NAME
+
+- **WHEN** the images-downloader, predictor, trait-extractor and write-back templates are inspected
+- **THEN** each declares an `ARGO_WORKFLOW_NAME` entry in its container `env:`
+- **AND** each such entry's `value` is exactly `"{{workflow.name}}"`
+
+### Requirement: Each provenance-emitting stage records the container image that produced its results
+
+The two provenance-emitting stages — `predictor` and `trait-extractor` — SHALL each inject the
+container-digest environment variable its own image reads, so the resulting record identifies not
+only which code ran (`predict_code_sha` / `traits_code_sha`, baked into the images) but which image
+ran. The `predictor` template SHALL set `SRP_PREDICT_CONTAINER_DIGEST` and the `trait-extractor`
+template SHALL set `SRT_TRAITS_CONTAINER_DIGEST`.
+
+The `images-downloader`, `write-back` and `exit-gate` stages are outside this requirement: all
+three run `bloomctl`, which emits no provenance envelope and reads no such variable. Note that
+"producer" elsewhere in this capability (`continueOn`, the exit-gate) means the three stages
+`images-downloader`, `predictor` and `trait-extractor`; this requirement is deliberately narrower,
+which is why it is not phrased in terms of producers. The `local-WSL2-*` template variants are also
+outside it: they are a local dry-run path, are not registered to any cluster, and are not part of
+the manifest set `scripts/check_manifests.py` validates.
+
+Each value SHALL be the `sha256:`-prefixed manifest digest of the image that same template pins,
+and each template's `image:` reference SHALL carry that digest, so the pinned image is the single
+in-file source of truth for the value and the two cannot be updated independently. Because a
+digest that disagrees with the image that actually ran is a false provenance record rather than a
+missing one — and therefore worse than the empty string both fields default to — a template SHALL
+NOT declare either variable without its `image:` being digest-pinned to the same value.
+
+Each reference SHALL also retain a `sha-<sha>` tag before the `@`. Where a reference carries both,
+**the digest is authoritative and the tag is human-facing only**: the tag's agreement with the
+digest is verified by hand against the registry at pin time and is NOT re-checked by
+`scripts/check_manifests.py`, which performs no network resolution. No consumer SHALL derive image
+identity from the tag.
+
+Only the stage's own digest is injected. `predict_container_digest` reaches the trait-extractor's
+envelope threaded through predict's `{scan}.predictions.json` manifest, not from the
+trait-extractor pod's environment, so the `trait-extractor` template SHALL NOT set
+`SRP_PREDICT_CONTAINER_DIGEST`.
+
+*Informative (a property of `sleap-roots-contracts`, not a constraint this capability can
+enforce):* these variables are recorded in provenance only. As of `identity.py`,
+`compute_idempotency_key` hashes `scan_key`, `images_checksum`, `models`, `param_hash`,
+`predict_code_sha`, `traits_code_sha` and, when non-empty, `predict_output_params` — no container
+digest. Setting these variables therefore invalidates no accumulated key and triggers no
+recomputation.
+
+#### Scenario: The predictor injects its own digest, consistent with its pinned image
+
+- **WHEN** `sleap-roots-predictor-template.yaml` is inspected
+- **THEN** its `image:` reference matches `@sha256:[0-9a-f]{64}`
+- **AND** its `image:` reference also carries a `sha-<sha>` tag before the `@`
+- **AND** its container `env` contains exactly one `SRP_PREDICT_CONTAINER_DIGEST` entry
+- **AND** that entry's `value` matches `^sha256:[0-9a-f]{64}$`
+- **AND** that entry's `value` equals the digest parsed from its own `image:` reference
+
+#### Scenario: The trait-extractor injects its own digest, consistent with its pinned image
+
+- **WHEN** `sleap-roots-trait-extractor-template.yaml` is inspected
+- **THEN** its `image:` reference matches `@sha256:[0-9a-f]{64}`
+- **AND** its `image:` reference also carries a `sha-<sha>` tag before the `@`
+- **AND** its container `env` contains exactly one `SRT_TRAITS_CONTAINER_DIGEST` entry
+- **AND** that entry's `value` matches `^sha256:[0-9a-f]{64}$`
+- **AND** that entry's `value` equals the digest parsed from its own `image:` reference
+
+#### Scenario: A pin bump that updates only one side fails the manifest check
+
+- **WHEN** a template's `image:` digest is bumped without updating its digest env var, or the env
+  var is changed without updating `image:`
+- **THEN** `scripts/check_manifests.py` exits non-zero, naming the stage whose digest disagrees
+- **AND** the expected value is derived by parsing the template's own `image:` line, so no literal
+  digest appears in the checker
+
+#### Scenario: An absent or malformed digest cannot satisfy the consistency check
+
+- **WHEN** a template declares a digest env var whose value is empty or not a well-formed
+  `sha256:<64 hex>` string
+- **THEN** `scripts/check_manifests.py` exits non-zero
+- **AND** when a template's `image:` reference carries no parseable `@sha256:<64 hex>` digest while
+  its digest env var is present, the equality assertion itself reports failure rather than
+  comparing two absent values and passing vacuously
+
+#### Scenario: A newly-computed scan records the digest of the image that ran
+
+- **WHEN** a workflow completes against templates registered from these manifests
+- **AND** a scan is newly predicted and newly trait-extracted by that run, rather than skipped by
+  either stage's idempotency-key check
+- **THEN** that scan's `{scan_key}.result.json` has non-empty
+  `provenance.predict_container_digest` and `provenance.traits_container_digest`
+- **AND** each equals the digest pinned by the corresponding deployed `WorkflowTemplate`
+
+#### Scenario: Injecting the digest does not retroactively populate skipped scans
+
+- **WHEN** a workflow runs over a tree whose predictions and results were produced by an earlier,
+  non-digest-injecting image, and both stages skip on an unchanged idempotency key
+- **THEN** those scans' existing manifests and envelopes are left unchanged, with both digest
+  fields still empty
+- **AND** this is expected rather than a defect: the container digest is not an idempotency-key
+  input, so populating it invalidates no accumulated work and forces no recomputation
+
+#### Scenario: The trait-extractor does not fabricate the predict digest
+
+- **WHEN** `sleap-roots-trait-extractor-template.yaml` is inspected
+- **THEN** its container `env` contains no `SRP_PREDICT_CONTAINER_DIGEST` entry
 

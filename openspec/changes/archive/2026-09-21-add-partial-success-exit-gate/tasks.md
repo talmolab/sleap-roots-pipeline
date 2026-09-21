@@ -289,7 +289,8 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
   vector: `(0,0,0)`, `(0,3,0)`, `(3,3,3)`, `(0,1,0)`, `(0,2,0)`, `(0,143,0)`, `(0,,0)`, `(0,-1,0)`.
   **Validate:** `Succeeded` for the first three, `Failed` for the rest. This is the cheapest proof
   of the gate's logic *as deployed*, and it is independent of any other repo's behaviour.
-- [ ] 7.4 **BLOCKED as written (assessed 2026-09-16) — must be split. Two independent reasons.**
+- [x] 7.4 **DONE via the split — both halves now pass.** 7.4a passed 2026-09-16 (every filesystem criterion) and 7.4b passed 2026-09-21 (all six criteria, Bloom-dispatched, `done_count=2`/`failed_count=1`). Kept below as the record of why it had to be split.
+  Original assessment: **BLOCKED as written (assessed 2026-09-16) — must be split. Two independent reasons.**
   1. **Its Bloom-side criteria are unreachable until §8 lands.** `done_count=2`/`failed_count=1`
      and the poison scan's `cyl_pipeline_run_scans` row require rows that Bloom's
      `POST /workflows/pipeline` route creates at *enumerate* time. A hand `argo submit` creates
@@ -811,5 +812,6 @@ delta.
 - [x] 10.2 `bash -n runai_run_pipeline.sh`
 - [x] 10.3 `openspec validate add-partial-success-exit-gate --strict`
 - [x] 10.4 `python scripts/check_manifests.py` against the final tree.
-- [ ] 10.5 Open the PR with `/pr-description`, referencing this change-id, `Closes #56`, and
+- [x] 10.5 **DONE.** Opened as PR #60, merged 2026-09-16 as `310aae6` (`Closes #56`), with the follow-up records landing as #75 and the 2026-09-17/09-21 direct-to-`main` commits.
+  Original instructions: Open the PR with `/pr-description`, referencing this change-id, `Closes #56`, and
   linking #58 (this adds a fifth un-drift-checked object), bloom#857, bloom#859 and predict#44.
