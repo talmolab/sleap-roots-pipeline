@@ -345,7 +345,66 @@ A0 unblocks A3/A4 (the service repos need OpenSpec/commands first). A1 ✅ unblo
 Within A2: **consume-pin ✅ → A ✅ → C ✅ (B deferred, off critical path) → D+E ✅ (co-land) →
 read-path ✅ → `bloom cyl` CLI → D re-pin (a2→a3, #393) → backfill**. A4 needs A0 + A2 + A3. B2 needs B1.
 
-**Next (true frontier, as of 2026-08-31):**
+**Next (true frontier, as of 2026-09-21):**
+
+**Items 1-4 of the 2026-08-31 list below are all resolved.** Verified live on 2026-09-21, not
+inferred from merges — see that day's status-log entry:
+
+- **1 (srp#51 + the batch-oracle scenarios)** — done 2026-09-01, and the poison-scan scenario that
+  was still failing then now passes: srp#56's task 7.4b, Bloom-dispatched, `done_count=2`/
+  `failed_count=1`, poison isolated at download with exit `3` and no artifacts.
+- **2 (bloom#685, the `contract_version` pin)** — **CLOSED.** Confirmed by artifact: envelopes
+  written 2026-09-21 carry `contract_version: 0.1.0a7` and write-back accepted them
+  (`cyl_trait_sources` rows created). The 2026-08-31 note that a real envelope "still reads
+  `0.1.0a3`" is obsolete.
+- **3 (bloom#716, the counts)** — **implemented, though the issue still reads open.**
+  `services/workflows/status_poller.py` computes and writes `done_count`/`failed_count`
+  (≈`:212`, `:289`), and run 10 populated them correctly. **This issue is closeable** — the
+  2026-08-31 observation of `done_count: 0` reflected the gap as it was then, not as it is now.
+- **4 (re-run the oracle confirming `a7` + the counts)** — done, by the same run: `a7` accepted
+  *and* the counts correct, which were its two conditions.
+
+Also closed since that list was written: **srp#56** (verified end to end), **srp#76** (fixed by
+salk-bloom #871, verified twice — with `bloomctl` on 2026-09-17 and in-cluster on 2026-09-21),
+**srp#78** (container digests recorded and confirmed to be the image that actually ran, via pod
+`imageID`), and **srp#74**. All three OpenSpec changes are archived, and
+`scripts/check_cluster_drift.sh` reads all five templates IN SYNC with `main`.
+
+**So the frontier is now item 5 below — the Bloom UI (bloom#15) — which its own text said was
+"backend ready once 2-4 land."** They have landed. That is a real multi-day build, not a quick fix,
+and the advice in item 5 still holds: keep triggering real E2E runs during it so the Realtime
+subscription develops against live data rather than mocks.
+
+**The one correctness gap worth closing first, and it is cheap relative to the UI:**
+[srp#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) — `write_run_manifest` unions
+into the shared manifest and never prunes, so every run operates on the union of all runs that ever
+used those paths. Measured four times on 2026-09-21: a **1-scan** request carried a **12-key**
+manifest and write-back delivered all 12, creating `cyl_trait_sources` rows for scans nobody
+requested. It reaches persisted state in Bloom, it will corrupt any per-run accounting the UI
+displays, and the fix shape is already decided in the issue (per-run manifest identity,
+`run_manifest.<pipeline_run_id>.json`, artifacts still shared so skip-if-done keeps working).
+Doing it before the UI avoids building a progress panel on top of counts the manifest can inflate.
+
+**Known, filed, and deliberately not blocking any of the above:**
+
+- **bloom#875's residue** — PR #880's RPC fallback fixes cross-workflow re-delivery, but only when
+  the source's *original* delivery was Bloom-dispatched. Sources first written by a hand-submitted
+  `argo submit` have no `cyl_pipeline_run_scans` row to resolve from and still report `failed`
+  (flagged on that PR). Affects hand-submitted diagnostics, not dispatched runs.
+- **write-back's `Ingested 0/N` headline** counts only `status == "ok"`, so a run whose data wrote
+  correctly can print `0/12` while every envelope landed. The most misleading line in this
+  pipeline's output; not filed as its own issue yet.
+- **bloom#864** — `provenance.pipeline_run_id` is still `None` even on a Bloom-dispatched run
+  (reconfirmed 2026-09-21). Needs the producer-side change tracked as talmolab/sleap-roots#268.
+
+**Production promotion is still NOT next**, unchanged in substance from the 2026-09-17 entry:
+blocked by **bloom#863** (prod-dispatched Workflows would mount *staging* Supabase credentials) and
+**bloom#864**, and production is dormant — no frontend drives it. It is the eventual goal, not a
+near-term step.
+
+---
+
+**Superseded — the list as written 2026-08-31, kept for the record:**
 
 A0/A1/A2/A3 are done; the bloom trigger route (all 3 phases), both producers' Argo-readiness
 hardening, and write-back's manifest scoping are now all shipped too. The 2026-08-24/25 baseline
