@@ -206,6 +206,16 @@ curl -sI -H "Authorization: Bearer $TOK" -H "$ACC" \
 
 ## 6. Apply to the cluster — do not leave this parked
 
+**APPLIED 2026-09-17 (6.1-6.6 all done).** From a clean `main` checkout at `920d255` (the
+squash-merge of PR #78), tree verified clean and 73/73 assertions passing before any write.
+Pre-flight: no `Running` or `Pending` Workflows. Rollback pre-image verified rather than assumed —
+`29cd92d` pins exactly what the cluster was serving (predictor `:sha-e025e309…` tag-only,
+trait-extractor `:sha-689cffb` tag-only). `argo template update` on the two producer templates
+only; `check_cluster_drift.sh` then reported **all five IN SYNC**, exit 0, and still did on
+2026-09-21 after three days. Rollback: `git checkout 29cd92d -- sleap-roots-predictor-template.yaml
+sleap-roots-trait-extractor-template.yaml` + `argo template update` each — but re-derive the target
+against the live pins first, per the trap recorded in the exit-gate change's task 7.2.
+
 A merged-but-unapplied template change is the #51/#53 pattern where repo and cluster diverged for
 weeks. ⚠️ `runai-busch-lab` is shared by Bloom staging **and** production, and the vendored Workflow
 resolves every stage by unversioned `templateRef` name — so `argo template update` changes what
@@ -225,14 +235,14 @@ both references resolve to the same manifest, so the apply is a no-op at the sto
 cannot change which bytes execute. Do **not** justify the apply by §7 instead — §7 runs on a scratch
 tree *after* §6, so it does not cover the production window between them.
 
-- [ ] 6.1 **Apply from a checkout refreshed to the merged SHA.** The shared `main` checkout on this
+- [x] 6.1 **Apply from a checkout refreshed to the merged SHA.** The shared `main` checkout on this
   machine sits at `3cf4b4f`, which still pins the **pre-#56** predictor image
   (`sha-f974632…`) — verified. Applying from it would silently revert #56's pin bump in production.
   **Validate:** `git rev-parse HEAD` equals this PR's squash-merge SHA on `origin/main`,
   `git status --porcelain` is empty, and `kubectl config current-context` is the
   `runai-busch-lab` argo-user context.
 
-- [ ] 6.2 **Confirm no Workflow is `Running` first.** Argo resolves a `templateRef` at *node
+- [x] 6.2 **Confirm no Workflow is `Running` first.** Argo resolves a `templateRef` at *node
   creation* time, so a Workflow already past `images-downloader` but not yet at `predictor` would
   pick up the new template mid-run. Bytes-identical (see §6.0) makes that harmless to *execution*,
   but it yields a half-provenanced run — predict envelope empty, traits envelope populated — which
@@ -240,7 +250,7 @@ tree *after* §6, so it does not cover the production window between them.
   **Validate:** `argo list -n runai-busch-lab` shows no `Running` workflow, and there are no
   `CronWorkflows` that could start one mid-apply.
 
-- [ ] 6.3 **Capture the rollback pre-image before any write** — `check_cluster_drift.sh`'s own
+- [x] 6.3 **Capture the rollback pre-image before any write** — `check_cluster_drift.sh`'s own
   header says to run it before as well as after, precisely because it doubles as that pre-image.
   Dump both live templates to the scratchpad (**not** the repo root, which does not ignore `*.yaml`):
   `argo template get <name> -n runai-busch-lab -o yaml > <scratch>/pre-<name>.yaml`.
@@ -252,20 +262,61 @@ tree *after* §6, so it does not cover the production window between them.
   templates and IN SYNC on the other three. Anything else means something drifted independently and
   this apply would erase it — stop and investigate.
 
-- [ ] 6.4 `argo template update` both edited templates in `runai-busch-lab`.
+- [x] 6.4 `argo template update` both edited templates in `runai-busch-lab`.
   **Validate:** each command reports the template updated.
 
-- [ ] 6.5 `bash scripts/check_cluster_drift.sh`.
+- [x] 6.5 `bash scripts/check_cluster_drift.sh`.
   **Validate:** reports in-sync for all five templates. Hardened in #73 — it now fails loudly rather
   than printing `IN SYNC` when its own normaliser breaks.
 
-- [ ] 6.6 Record the rollback procedure in the PR: `argo template update` from the
+- [x] 6.6 Record the rollback procedure in the PR: `argo template update` from the
   `<scratch>/pre-*.yaml` dumps, or from the pre-merge SHA (`561d057` unless `main` moves first —
   record it at apply time, never assume it later; #56 had to correct exactly this claim after the
   fact). Trigger: any `ImagePullBackOff` or unexplained `Pending` in §7. Note the repo revert alone
   changes nothing on the cluster — with no CI, repo and cluster are independent states.
 
 ## 7. Prove it on a real run
+
+**RUN 2026-09-21 — PASSES, including 7.2's independent witness.** 7.1-7.3 done; 7.4 not needed.
+Workflow `sleap-roots-pipeline-9s92h` (19:19:25Z→19:29:46Z, `Succeeded`, all five nodes exit 0) over
+**new** synthetic scans `12894756`/`12894757` from `A4-PIPELINE-E2E-TEST` — created by
+salk-bloom PR #884's `bloomctl cyl create-test-scan`, which exists because the previous one-off
+uploader was never committed. Both scans had no staged input, no predictions and no `result.json`,
+so predict genuinely recomputed: `Batch complete: 2 ok, 8 skipped, 0 failed`. **No locally-modified
+working copy was needed** — 7.1 assumed one, but new scan_keys force a recompute on the shared
+hardcoded paths, so the canonical `sleap-roots-pipeline.yaml` ran unmodified and the vendoring
+notice was never at risk.
+
+**7.2 — the independent witness, captured before podGC.** For each producer, `spec…image` (the
+reference *as admitted*) and `status…imageID` (the kubelet's own resolution):
+
+| stage | `spec.image` | `imageID` |
+|---|---|---|
+| predictor | `ghcr.io/talmolab/sleap-roots-predict:sha-e025e309…@sha256:4d4064c6…` | `ghcr.io/talmolab/sleap-roots-predict@sha256:4d4064c6…` |
+| trait-extractor | `ghcr.io/talmolab/sleap-roots-trait-extractor:sha-689cffb@sha256:ab5a1f43…` | `ghcr.io/talmolab/sleap-roots-trait-extractor@sha256:ab5a1f43…` |
+
+Both `imageID`s equal the digest pinned in the corresponding deployed template, and `spec.image`
+came through **unrewritten** — so the RunAI mutating webhook demonstrably does not touch `image:`
+for the `name:tag@digest` form either, which this task previously recorded as observed for the
+tag-only form but not proven. Also observed live on 2026-09-17: `gpu-node12` logged
+`Pulling image "…predict:sha-e025e309…@sha256:4d4064c6…"`, confirming `name:tag@digest` normalises
+through containerd/CRI — reasoned about from `distribution/reference` in §1, now measured.
+
+**7.3 — the recorded provenance, equal not merely non-empty.** Both `{scan_key}.result.json`
+envelopes:
+
+| field | value | == deployed template's pin |
+|---|---|---|
+| `predict_container_digest` | `sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060` | **yes**, both scans |
+| `traits_container_digest` | `sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369` | **yes**, both scans |
+
+`predict_code_sha` is `e025e309…`, matching the pinned image's own commit. Because 7.2 landed, this
+is no longer a round-trip of a human-typed string: template pin == reference as admitted == what the
+kubelet ran == what the envelope recorded. `provenance.pipeline_run_id` remained `None` (bloom#864,
+expected on a hand-submitted run).
+
+Baseline for contrast: all 12 pre-existing envelopes still read `""` for both fields, correctly —
+their scans skip on unchanged keys, which this change's own spec records as expected-not-defect.
 
 Static assertions cannot show that a real run records a real digest.
 
@@ -280,7 +331,7 @@ The scan must be **new to that tree**, or both stages skip on an unchanged idemp
 envelope is never rewritten — the "skipped scans" scenario in the delta spec. A skipped scan proves
 nothing here.
 
-- [ ] 7.1 Submit one workflow against the scratch tree. The hostPaths are **hardcoded** in
+- [x] 7.1 Submit one workflow against the scratch tree. The hostPaths are **hardcoded** in
   `sleap-roots-pipeline.yaml`, not parameterized, so this requires a locally-modified working copy.
   **That edit must not be committed** — the file is the one `salk-bloom` vendors byte-exact.
   **Validate:** both producer pods **pull successfully** — the one new failure mode this change
@@ -289,7 +340,7 @@ nothing here.
   get pods/log` misleadingly answers `yes` because it parses as a resource name — `--subresource=log`
   correctly answers `no`, and a real fetch is Forbidden). Node status is the evidence.
 
-- [ ] 7.2 **While the pods still exist** (Argo podGC/TTL will remove them), capture **both** the
+- [x] 7.2 **While the pods still exist** (Argo podGC/TTL will remove them), capture **both** the
   reference as admitted and the kubelet's own resolution, for each producer:
   `kubectl get pod <pod> -n runai-busch-lab -o jsonpath='{.spec.containers[*].image}{"
 "}{.status.containerStatuses[*].imageID}'`.
@@ -302,7 +353,7 @@ nothing here.
   template. This is the **only** independent witness in the whole plan that the recorded digest is
   the image that actually ran; without it, 7.3 merely round-trips a human-typed string.
 
-- [ ] 7.3 Read `provenance.predict_container_digest` and `provenance.traits_container_digest` from
+- [x] 7.3 Read `provenance.predict_container_digest` and `provenance.traits_container_digest` from
   the resulting `{scan_key}.result.json` (NFS is mounted read-write on Windows at `Z:` =
   `\\multilab-na.ad.salk.edu\hpi_dev`), and also predict's own `{scan}.predictions.json`.
   **Validate:** each is **equal to the digest pinned by its deployed template** — not merely
@@ -310,7 +361,7 @@ nothing here.
   `predict_container_digest` arrives threaded from that manifest, so an empty value there
   distinguishes "the predictor's env var never landed" from "the threading dropped it".
 
-- [ ] 7.4 **If §7 cannot run** (no cluster access, no suitable new scan), record it as
+- [x] 7.4 **N/A — §7 ran (see above).** Kept for the record. **If §7 cannot run** (no cluster access, no suitable new scan), record it as
   `BLOCKED — <reason>, unblocked by <who/what>` rather than `[x]`, and do **not** run §6 either: the
   apply is justified only by the verification that follows it. The PR keeps `[ ]` on both sections.
 

@@ -568,6 +568,60 @@ Adversarial 4-lens review. Resolutions:
     > **all 12** plus all 24 `.slp` blobs, which is the real idempotency oracle. One caveat this
     > surfaced: the "mtime stays frozen" signal is only valid *within* a fixed `predict_code_sha` —
     > across a pin bump a recompute of in-scope scans is correct behaviour, not contamination.
+- **2026-09-21** — **All three outstanding live verifications PASS. srp#56 is verified end to
+  end, #78's acceptance test is closed, and srp#76's fix is proven rather than inferred.** What
+  unblocked every one of them was the same thing: synthetic scans with no prior envelope.
+  - **The unblock.** salk-bloom PR #884 added `bloomctl cyl create-test-scan` and produced five new
+    scans in `A4-PIPELINE-E2E-TEST` (`experiment_id 12880747`): `12894756`-`12894759` good,
+    `12894760` poison. It exists because the previous uploader was written once by hand and never
+    committed (see the 2026-09-01 entry) — the third instance of that pattern in this program.
+    All five verified live via `bloomctl cyl download-for-predict` before use, the pipeline's own
+    resolution path, not by asserting the rows exist.
+    ⚠️ **My own false alarm, recorded because it cost a review cycle.** I first probed with
+    `12894827`-`12894831`, got `Scan not found`, and filed it on #884 as blocking with a
+    stray-experiment hypothesis. Those are `cyl_images.id` values — the table column is labelled
+    `cyl_images id` — and `download-for-predict` takes a `cyl_scans.id`. Retracted. The lesson is
+    narrow and worth keeping: I verified the *claim* and inherited the *column label*.
+  - **#78 container digests — VERIFIED**, four days after applying. Workflow
+    `sleap-roots-pipeline-9s92h` (10m21s, `Succeeded`) over `12894756`/`12894757`; predict genuinely
+    recomputed (`2 ok, 8 skipped`). Both envelopes record
+    `predict_container_digest=sha256:4d4064c6…` and `traits_container_digest=sha256:ab5a1f43…`,
+    each **equal to** its deployed template's pin — not merely non-empty, which was the acceptance
+    bar, since a digest disagreeing with its `image:` is a false provenance record rather than a
+    missing one.
+    **The witness that made it more than a round-trip.** The change's own task 7.2 warned that
+    reading the envelope alone just round-trips a human-typed string. Captured before podGC, per
+    producer: `spec…image` (as admitted) and `status…imageID` (the kubelet's resolution) both
+    equal the pinned digest — so the RunAI mutating webhook does **not** rewrite `image:` for the
+    `name:tag@digest` form (previously observed for tag-only, not proven), and the chain closes:
+    template pin == admitted spec == what ran == what was recorded.
+  - **srp#56 task 7.4b — PASSES, all six criteria.** `POST /workflows/pipeline` with
+    `[12894760, 12894758, 12894759]` → `pipeline_run_id=10`, Argo `sleap-roots-pipeline-p6lz2`,
+    `Succeeded`. `done_count=2`, `failed_count=1`; the two good scans `written` with `source_id`
+    145/146; poison `failed` with no envelope, no staged dir, no predictions. Downloader exit **3**
+    on all three attempts and `continueOn` advanced the DAG — the partial-success behaviour this
+    whole change was built for, now measured on the real dispatch path. **This closes #56's last
+    outstanding piece.** The 2026-09-17 attempt read `0`/`3` because those scans had prior
+    envelopes and hit bloom#875; that confound is gone here, so the counts are load-bearing.
+  - **srp#76 — VERIFIED FIXED, under its exact trigger for the first time.** Both earlier attempts
+    failed to reproduce it because predict skipped, leaving `.slp` bytes identical and a collision
+    impossible. Constructed the precondition deliberately: deleted only `12894756`'s four
+    prediction artifacts (recording their checksums first; `result.json`, staged input and every
+    other scan left untouched), then re-ran with an **unchanged** `predict_code_sha`. Predict
+    recomputed (`1 ok, 11 skipped`) and wrote genuinely different bytes at a fixed key —
+    lateral `fc69ed2f…`→`6f33e9be…`, primary `f4a06804…`→`18366b91…`, `idempotency_key`
+    `4e17ca1c…` unchanged. Workflow `sleap-roots-pipeline-hpdpf`, `Succeeded`, write-back exit 0,
+    `write-back succeeded (source_id=133)`. **Zero occurrences of `refusing to overwrite`** — the
+    pre-#871 signature — and **zero `WARNING` lines**, so #871's idempotency gate did not fail open
+    on a missing grant. Both absences matter: a failed-open gate would have produced an equally
+    clean-looking run while srp#76 quietly remained.
+  - **Still open, measured again by these runs.** srp#71's manifest leak is now visible on all
+    three: a 1-scan request carried a 12-key manifest and delivered all 12. bloom#875's residue
+    persists for sources whose first delivery was hand-submitted — they have no
+    `cyl_pipeline_run_scans` row to resolve from, so PR #880's RPC fallback cannot rescue them (I
+    flagged this on that PR; it is why `hpdpf` printed `Ingested 0/12` while `source_id=133` was
+    written correctly). That headline count — which tallies only `status=="ok"` — remains the most
+    misleading line in this pipeline's output.
 - **2026-09-17** — **Three PRs merged and the repo↔cluster divergence closed; §8 confirmed
   already done; 7.4b run for the first time and it fails on bloom#875, not on #56.**
   Records what was observed, including two of my own errors.

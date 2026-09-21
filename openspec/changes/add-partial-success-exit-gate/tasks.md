@@ -371,8 +371,32 @@ scans and the `a4_poc` NFS paths. **prod and staging share the `runai-busch-lab`
 
     **To close 7.4a's Workflow-phase criterion:** either #76 lands, or re-run against scans whose
     idempotency keys have never been ingested.
-  - **7.4b — RUN 2026-09-17, Bloom-dispatched. Four of six criteria PASS. The two count
-    criteria FAIL, and the cause is bloom#875, not anything in #56.**
+  - **7.4b — RE-RUN 2026-09-21: PASSES, all six criteria. #56 is now verified end to end.**
+    `POST /workflows/pipeline` as `bloom-pipeline-workflows` with
+    `scan_ids=[12894760, 12894758, 12894759]` — the poison plus two good **new** synthetic scans
+    (salk-bloom PR #884's `create-test-scan`), none with a prior envelope, so bloom#875 cannot
+    confound the result this time. → `pipeline_run_id=10`, Argo `sleap-roots-pipeline-p6lz2`,
+    19:30:52Z→19:34:40Z, `Succeeded`.
+
+    | criterion | expected | observed |
+    |---|---|---|
+    | DAG reaches `write-back` | yes | **PASS** |
+    | poison isolated at download | exit 3 | **PASS** — `FAILED scan_12894760: 1 of 1 frames failed to download`, exit `3` ×3 attempts; retries correctly re-skipped the two good scans (`Staged 0/3 (2 skipped) (1 failed)`) |
+    | `continueOn` advances the DAG | yes | **PASS** — predictor/trait-extractor/write-back/exit-gate all exit `0` |
+    | both good scans land | fresh `.result.json` | **PASS** — mtimes 19:33:58Z against a 19:30:52Z start, and each `predict_container_digest` equals its deployed template's pin |
+    | poison's per-scan row | `failed` | **PASS** — `failed`, `source_id=None`, and it produced **no** staged input dir, **no** predictions dir and **no** envelope |
+    | `done_count`/`failed_count` | `2`/`1` | **PASS — `2`/`1`**, with `12894758`→`written`/`source_id=145` and `12894759`→`written`/`source_id=146` |
+
+    Verified by artifact, not by the API's own fields alone — the distinction this change exists to
+    enforce, since a green Workflow proves nothing about per-scan outcomes.
+    ⚠️ **Read `write-back`'s summary line with care.** It printed `Ingested 2/12 envelopes
+    (10 failed)`. The **2** are this run's good scans. The **10** are srp#71 noise: the shared
+    manifest unions and never prunes, so a 3-scan request carried 12 keys, and the 10 outside this
+    run have no `cyl_pipeline_run_scans` row under `p6lz2` to mark. They cannot affect run 10's
+    counts, which derive only from rows carrying this workflow name — which is exactly why the
+    counts came out clean while the headline reads alarming.
+
+    **Superseded record — the 2026-09-17 first attempt: four of six, the two counts FAIL.**
 
     **The invocation, recorded because the previous dispatches never were** (see the 2026-09-01
     note below — only outcomes were kept, so the call had to be reconstructed from scratch):
