@@ -155,6 +155,48 @@ writer flip (§4).
 change is then a small diff on top. A breaking change to runtime model selection does not belong
 hidden inside a correctness fix.
 
+### 2.7 The W&B registry must be re-seeded before predict is *deployed*
+
+predict#34 is not only a code migration. Model cards are **data in W&B**, read by
+`WandbRegistrySource.list_cards` (`sleap_roots_predict/model_registry.py`) from
+`<entity>-org/wandb-registry-sleap-roots-models`, filtered to the `production` alias and
+validated against `ModelCard`.
+
+Contracts a8 states the incompatibility as a deliberate choice:
+
+> There is deliberately **no tolerant read** of the legacy flat shape (a card-level
+> `species`/`mode`/`age_min`/`age_max`). Those keys are dropped as ordinary extras and the card
+> fails on the missing `selectors`.
+
+**Measured against the live registry on 2026-09-21** (read-only probe, alias `production`):
+
+```
+production artifacts: 13   selector-shaped: 0   flat-shaped: 13
+```
+
+All thirteen — the exact 13 registrations training#39 describes, backed by 8 physical models —
+are still flat. The producer-side code shipped (**training#47**, merged 2026-08-26) but the
+**re-seed itself has not been run**, which is why training#39 is still open.
+
+**The failure mode is quiet.** `list_cards` skips an artifact that fails validation with a logged
+warning and continues, per artifact, by design (predict#32). An upgraded predict against today's
+registry therefore skips all 13, returns an **empty catalog**, and cannot select any model —
+there is no single loud error saying the registry is the problem.
+
+Consequences for this train:
+
+- The re-seed is a **prerequisite of the predictor pin bump**, not of the merge. predict#34 may
+  be merged and pinned at any time; only the deploy is ordered (§4).
+- The old flat collections must keep their `production` alias until predict's upgrade is
+  confirmed **deployed**, not merely merged — they are the only thing an un-upgraded deployment
+  can read.
+- **Every idempotency key changes.** `registry_id` changes for all 8 models under the producer's
+  new collection-id scheme, and `compute_idempotency_key`
+  (`sleap-roots-contracts/src/sleap_roots_contracts/identity.py:44-45`) hashes
+  `(registry_id, version, weights_checksum)` per model. The first run after the migration
+  therefore recomputes every scan rather than reusing anything. This is a one-time re-baseline of
+  the A4 batch-oracle property, and it is expected, not a regression (§5).
+
 ## 3. Mechanism
 
 ### 3.1 `sleap-roots-contracts` (the enabling change)
@@ -212,10 +254,17 @@ One seam makes this clean: `images-downloader`, `write-back` and `exit-gate` all
 `bloomctl:sha-28034f6` image, so a single pin bump flips the writer and the write-back reader
 together, with no intermediate state.
 
-0. **predict#34** — a8/`Selector` migration in predict. Prerequisite (§2.6).
+0a. **`sleap-roots-training` re-seed of the W&B registry** — publish the 8 selector-shaped
+   collections under the `production` alias, leaving the 13 flat ones aliased until step 2 is
+   confirmed deployed. Live and verified before step 2 (§2.7). This is an operational step, not
+   a merge: training#47's code has shipped since 2026-08-26 and the registry is still flat.
+0b. **predict#34** — a8/`Selector` migration in predict. Merge and pin whenever; the *deploy*
+   is what step 0a gates (§2.6, §2.7).
 1. **contracts 0.1.0a9** — purely additive; nothing breaks.
-2. **predict + traits** — adopt, release, rebuild images, bump their two template pins. The
-   fleet still reads legacy files written by the old `bloomctl`; **no behavior change yet.**
+2. **predict + traits** — adopt, release, rebuild images, bump their two template pins. **The
+   predictor pin bump is the gated action:** bumping it before 0a is verified leaves predict
+   with an empty model catalog. The fleet still reads legacy manifests written by the old
+   `bloomctl`; **no manifest behavior change yet.**
 3. **bloomctl** — writer flips to the per-run name, `ingest` dual-reads. One image, one pin bump
    across three templates. **This is the flip.**
 4. **`argo template update`** for all five templates.
@@ -245,6 +294,13 @@ Known noise, not regressions: bloom#875's residue makes sources whose first deli
 hand-submitted report `failed`; write-back's `Ingested 0/N` headline counts only `status == "ok"`
 and understates success.
 
+**Expect no skip-if-done reuse on the first run after the registry migration.** Every
+idempotency key changes with `registry_id` (§2.7), so the first post-migration run does real GPU
+work on scans that would previously have been skipped. This does not affect the assertions above
+— they count manifest keys, ingested envelopes and DB rows, not skips — but it does mean the
+batch-oracle "re-run an already-done batch → 0 GPU pods" check must be re-baselined *after* the
+migration rather than compared across it.
+
 ## 6. Risks
 
 | risk | mitigation |
@@ -254,6 +310,8 @@ and understates success.
 | `pipeline_run_id` is environment-supplied and becomes a path component | validated in `run_manifest_filename` (§3.1) |
 | Per-run manifests accumulate, one per run per directory, forever | small files; GC filed as follow-up |
 | Production-visible template update | production dormant; staging validated first |
+| Predictor pinned before the W&B re-seed → empty model catalog, warnings only | step 0a gates the predictor pin bump (§2.7) |
+| Idempotency keys all change with `registry_id` → one-time full recompute | expected; re-baseline the batch oracle after the migration (§5) |
 
 ## 7. Deliverables beyond code
 
