@@ -603,9 +603,17 @@ Adversarial 4-lens review. Resolutions:
     whole change was built for, now measured on the real dispatch path. **This closes #56's last
     outstanding piece.** The 2026-09-17 attempt read `0`/`3` because those scans had prior
     envelopes and hit bloom#875; that confound is gone here, so the counts are load-bearing.
-  - **srp#76 — VERIFIED FIXED, under its exact trigger for the first time.** Both earlier attempts
-    failed to reproduce it because predict skipped, leaving `.slp` bytes identical and a collision
-    impossible. Constructed the precondition deliberately: deleted only `12894756`'s four
+  - **srp#76 — now also verified through the deployed Argo pipeline.**
+    ⚠️ **Correction to an earlier version of this entry**, which claimed this was the first
+    reproduction of the trigger. It was not: #76 was already verified on **2026-09-17 17:34Z** by
+    re-running the original reproduction with `bloomctl` directly against the `a4_scratch_74`
+    directories — `2 failed` with `refusing to overwrite` before, `2 skipped` and `EXIT=0` after
+    (see the issue's own closing comment). That used the *original* reproduction and is the cleaner
+    test of the fix itself. What the run below adds is narrower and complementary: the same
+    behaviour exercised **in-cluster through the deployed WorkflowTemplate and image**, with the
+    recompute happening inside the predictor pod rather than a local `bloomctl` invocation.
+    Both earlier *Argo* attempts failed to reproduce it because predict skipped, leaving `.slp`
+    bytes identical and a collision impossible. Constructed the precondition deliberately: deleted only `12894756`'s four
     prediction artifacts (recording their checksums first; `result.json`, staged input and every
     other scan left untouched), then re-ran with an **unchanged** `predict_code_sha`. Predict
     recomputed (`1 ok, 11 skipped`) and wrote genuinely different bytes at a fixed key —
