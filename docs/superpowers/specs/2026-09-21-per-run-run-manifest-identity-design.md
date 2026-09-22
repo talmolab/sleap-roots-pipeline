@@ -208,6 +208,18 @@ Confirmed available on 2026-09-21:
   `c:\repos\models-downloader\tests\data\models_downloader_input\20250204_models\`, zips and
   `model_chooser_table.xlsx` included.
 
+**Dry-run verified on 2026-09-22** (read-only, no wandb calls): the plan resolves **8
+collections, all `[ok]`**, every `.zip` SHA-verified against the matrix. Two properties worth
+recording, because both are preconditions of later steps:
+
+- The new collection ids are **disjoint** from the 13 live ones (`arabidopsis-lateral-240130_
+  140452.multi_instance.n-337` vs `arabidopsis-cylinder-lateral-age2-14`), confirming the
+  re-seed is purely additive and that 6.2's "exactly 13 orphans" is the right expectation.
+- The 8 cards **cover all 13** old registrations with no gaps, so retirement (6.3) loses no
+  selection context. `canola-lateral-…n-631` carries canola 2–13 *and* pennycress 2–14 on one
+  card — the precise case predict#34 exists for, and evidence for 6.4's correction to
+  training#39: that pair differs by species **and** age, not "only by age".
+
 **It brackets this rollout rather than merely preceding it**, which is the part that matters for
 ordering. Group 6's own text:
 
