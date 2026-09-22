@@ -127,11 +127,27 @@ removing it means deleting a requirement plus its scenarios from `salk-bloom`'s
 `cyl-batch-download-for-predict` spec on code with a documented regression history. Its removal
 is a separate cleanup, filed, not part of this change.
 
-### 2.5 The forwarding hops forward under the name they read
+### 2.5 The forwarding hops forward under the name they read — and they do need their run id
 
-The hops do not need to know their own run id. Whatever name the downloader wrote propagates
-unchanged through `predictions/` and `traits/` to write-back, so any mid-rollout fleet state is
-self-consistent by construction.
+**Corrected 2026-09-22 after review.** An earlier version of this section claimed the hops "do
+not need to know their own run id". That is false under any resolution rule that only looks for
+the per-run name when the run id is known: a hop without the id would walk straight past
+`run_manifest.<id>.json` and fall through to unscoped discovery.
+
+Verified: `grep -rn ARGO_WORKFLOW_NAME` returns **zero hits** in
+`sleap-roots-predict/sleap_roots_predict/` and in `sleap-roots/trait_extractor/`. Neither hop
+reads it today, so this change gives both a run-identity dependency they have never had.
+
+That is acceptable, but only because it is *uniform*:
+
+- Under Argo, all four stage templates set `ARGO_WORKFLOW_NAME` (verified), so every stage in a
+  workflow resolves the same id and the whole chain agrees.
+- Outside Argo, no stage has an id, so every stage consistently uses the legacy name.
+
+The incoherent mixed state — writer with an id, reader without — cannot arise inside one
+workflow, because all five stages take the variable from the same Workflow. The forwarding rule
+still holds: each hop republishes under the name it read, which `read_run_manifest` reports back
+to it.
 
 ### 2.6 predict#34 is a prerequisite, packaged separately
 
@@ -241,6 +257,30 @@ Two operational constraints carried from that document:
 - **Not revertable.** A live wandb re-seed is not `git revert`-able, and a collection must
   **never** be deleted. Rollback for an additive re-seed is removing `production` from the *new*
   collections, rehearsed on the canary first (6.0).
+
+### 2.9 The legacy fallback is an explicit, removable parameter — not implicit behavior
+
+**Added 2026-09-22 after review**, which found that §2.2's fail-loud guarantee was unreachable as
+originally specified.
+
+The legacy `run_manifest.json` already exists in all three shared trees and nothing prunes it. An
+unconditional fallback therefore *always* succeeds, so `RunManifestMissingError` could never fire
+in production. A run whose downloader crashed, or skewed mid-rollout, would silently scope to the
+stale 12-key union — the original contamination bug, re-entering through the very affordance
+added to make the rollout safe. The headline safety property would have been decorative.
+
+Step 5 of §4 deletes those files, but that is an operational step in this repo, not something the
+contract can rely on.
+
+**Decision:** `read_run_manifest`'s `allow_legacy` is **keyword-only and required** — no default.
+Every call site must state its position, so the fleet's transition state is greppable, and
+turning the fallback off is a one-line change per consumer rather than the second contracts
+release §8 previously assumed. During the rollout all four sites pass `allow_legacy=True`; once
+§4 step 5 has deleted the stale files and the fleet is confirmed migrated, they flip to `False`
+and the fail-loud guarantee becomes real.
+
+A required parameter is deliberately less convenient than a defaulted one. The convenience is
+what made the hole invisible.
 - **Every idempotency key changes.** `registry_id` changes for all 8 models under the producer's
   new collection-id scheme, and `compute_idempotency_key`
   (`sleap-roots-contracts/src/sleap_roots_contracts/identity.py:44-45`) hashes
@@ -252,39 +292,79 @@ Two operational constraints carried from that document:
 
 ### 3.1 `sleap-roots-contracts` (the enabling change)
 
-`src/sleap_roots_contracts/run_manifest.py` gains three names, all exported from the package
-root:
+`src/sleap_roots_contracts/run_manifest.py` gains these names, all exported from the package
+root (**revised 2026-09-22 after review**):
 
 ```python
+PIPELINE_RUN_ID_ENV_VAR = "ARGO_WORKFLOW_NAME"
+
 def run_manifest_filename(pipeline_run_id: str) -> str:
-    """Return "run_manifest.<pipeline_run_id>.json"."""
+    """Return "run_manifest.<pipeline_run_id>.json"; reject an unsafe id."""
 
-def pipeline_run_id_from_env() -> str | None:
-    """ARGO_WORKFLOW_NAME, or None when unset/blank."""
+def pipeline_run_id_from_env(env=None) -> str | None:
+    """ARGO_WORKFLOW_NAME, stripped; None when unset or blank."""
 
-def resolve_run_manifest_path(directory, pipeline_run_id: str | None) -> Path | None:
-    """§2.2's resolution order. Raises when the run id is known and neither file exists."""
+def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
+    """The name a WRITER uses: per-run when the id is known, else the legacy name (§2.3)."""
+
+def read_run_manifest(directory, pipeline_run_id, *, allow_legacy: bool) -> RunManifestRead | None:
+    """§2.2's order, in a single open per candidate. Returns (filename, data, is_per_run)."""
+
+def check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None:
+    """§3.2's cross-check; a no-op when `filename` is the legacy name."""
 ```
 
 `RUN_MANIFEST_FILENAME` is unchanged and retained as the legacy/local name.
 
 `run_manifest_filename` **validates that the id is filename-safe** — it arrives from an
 environment variable and becomes a path component, so path separators, `..`, and empty/blank are
-rejected. An Argo workflow name is an RFC-1123 label, so nothing legitimate is excluded.
+rejected. The cap is **237** characters, not the Kubernetes object limit of 253: the filename
+adds 18 characters (`run_manifest.` + `.json`), and 237 + 18 = 255 is `NAME_MAX`. Argo's
+`generateName` produces ids of about 26 characters, so nothing real is excluded.
 
 The resolution *policy* lives in contracts rather than being reimplemented three times. Three
 independent copies of a three-branch rule across four repos is precisely how this program's
 normative text drifts, and single-definition was predict#40's actual goal, minus the lock.
 
-`resolve_run_manifest_path` touches the filesystem, which is a departure for a library that is
-otherwise pure models and constants. That is a deliberate, contained exception: the alternative
-is three copies of the branch that matters most for correctness.
+**`read_run_manifest` opens the file rather than taking an `exists` predicate.** An earlier
+revision of this design used `resolve_run_manifest_name(id, exists)` on the grounds that the
+library does no filesystem I/O. That premise was **false** — `schema.py:93-98`'s `emit_schema()`
+writes files and `_default_schema_dir()` falls back to `Path.cwd()`; `registry.py:25-27` and
+`examples/__init__.py:70` read packaged resources. The defensible invariant is narrower: no
+ambient, caller-supplied-directory reads *in the contract-model surface*. Opening the manifest
+buys two things a predicate cannot:
+
+- **The absent-vs-unreadable distinction survives.** A boolean collapses `EACCES` into "absent",
+  which would fall through to the legacy manifest — `ingest.py:115-127` deliberately avoids
+  `.is_file()` for exactly this reason. One `try: open / except FileNotFoundError` walk keeps
+  `FileNotFoundError` meaning "try the next candidate" and lets every other `OSError` propagate.
+- **No probe/read window.** Returning the bytes closes the TOCTOU gap that predict's `run_batch`
+  already goes to lengths to avoid by taking a single snapshot.
+
+`allow_legacy` is **required and keyword-only**, with no default. See §2.9.
 
 ### 3.2 Cross-check, free of charge
 
 When a reader loads a *per-run-named* file, it asserts `manifest.pipeline_run_id` equals its own
 run id. This is bloom#703's cross-check, possible for the first time — the field could never
 disagree before, because the writer unconditionally overwrote it with the current run's value.
+`check_run_manifest_identity` is a **no-op when handed the legacy filename**, which carries no
+run identity in its name; without that, every call site would write the same
+`if filename != RUN_MANIFEST_FILENAME:` guard itself.
+
+**Writer and reader must derive the id from the same function, or the cross-check fires on every
+stage.** Found in review: `download_for_predict.py:455` is
+`os.environ.get("ARGO_WORKFLOW_NAME") or f"local-{uuid4().hex[:8]}"` — it does **not** strip,
+while `pipeline_run_id_from_env()` does. A value of `" wf1\n"` would name the file from the
+stripped form and store the unstripped form inside it, so the reader's comparison fails and
+every stage dies on a self-inflicted `RunManifestIdentityError`. Worse, `"   "` is truthy for
+bloomctl but blank for the contract, so the two would disagree about whether a run identity
+exists at all.
+
+So bloomctl must stop reading the environment itself: it calls `pipeline_run_id_from_env()`
+once, uses `run_manifest_name_for_writing()` for the filename, and keeps
+`resolve_pipeline_run_id`'s `local-<uuid8>` only as the *content* fallback layered on top —
+never as a parallel env reader.
 
 ### 3.3 Call sites
 
@@ -334,6 +414,10 @@ The registry migration (§2.8) interleaves with it, so the two are written as on
 5. **Delete the three stale `run_manifest.json` files** under the `a4_poc` directories.
    Otherwise a run whose downloader failed to write falls back onto a stale 12-key manifest —
    today's bug, resurrected through the very fallback added to make the rollout safe.
+6. **Flip `allow_legacy` to `False`** at all four call sites and re-release the consumers
+   (§2.9). Until this lands the fail-loud guarantee is still inert, because a stale legacy file
+   reappearing for any reason would satisfy the fallback. This is the step that makes §2.2 real,
+   and it is cheap — one keyword per site, no contracts change.
 
 Every pin bump is production-visible: `runai-busch-lab` is shared by Bloom staging and
 production (`services/workflows/k8s_client.py` docstring). Production is dormant but live.
@@ -369,6 +453,9 @@ migration rather than compared across it.
 | risk | mitigation |
 |---|---|
 | Mid-rollout skew silently widens scope | reader-first ordering (§4) + fail-loud (§2.2) |
+| The legacy fallback makes fail-loud inert while it is on | `allow_legacy` is required and greppable; §4 step 6 flips it off (§2.9) |
+| A `EACCES` on the manifest reads as "absent" and falls through to the stale file | `read_run_manifest` opens rather than probes; only `FileNotFoundError` advances (§3.1) |
+| Writer and reader disagree on the run id, so the cross-check fires on every stage | both derive it from `pipeline_run_id_from_env()`; bloomctl layers its `local-<uuid8>` on top rather than reading the env itself (§3.2) |
 | Stale legacy manifests reachable through the fallback | delete them at step 5 |
 | `pipeline_run_id` is environment-supplied and becomes a path component | validated in `run_manifest_filename` (§3.1) |
 | Per-run manifests accumulate, one per run per directory, forever | small files; GC filed as follow-up |
