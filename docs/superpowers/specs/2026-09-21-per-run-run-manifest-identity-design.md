@@ -281,6 +281,27 @@ and the fail-loud guarantee becomes real.
 
 A required parameter is deliberately less convenient than a defaulted one. The convenience is
 what made the hole invisible.
+
+**`allow_legacy` governs only the case where a run identity exists.** Caught in re-review:
+`RUN_MANIFEST_FILENAME` means two different things, and an earlier draft of this section
+conflated them. It is the rollout-era leftover *and* — per §2.3 — the permanently correct name
+for a stage with no run identity. Under the conflated rule, `pipeline_run_id=None` with
+`allow_legacy=False` produced an **empty candidate list**, so the function returned `None` and
+the caller fell through to unscoped discovery. Since the `local-WSL2-*` templates deliberately
+do not set `ARGO_WORKFLOW_NAME` (verified) and the call sites are shared code, §4 step 6's
+fleet-wide flip would have silently regressed every local run from scoped to unscoped — the
+contamination class this change exists to close, reintroduced by its own safety parameter.
+
+The rule is therefore asymmetric, matching §2.2's:
+
+- `pipeline_run_id is None` → `RUN_MANIFEST_FILENAME` is the *only* candidate and is always
+  tried, whatever `allow_legacy` says. It is not a fallback here; it is the right name.
+  Absent → `None`, today's behavior.
+- `pipeline_run_id is not None` → per-run name first; then `RUN_MANIFEST_FILENAME` only when
+  `allow_legacy`; otherwise `RunManifestMissingError`.
+
+So `allow_legacy` reads as "may a stage that knows its own identity accept a manifest written
+under the identity-less name?" — which is exactly the B1 hazard, and nothing else.
 - **Every idempotency key changes.** `registry_id` changes for all 8 models under the producer's
   new collection-id scheme, and `compute_idempotency_key`
   (`sleap-roots-contracts/src/sleap_roots_contracts/identity.py:44-45`) hashes
@@ -308,7 +329,7 @@ def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
     """The name a WRITER uses: per-run when the id is known, else the legacy name (§2.3)."""
 
 def read_run_manifest(directory, pipeline_run_id, *, allow_legacy: bool) -> RunManifestRead | None:
-    """§2.2's order, in a single open per candidate. Returns (filename, data, is_per_run)."""
+    """§2.2's order, one open per candidate. Returns (filename, data, mode, is_per_run)."""
 
 def check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None:
     """§3.2's cross-check; a no-op when `filename` is the legacy name."""
@@ -340,6 +361,15 @@ buys two things a predicate cannot:
   `FileNotFoundError` meaning "try the next candidate" and lets every other `OSError` propagate.
 - **No probe/read window.** Returning the bytes closes the TOCTOU gap that predict's `run_batch`
   already goes to lengths to avoid by taking a single snapshot.
+- **The mode comes for free, and predict needs it.** `sleap-roots-predict`'s `_ManifestSnapshot`
+  carries `(data, mode)` precisely so the forwarded file's permissions match the source "without
+  a second stat that could observe a different file", and it `chmod`s before the replace because
+  `mkstemp` creates at `0600` and the downstream container is a different uid on the same shared
+  NFS mount. A read that returned only bytes would force predict to re-stat by name —
+  reinstating that exact race — or to drop mode preservation. Since `read_run_manifest` holds
+  the descriptor, `os.fstat(handle.fileno()).st_mode & 0o777` costs nothing, so `RunManifestRead`
+  carries `mode`. Consumers use attribute access, never tuple unpacking, so fields can be
+  appended later.
 
 `allow_legacy` is **required and keyword-only**, with no default. See §2.9.
 
@@ -417,7 +447,9 @@ The registry migration (§2.8) interleaves with it, so the two are written as on
 6. **Flip `allow_legacy` to `False`** at all four call sites and re-release the consumers
    (§2.9). Until this lands the fail-loud guarantee is still inert, because a stale legacy file
    reappearing for any reason would satisfy the fallback. This is the step that makes §2.2 real,
-   and it is cheap — one keyword per site, no contracts change.
+   and it is cheap — one keyword per site, no contracts change. It is also safe for local runs:
+   the flip is a no-op where no run identity exists, because there `RUN_MANIFEST_FILENAME` is
+   the correct name rather than a fallback and is tried regardless (§2.9).
 
 Every pin bump is production-visible: `runai-busch-lab` is shared by Bloom staging and
 production (`services/workflows/k8s_client.py` docstring). Production is dormant but live.
