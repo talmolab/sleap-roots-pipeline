@@ -190,6 +190,45 @@ Consequences for this train:
 - The old flat collections must keep their `production` alias until predict's upgrade is
   confirmed **deployed**, not merely merged — they are the only thing an un-upgraded deployment
   can read.
+
+### 2.8 The re-seed is ours to run, and it brackets this rollout
+
+The re-seed is already fully specified as **group 6 of `update-model-card-selectors`** in
+`sleap-roots-training` — a change that is merged but **deliberately not archived**, with 65 of 73
+tasks ticked and group 6 left open as "Migration — gated, and a separate PR after this change
+archives". We own it; nothing needs designing, only executing.
+
+Confirmed available on 2026-09-21:
+
+- The tooling: `sleap-roots-training seed-registry`, with `--only` (canary), `--verify`
+  (read-only), `--execute`, `--force`. Dry run is the default and makes no wandb calls.
+- The inputs: `--execute` requires `--models-root`, a tree of `<model_id>.zip` archives, and
+  **rejects an already-unzipped directory**. The required snapshot — models-downloader's
+  `20250204_models`, the matrix's declared source of truth — is present locally at
+  `c:\repos\models-downloader\tests\data\models_downloader_input\20250204_models\`, zips and
+  `model_chooser_table.xlsx` included.
+
+**It brackets this rollout rather than merely preceding it**, which is the part that matters for
+ordering. Group 6's own text:
+
+> The re-seed runs **before** the upgraded predict is deployed [...] During the window the two
+> consumer generations are cleanly partitioned: an un-upgraded predict reads the 13 old
+> collections and skips the 8 new ones as unparseable, and an upgraded predict does exactly the
+> inverse. Neither ever sees two cards for one context [...] Retirement (6.3) is what ends the
+> un-upgraded generation's access, which is why it stays gated on confirmed deployment.
+
+So the re-seed (6.0–6.2) goes **before** the predictor deploy and the retirement (6.3) **after**
+it. The dual-aliased window in between is the designed safe state, not a hazard to minimise.
+
+Two operational constraints carried from that document:
+
+- **Single-operator.** `_existing_collections` is read once up front (`publish.py:146`), so two
+  concurrent `--execute` runs both see a collection as absent, both publish, and the alias lands
+  wherever `link_artifact` ran last — both reporting success. Announce the window; re-run
+  `--verify` immediately before 6.3.
+- **Not revertable.** A live wandb re-seed is not `git revert`-able, and a collection must
+  **never** be deleted. Rollback for an additive re-seed is removing `production` from the *new*
+  collections, rehearsed on the canary first (6.0).
 - **Every idempotency key changes.** `registry_id` changes for all 8 models under the producer's
   new collection-id scheme, and `compute_idempotency_key`
   (`sleap-roots-contracts/src/sleap_roots_contracts/identity.py:44-45`) hashes
@@ -254,17 +293,29 @@ One seam makes this clean: `images-downloader`, `write-back` and `exit-gate` all
 `bloomctl:sha-28034f6` image, so a single pin bump flips the writer and the write-back reader
 together, with no intermediate state.
 
-0a. **`sleap-roots-training` re-seed of the W&B registry** — publish the 8 selector-shaped
-   collections under the `production` alias, leaving the 13 flat ones aliased until step 2 is
-   confirmed deployed. Live and verified before step 2 (§2.7). This is an operational step, not
-   a merge: training#47's code has shipped since 2026-08-26 and the registry is still flat.
-0b. **predict#34** — a8/`Selector` migration in predict. Merge and pin whenever; the *deploy*
-   is what step 0a gates (§2.6, §2.7).
+The registry migration (§2.8) interleaves with it, so the two are written as one sequence. Steps
+0a–0e are prerequisite work in *other* repos; #71's own train is steps 1–5.
+
+0a. **predict#34** — a8/`Selector` migration in predict. Merge, pin contracts a8, suite green.
+   Merging is ungated; only the deploy (0c) is ordered.
+0b. **Re-seed the W&B registry** — training tasks 6.0–6.2: rollback prep and snapshot of the 13
+   current collection→version mappings; canary one collection with `--only` and prove an
+   upgraded predict resolves it *and* an un-upgraded one still resolves the old card; then the
+   remaining 7; then a full `--verify` reporting **exactly 13 orphans**. Registry is now
+   dual-shaped, generations cleanly partitioned (§2.8).
+0c. **Deploy predict#34** — predictor image build and pin bump in this repo. One falsifiable
+   question: does model selection still resolve, now against the new collections. Keeping this
+   deploy separate from step 2 is the whole point — an empty catalog is silent (§2.7), so it
+   must not share a deploy with the manifest change.
+0d. **Retire the 13 flat collections** — training task 6.3, gated on 0c being *confirmed
+   deployed*, not merely merged. Acceptance: `--verify` reports zero orphans and zero
+   legacy-shape expected collections.
+0e. **Close out training** — tasks 6.4 (comment the outcome on training#39, plus the correction
+   its 2026-08-10 comment needs), 6.5, then the archive PR with 6.6's spec-ordering fix.
 1. **contracts 0.1.0a9** — purely additive; nothing breaks.
-2. **predict + traits** — adopt, release, rebuild images, bump their two template pins. **The
-   predictor pin bump is the gated action:** bumping it before 0a is verified leaves predict
-   with an empty model catalog. The fleet still reads legacy manifests written by the old
-   `bloomctl`; **no manifest behavior change yet.**
+2. **predict + traits** — adopt, release, rebuild images, bump their two template pins. The
+   fleet still reads legacy manifests written by the old `bloomctl`; **no manifest behavior
+   change yet.**
 3. **bloomctl** — writer flips to the per-run name, `ingest` dual-reads. One image, one pin bump
    across three templates. **This is the flip.**
 4. **`argo template update`** for all five templates.
@@ -320,6 +371,14 @@ These are part of this change, but are not code:
 - The correcting comment on predict#40 (§2.1), narrowing it to its two genuine residues.
 - The roadmap entry in `docs/bloom-integration/roadmap.md`, recording what was observed after
   the fact.
+- The `sleap-roots-training` migration PR — group 6's tasks ticked, the 6.0(a) baseline snapshot
+  committed, and `openspec archive` run (§2.8, §4 steps 0b/0d/0e). That PR runs no CI, since
+  `openspec/**` is outside `ci.yml`'s path filters.
+
+**Repos touched, and why:** `sleap-roots-contracts` (the helper), `salk-bloom` (writer +
+write-back reader), `sleap-roots-predict` (reader/forwarder, plus prerequisite #34),
+`sleap-roots` (reader/forwarder), `sleap-roots-pipeline` (pin bumps, roadmap, this doc) and
+`sleap-roots-training` (the registry migration) — six, not the four the issue anticipated.
 
 ## 8. Out of scope — to be filed as follow-ups
 
