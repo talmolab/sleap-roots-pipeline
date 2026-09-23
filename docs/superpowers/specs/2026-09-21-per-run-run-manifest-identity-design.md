@@ -1,0 +1,518 @@
+# Per-run run-manifest identity — design
+
+**Date:** 2026-09-21
+**Issue:** [sleap-roots-pipeline#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71)
+**Status:** approved design, not yet implemented
+**Audience:** whoever implements or reviews this change across the five repos — it is the
+authority the five OpenSpec proposals are written against.
+
+Every code fact below was read in the working tree on 2026-09-21 and is cited with a line
+number. Where this document contradicts an issue or a handoff, the contradiction is called out
+explicitly rather than silently corrected.
+
+## 1. The defect
+
+`write_run_manifest` (`salk-bloom` `bloomcli/src/bloomctl/cyl/download_for_predict.py:458`)
+unions this invocation's usable `scan_keys` into any existing `run_manifest.json` and never
+prunes. srp#37 separately established that `out_dir` is permanently shared across all runs *by
+design* — isolating it would break the cluster-side skip-if-done that the A4 batch-oracle target
+depends on. The two facts together mean the manifest accumulates the keys of every run that has
+ever used those directories, and every stage downstream scopes itself to that union.
+
+Measured four times on 2026-09-21 against current pins, including through the real Bloom
+dispatch path:
+
+| run | requested | manifest carried | envelopes delivered |
+|---|---|---|---|
+| `sleap-roots-pipeline-9s92h` | 2 | 10 | 10 |
+| `sleap-roots-pipeline-p6lz2` (Bloom-dispatched) | 3 | 12 | 12 |
+| `sleap-roots-pipeline-hpdpf` | 1 | 12 | 12 |
+
+A one-scan request created `cyl_trait_sources` rows for eleven scans nobody requested. This
+reaches persisted state in Bloom, which is why it is being fixed before the Bloom UI (bloom#15)
+builds a progress panel on per-run counts the manifest can inflate.
+
+### Constraints inherited from the issue
+
+- **Cannot isolate paths.** srp#37 established that this breaks skip-if-done and the batch oracle.
+- **Cannot stop merging** without first establishing that nothing still needs the merge (§2.1).
+- **Cannot fix it by preserving `pipeline_run_id`.** A single id for a key set spanning runs is
+  the wrong shape whichever value wins.
+
+Fix shape **(a)** from the issue — per-run manifest *identity*, shared artifacts — was already
+selected there over **(b)** (one file with per-key attribution, which needs a breaking
+`RunManifest` change). This design does not relitigate that.
+
+## 2. Decisions taken
+
+### 2.1 predict#40 is dissolved by this change, not merely adjacent to it
+
+srp#71's third comment and predict#40's cross-link comment both assert that #71's fix does *not*
+remove the need for #40, on the grounds that "one logical request still chunks across K
+concurrent invocations sharing an `out_dir`, so the merge-under-lock is still required — just
+scoped to one file." **The premise is half right and the conclusion does not follow.**
+
+The K chunks do share an `out_dir`. They do **not** share a workflow identity:
+
+- `services/workflows/pipeline.py:311` chunks the request at `BATCH_SIZE = 25` and enqueues each
+  batch separately.
+- `services/workflows/dispatch_worker.py:89-90` calls `build_workflow_body` then
+  `submit_workflow` **once per batch** — one Argo Workflow per chunk, not one workflow with a
+  fan-out.
+- `sleap-roots-pipeline.yaml:27` is `generateName: sleap-roots-pipeline-`, so each submission
+  gets its own unique `{{workflow.name}}`.
+- `sleap-roots-pipeline.yaml:95-165` is a strictly linear DAG — `images-downloader` →
+  `predictor` → `trait-extractor` → `write-back` → `exit-gate`, no `withParam` or `withItems` —
+  so within one workflow each stage runs exactly once.
+
+Therefore once the manifest is named per run id, two concurrent chunks write
+`run_manifest.<A>.json` and `run_manifest.<B>.json`. They never open the same path. The
+read-merge-write race disappears, the union has nothing left to union, and both naive-overwrite
+forwarding hops stop being racy. The temp-file hazard goes with it: `sleap-roots`' fixed
+`run_manifest.json.tmp` becomes `run_manifest.<id>.json.tmp`, unique per run.
+
+**Decision:** land #71 alone. Post the evidence above to predict#40 and narrow it to its two
+genuine residues — `sleap-roots`' missing temp-file cleanup, and the unexamined NFS
+`O_CREAT|O_EXCL` question, which belongs to the *staging* lock that this change does not touch.
+
+### 2.2 A missing manifest fails loud where the run id is known
+
+Today a missing manifest means unscoped discovery over the whole shared directory, in all three
+readers:
+
+| reader | behavior when the manifest is absent |
+|---|---|
+| `bloomctl` `ingest.py:116` | `return DiscoveredEnvelopes(paths=all_paths, missing_scan_keys=[])` — every envelope |
+| `sleap-roots-predict` `batch.py:90` `discover_scans` | every sidecar found |
+| `sleap-roots` `extractor.py:195` | `scope = None`, then walks every `*.predictions.json` |
+
+Per-run naming makes "my manifest is missing" far more reachable — any mid-rollout pin skew
+produces it — and the failure is silent and *widens* scope rather than narrowing it. That is
+strictly worse than the bug being fixed.
+
+`ARGO_WORKFLOW_NAME` is the discriminator. Set means the stage knows which run it is, so a
+missing manifest is a real fault. Unset means local/dev, where unscoped discovery is established
+behavior that predict's own test assets depend on (`tests/assets/scans/` deliberately stages no
+`run_manifest.json`).
+
+**Decision:** resolution order is (1) `run_manifest.<own id>.json`, (2) legacy
+`run_manifest.json`, (3) if the run id is known, **raise**; if not, return `None` and keep
+today's unscoped behavior.
+
+### 2.3 Per-run naming is keyed to Argo
+
+`resolve_pipeline_run_id()` (`download_for_predict.py:448`) returns `ARGO_WORKFLOW_NAME` when
+set, else a per-invocation `local-<uuid8>` placeholder. A reader cannot reproduce another
+process's placeholder, so keying the *filename* on it would break local scoping end to end.
+
+**Decision:** when `ARGO_WORKFLOW_NAME` is unset, the writer uses the legacy unsuffixed
+filename and every reader falls through to it. Local and `local-WSL2-*` runs therefore behave
+exactly as they do today, with no template plumbing and no new failure mode. The `local-<uuid8>`
+value still goes *inside* the file as `pipeline_run_id`, so manual runs stay distinguishable.
+
+This is why the `local-WSL2-*` templates are deliberately **not** given `ARGO_WORKFLOW_NAME`.
+
+### 2.4 The writer overwrites its own file rather than unioning into it
+
+Per-run naming fixes the cross-run half on its own. Within a run the only other writer is a
+`retryStrategy` re-run of `images-downloader` (retry strategies are present on every cluster
+template). Unioning there would retain a key from a failed earlier attempt that has no
+`result.json` — which is bloom#859's latch surviving inside a single run.
+
+**Decision:** write this invocation's usable keys, not a union with what is already there.
+"What this invocation found usable" is the truthful record and removes the latch outright.
+
+**The manifest lock is retained.** It costs nothing, it is already specified and tested, and
+removing it means deleting a requirement plus its scenarios from `salk-bloom`'s
+`cyl-batch-download-for-predict` spec on code with a documented regression history. Its removal
+is a separate cleanup, filed, not part of this change.
+
+### 2.5 The forwarding hops forward under the name they read — and they do need their run id
+
+**Corrected 2026-09-22 after review.** An earlier version of this section claimed the hops "do
+not need to know their own run id". That is false under any resolution rule that only looks for
+the per-run name when the run id is known: a hop without the id would walk straight past
+`run_manifest.<id>.json` and fall through to unscoped discovery.
+
+Verified: `grep -rn ARGO_WORKFLOW_NAME` returns **zero hits** in
+`sleap-roots-predict/sleap_roots_predict/` and in `sleap-roots/trait_extractor/`. Neither hop
+reads it today, so this change gives both a run-identity dependency they have never had.
+
+That is acceptable, but only because it is *uniform*:
+
+- Under Argo, all four stage templates set `ARGO_WORKFLOW_NAME` (verified), so every stage in a
+  workflow resolves the same id and the whole chain agrees.
+- Outside Argo, no stage has an id, so every stage consistently uses the legacy name.
+
+The incoherent mixed state — writer with an id, reader without — cannot arise inside one
+workflow, because all five stages take the variable from the same Workflow. The forwarding rule
+still holds: each hop republishes under the name it read, which `read_run_manifest` reports back
+to it.
+
+### 2.6 predict#34 is a prerequisite, packaged separately
+
+`sleap-roots-contracts` is at **0.1.0a8** (tagged; `origin/main` `39cb09b`), so this change ships
+as **0.1.0a9**. a8 is a breaking reshape: `ModelCard.species/mode/age_min/age_max` were replaced
+by `ModelCard.selectors: tuple[Selector, ...]`.
+
+| consumer | pin | affected by the a8 reshape |
+|---|---|---|
+| `sleap-roots-predict` | `==0.1.0a7` | **yes** — 13 sites in `model_selection.py:86-88` and `parity.py`, 69 references across 8 test files |
+| `sleap-roots` (traits) | `==0.1.0a7` (×3) | no — imports no `ModelCard` |
+| `bloomctl` | `>=0.1.0a7` | no — imports no `ModelCard` |
+
+`model_selection.py` is on the container's runtime path, not a dev-only tool. The migration is
+already filed as **predict#34**, open since 2026-08-12; nothing had connected it to this train.
+
+It cannot be sidestepped by reordering, because predict is a reader and readers must precede the
+writer flip (§4).
+
+**Decision:** land predict#34 as its own PR first, suite green, predict released. #71's predict
+change is then a small diff on top. A breaking change to runtime model selection does not belong
+hidden inside a correctness fix.
+
+### 2.7 The W&B registry must be re-seeded before predict is *deployed*
+
+predict#34 is not only a code migration. Model cards are **data in W&B**, read by
+`WandbRegistrySource.list_cards` (`sleap_roots_predict/model_registry.py`) from
+`<entity>-org/wandb-registry-sleap-roots-models`, filtered to the `production` alias and
+validated against `ModelCard`.
+
+Contracts a8 states the incompatibility as a deliberate choice:
+
+> There is deliberately **no tolerant read** of the legacy flat shape (a card-level
+> `species`/`mode`/`age_min`/`age_max`). Those keys are dropped as ordinary extras and the card
+> fails on the missing `selectors`.
+
+**Measured against the live registry on 2026-09-21** (read-only probe, alias `production`):
+
+```
+production artifacts: 13   selector-shaped: 0   flat-shaped: 13
+```
+
+All thirteen — the exact 13 registrations training#39 describes, backed by 8 physical models —
+are still flat. The producer-side code shipped (**training#47**, merged 2026-08-26) but the
+**re-seed itself has not been run**, which is why training#39 is still open.
+
+**The failure mode is quiet.** `list_cards` skips an artifact that fails validation with a logged
+warning and continues, per artifact, by design (predict#32). An upgraded predict against today's
+registry therefore skips all 13, returns an **empty catalog**, and cannot select any model —
+there is no single loud error saying the registry is the problem.
+
+Consequences for this train:
+
+- The re-seed is a **prerequisite of the predictor pin bump**, not of the merge. predict#34 may
+  be merged and pinned at any time; only the deploy is ordered (§4).
+- The old flat collections must keep their `production` alias until predict's upgrade is
+  confirmed **deployed**, not merely merged — they are the only thing an un-upgraded deployment
+  can read.
+
+### 2.8 The re-seed is ours to run, and it brackets this rollout
+
+The re-seed is already fully specified as **group 6 of `update-model-card-selectors`** in
+`sleap-roots-training` — a change that is merged but **deliberately not archived**, with 65 of 73
+tasks ticked and group 6 left open as "Migration — gated, and a separate PR after this change
+archives". We own it; nothing needs designing, only executing.
+
+Confirmed available on 2026-09-21:
+
+- The tooling: `sleap-roots-training seed-registry`, with `--only` (canary), `--verify`
+  (read-only), `--execute`, `--force`. Dry run is the default and makes no wandb calls.
+- The inputs: `--execute` requires `--models-root`, a tree of `<model_id>.zip` archives, and
+  **rejects an already-unzipped directory**. The required snapshot — models-downloader's
+  `20250204_models`, the matrix's declared source of truth — is present locally at
+  `c:\repos\models-downloader\tests\data\models_downloader_input\20250204_models\`, zips and
+  `model_chooser_table.xlsx` included.
+
+**Dry-run verified on 2026-09-22** (read-only, no wandb calls): the plan resolves **8
+collections, all `[ok]`**, every `.zip` SHA-verified against the matrix. Two properties worth
+recording, because both are preconditions of later steps:
+
+- The new collection ids are **disjoint** from the 13 live ones (`arabidopsis-lateral-240130_
+  140452.multi_instance.n-337` vs `arabidopsis-cylinder-lateral-age2-14`), confirming the
+  re-seed is purely additive and that 6.2's "exactly 13 orphans" is the right expectation.
+- The 8 cards **cover all 13** old registrations with no gaps, so retirement (6.3) loses no
+  selection context. `canola-lateral-…n-631` carries canola 2–13 *and* pennycress 2–14 on one
+  card — the precise case predict#34 exists for, and evidence for 6.4's correction to
+  training#39: that pair differs by species **and** age, not "only by age".
+
+**It brackets this rollout rather than merely preceding it**, which is the part that matters for
+ordering. Group 6's own text:
+
+> The re-seed runs **before** the upgraded predict is deployed [...] During the window the two
+> consumer generations are cleanly partitioned: an un-upgraded predict reads the 13 old
+> collections and skips the 8 new ones as unparseable, and an upgraded predict does exactly the
+> inverse. Neither ever sees two cards for one context [...] Retirement (6.3) is what ends the
+> un-upgraded generation's access, which is why it stays gated on confirmed deployment.
+
+So the re-seed (6.0–6.2) goes **before** the predictor deploy and the retirement (6.3) **after**
+it. The dual-aliased window in between is the designed safe state, not a hazard to minimise.
+
+Two operational constraints carried from that document:
+
+- **Single-operator.** `_existing_collections` is read once up front (`publish.py:146`), so two
+  concurrent `--execute` runs both see a collection as absent, both publish, and the alias lands
+  wherever `link_artifact` ran last — both reporting success. Announce the window; re-run
+  `--verify` immediately before 6.3.
+- **Not revertable.** A live wandb re-seed is not `git revert`-able, and a collection must
+  **never** be deleted. Rollback for an additive re-seed is removing `production` from the *new*
+  collections, rehearsed on the canary first (6.0).
+
+### 2.9 The legacy fallback is an explicit, removable parameter — not implicit behavior
+
+**Added 2026-09-22 after review**, which found that §2.2's fail-loud guarantee was unreachable as
+originally specified.
+
+The legacy `run_manifest.json` already exists in all three shared trees and nothing prunes it. An
+unconditional fallback therefore *always* succeeds, so `RunManifestMissingError` could never fire
+in production. A run whose downloader crashed, or skewed mid-rollout, would silently scope to the
+stale 12-key union — the original contamination bug, re-entering through the very affordance
+added to make the rollout safe. The headline safety property would have been decorative.
+
+Step 5 of §4 deletes those files, but that is an operational step in this repo, not something the
+contract can rely on.
+
+**Decision:** `read_run_manifest`'s `allow_legacy` is **keyword-only and required** — no default.
+Every call site must state its position, so the fleet's transition state is greppable, and
+turning the fallback off is a one-line change per consumer rather than the second contracts
+release §8 previously assumed. During the rollout all four sites pass `allow_legacy=True`; once
+§4 step 5 has deleted the stale files and the fleet is confirmed migrated, they flip to `False`
+and the fail-loud guarantee becomes real.
+
+A required parameter is deliberately less convenient than a defaulted one. The convenience is
+what made the hole invisible.
+
+**`allow_legacy` governs only the case where a run identity exists.** Caught in re-review:
+`RUN_MANIFEST_FILENAME` means two different things, and an earlier draft of this section
+conflated them. It is the rollout-era leftover *and* — per §2.3 — the permanently correct name
+for a stage with no run identity. Under the conflated rule, `pipeline_run_id=None` with
+`allow_legacy=False` produced an **empty candidate list**, so the function returned `None` and
+the caller fell through to unscoped discovery. Since the `local-WSL2-*` templates deliberately
+do not set `ARGO_WORKFLOW_NAME` (verified) and the call sites are shared code, §4 step 6's
+fleet-wide flip would have silently regressed every local run from scoped to unscoped — the
+contamination class this change exists to close, reintroduced by its own safety parameter.
+
+The rule is therefore asymmetric, matching §2.2's:
+
+- `pipeline_run_id is None` → `RUN_MANIFEST_FILENAME` is the *only* candidate and is always
+  tried, whatever `allow_legacy` says. It is not a fallback here; it is the right name.
+  Absent → `None`, today's behavior.
+- `pipeline_run_id is not None` → per-run name first; then `RUN_MANIFEST_FILENAME` only when
+  `allow_legacy`; otherwise `RunManifestMissingError`.
+
+So `allow_legacy` reads as "may a stage that knows its own identity accept a manifest written
+under the identity-less name?" — which is exactly the B1 hazard, and nothing else.
+- **Every idempotency key changes.** `registry_id` changes for all 8 models under the producer's
+  new collection-id scheme, and `compute_idempotency_key`
+  (`sleap-roots-contracts/src/sleap_roots_contracts/identity.py:44-45`) hashes
+  `(registry_id, version, weights_checksum)` per model. The first run after the migration
+  therefore recomputes every scan rather than reusing anything. This is a one-time re-baseline of
+  the A4 batch-oracle property, and it is expected, not a regression (§5).
+
+## 3. Mechanism
+
+### 3.1 `sleap-roots-contracts` (the enabling change)
+
+`src/sleap_roots_contracts/run_manifest.py` gains these names, all exported from the package
+root (**revised 2026-09-22 after review**):
+
+```python
+PIPELINE_RUN_ID_ENV_VAR = "ARGO_WORKFLOW_NAME"
+
+def run_manifest_filename(pipeline_run_id: str) -> str:
+    """Return "run_manifest.<pipeline_run_id>.json"; reject an unsafe id."""
+
+def pipeline_run_id_from_env(env=None) -> str | None:
+    """ARGO_WORKFLOW_NAME, stripped; None when unset or blank."""
+
+def run_manifest_name_for_writing(pipeline_run_id: str | None) -> str:
+    """The name a WRITER uses: per-run when the id is known, else the legacy name (§2.3)."""
+
+def read_run_manifest(directory, pipeline_run_id, *, allow_legacy: bool) -> RunManifestRead | None:
+    """§2.2's order, one open per candidate. Returns (filename, data, mode, is_per_run)."""
+
+def check_run_manifest_identity(manifest, pipeline_run_id, filename) -> None:
+    """§3.2's cross-check; a no-op when `filename` is the legacy name."""
+```
+
+`RUN_MANIFEST_FILENAME` is unchanged and retained as the legacy/local name.
+
+`run_manifest_filename` **validates that the id is filename-safe** — it arrives from an
+environment variable and becomes a path component, so path separators, `..`, and empty/blank are
+rejected. The cap is **237** characters, not the Kubernetes object limit of 253: the filename
+adds 18 characters (`run_manifest.` + `.json`), and 237 + 18 = 255 is `NAME_MAX`. Argo's
+`generateName` produces ids of about 26 characters, so nothing real is excluded.
+
+The resolution *policy* lives in contracts rather than being reimplemented three times. Three
+independent copies of a three-branch rule across four repos is precisely how this program's
+normative text drifts, and single-definition was predict#40's actual goal, minus the lock.
+
+**`read_run_manifest` opens the file rather than taking an `exists` predicate.** An earlier
+revision of this design used `resolve_run_manifest_name(id, exists)` on the grounds that the
+library does no filesystem I/O. That premise was **false** — `schema.py:93-98`'s `emit_schema()`
+writes files and `_default_schema_dir()` falls back to `Path.cwd()`; `registry.py:25-27` and
+`examples/__init__.py:70` read packaged resources. The defensible invariant is narrower: no
+ambient, caller-supplied-directory reads *in the contract-model surface*. Opening the manifest
+buys two things a predicate cannot:
+
+- **The absent-vs-unreadable distinction survives.** A boolean collapses `EACCES` into "absent",
+  which would fall through to the legacy manifest — `ingest.py:115-127` deliberately avoids
+  `.is_file()` for exactly this reason. One `try: open / except FileNotFoundError` walk keeps
+  `FileNotFoundError` meaning "try the next candidate" and lets every other `OSError` propagate.
+- **No probe/read window.** Returning the bytes closes the TOCTOU gap that predict's `run_batch`
+  already goes to lengths to avoid by taking a single snapshot.
+- **The mode comes for free, and predict needs it.** `sleap-roots-predict`'s `_ManifestSnapshot`
+  carries `(data, mode)` precisely so the forwarded file's permissions match the source "without
+  a second stat that could observe a different file", and it `chmod`s before the replace because
+  `mkstemp` creates at `0600` and the downstream container is a different uid on the same shared
+  NFS mount. A read that returned only bytes would force predict to re-stat by name —
+  reinstating that exact race — or to drop mode preservation. Since `read_run_manifest` holds
+  the descriptor, `os.fstat(handle.fileno()).st_mode & 0o777` costs nothing, so `RunManifestRead`
+  carries `mode`. Consumers use attribute access, never tuple unpacking, so fields can be
+  appended later.
+
+`allow_legacy` is **required and keyword-only**, with no default. See §2.9.
+
+### 3.2 Cross-check, free of charge
+
+When a reader loads a *per-run-named* file, it asserts `manifest.pipeline_run_id` equals its own
+run id. This is bloom#703's cross-check, possible for the first time — the field could never
+disagree before, because the writer unconditionally overwrote it with the current run's value.
+`check_run_manifest_identity` is a **no-op when handed the legacy filename**, which carries no
+run identity in its name; without that, every call site would write the same
+`if filename != RUN_MANIFEST_FILENAME:` guard itself.
+
+**Writer and reader must derive the id from the same function, or the cross-check fires on every
+stage.** Found in review: `download_for_predict.py:455` is
+`os.environ.get("ARGO_WORKFLOW_NAME") or f"local-{uuid4().hex[:8]}"` — it does **not** strip,
+while `pipeline_run_id_from_env()` does. A value of `" wf1\n"` would name the file from the
+stripped form and store the unstripped form inside it, so the reader's comparison fails and
+every stage dies on a self-inflicted `RunManifestIdentityError`. Worse, `"   "` is truthy for
+bloomctl but blank for the contract, so the two would disagree about whether a run identity
+exists at all.
+
+So bloomctl must stop reading the environment itself: it calls `pipeline_run_id_from_env()`
+once, uses `run_manifest_name_for_writing()` for the filename, and keeps
+`resolve_pipeline_run_id`'s `local-<uuid8>` only as the *content* fallback layered on top —
+never as a parallel env reader.
+
+### 3.3 Call sites
+
+| repo | file | change |
+|---|---|---|
+| `salk-bloom` | `download_for_predict.py:458` | write to the resolved per-run path; overwrite, not union (§2.4) |
+| `sleap-roots-predict` | `run_manifest.py:99`, `batch.py:90`,`:286` | resolve via contracts; forward under the name read (§2.5) |
+| `sleap-roots` | `trait_extractor/run_manifest.py:17`,`:48`, `extractor.py:142` | same; plus temp-file cleanup on failure |
+| `salk-bloom` | `ingest.py:91-116` | resolve via contracts; fail loud instead of returning every envelope |
+
+## 4. Rollout — order is load-bearing
+
+**Readers must land before the writer.** If `bloomctl` flips first, an un-bumped predict looks
+for the legacy name, finds nothing, and falls through to unscoped discovery over the entire
+shared directory — briefly worse than the defect being fixed.
+
+One seam makes this clean: `images-downloader`, `write-back` and `exit-gate` all run the **same**
+`bloomctl:sha-28034f6` image, so a single pin bump flips the writer and the write-back reader
+together, with no intermediate state.
+
+The registry migration (§2.8) interleaves with it, so the two are written as one sequence. Steps
+0a–0e are prerequisite work in *other* repos; #71's own train is steps 1–5.
+
+0a. **predict#34** — a8/`Selector` migration in predict. Merge, pin contracts a8, suite green.
+   Merging is ungated; only the deploy (0c) is ordered.
+0b. **Re-seed the W&B registry** — training tasks 6.0–6.2: rollback prep and snapshot of the 13
+   current collection→version mappings; canary one collection with `--only` and prove an
+   upgraded predict resolves it *and* an un-upgraded one still resolves the old card; then the
+   remaining 7; then a full `--verify` reporting **exactly 13 orphans**. Registry is now
+   dual-shaped, generations cleanly partitioned (§2.8).
+0c. **Deploy predict#34** — predictor image build and pin bump in this repo. One falsifiable
+   question: does model selection still resolve, now against the new collections. Keeping this
+   deploy separate from step 2 is the whole point — an empty catalog is silent (§2.7), so it
+   must not share a deploy with the manifest change.
+0d. **Retire the 13 flat collections** — training task 6.3, gated on 0c being *confirmed
+   deployed*, not merely merged. Acceptance: `--verify` reports zero orphans and zero
+   legacy-shape expected collections.
+0e. **Close out training** — tasks 6.4 (comment the outcome on training#39, plus the correction
+   its 2026-08-10 comment needs), 6.5, then the archive PR with 6.6's spec-ordering fix.
+1. **contracts 0.1.0a9** — purely additive; nothing breaks.
+2. **predict + traits** — adopt, release, rebuild images, bump their two template pins. The
+   fleet still reads legacy manifests written by the old `bloomctl`; **no manifest behavior
+   change yet.**
+3. **bloomctl** — writer flips to the per-run name, `ingest` dual-reads. One image, one pin bump
+   across three templates. **This is the flip.**
+4. **`argo template update`** for all five templates.
+5. **Delete the three stale `run_manifest.json` files** under the `a4_poc` directories.
+   Otherwise a run whose downloader failed to write falls back onto a stale 12-key manifest —
+   today's bug, resurrected through the very fallback added to make the rollout safe.
+6. **Flip `allow_legacy` to `False`** at all four call sites and re-release the consumers
+   (§2.9). Until this lands the fail-loud guarantee is still inert, because a stale legacy file
+   reappearing for any reason would satisfy the fallback. This is the step that makes §2.2 real,
+   and it is cheap — one keyword per site, no contracts change. It is also safe for local runs:
+   the flip is a no-op where no run identity exists, because there `RUN_MANIFEST_FILENAME` is
+   the correct name rather than a fallback and is tried regardless (§2.9).
+
+Every pin bump is production-visible: `runai-busch-lab` is shared by Bloom staging and
+production (`services/workflows/k8s_client.py` docstring). Production is dormant but live.
+
+## 5. Verification
+
+Unit tests in each repo, TDD, before the live run.
+
+Live acceptance, Bloom-dispatched (not `argo submit`, so `done_count`/`failed_count` are real):
+dispatch against staging experiment `A4-PIPELINE-E2E-TEST` (`experiment_id` 12880747; scans
+12894756–12894759 good, 12894760 poison) at **N=1** and **N=3**, and assert
+
+- the manifest holds **exactly N** `scan_keys`,
+- write-back reports **`Ingested N/N`**,
+- `cyl_trait_sources` gains **exactly N** rows.
+
+Today any such run reports 10–12 regardless of N, so the test fails before the change and passes
+after it.
+
+Known noise, not regressions: bloom#875's residue makes sources whose first delivery was
+hand-submitted report `failed`; write-back's `Ingested 0/N` headline counts only `status == "ok"`
+and understates success.
+
+**Expect no skip-if-done reuse on the first run after the registry migration.** Every
+idempotency key changes with `registry_id` (§2.7), so the first post-migration run does real GPU
+work on scans that would previously have been skipped. This does not affect the assertions above
+— they count manifest keys, ingested envelopes and DB rows, not skips — but it does mean the
+batch-oracle "re-run an already-done batch → 0 GPU pods" check must be re-baselined *after* the
+migration rather than compared across it.
+
+## 6. Risks
+
+| risk | mitigation |
+|---|---|
+| Mid-rollout skew silently widens scope | reader-first ordering (§4) + fail-loud (§2.2) |
+| The legacy fallback makes fail-loud inert while it is on | `allow_legacy` is required and greppable; §4 step 6 flips it off (§2.9) |
+| A `EACCES` on the manifest reads as "absent" and falls through to the stale file | `read_run_manifest` opens rather than probes; only `FileNotFoundError` advances (§3.1) |
+| Writer and reader disagree on the run id, so the cross-check fires on every stage | both derive it from `pipeline_run_id_from_env()`; bloomctl layers its `local-<uuid8>` on top rather than reading the env itself (§3.2) |
+| Stale legacy manifests reachable through the fallback | delete them at step 5 |
+| `pipeline_run_id` is environment-supplied and becomes a path component | validated in `run_manifest_filename` (§3.1) |
+| Per-run manifests accumulate, one per run per directory, forever | small files; GC filed as follow-up |
+| Production-visible template update | production dormant; staging validated first |
+| Predictor pinned before the W&B re-seed → empty model catalog, warnings only | step 0a gates the predictor pin bump (§2.7) |
+| Idempotency keys all change with `registry_id` → one-time full recompute | expected; re-baseline the batch oracle after the migration (§5) |
+
+## 7. Deliverables beyond code
+
+These are part of this change, but are not code:
+
+- The correcting comment on predict#40 (§2.1), narrowing it to its two genuine residues.
+- The roadmap entry in `docs/bloom-integration/roadmap.md`, recording what was observed after
+  the fact.
+- The `sleap-roots-training` migration PR — group 6's tasks ticked, the 6.0(a) baseline snapshot
+  committed, and `openspec archive` run (§2.8, §4 steps 0b/0d/0e). That PR runs no CI, since
+  `openspec/**` is outside `ci.yml`'s path filters.
+
+**Repos touched, and why:** `sleap-roots-contracts` (the helper), `salk-bloom` (writer +
+write-back reader), `sleap-roots-predict` (reader/forwarder, plus prerequisite #34),
+`sleap-roots` (reader/forwarder), `sleap-roots-pipeline` (pin bumps, roadmap, this doc) and
+`sleap-roots-training` (the registry migration) — six, not the four the issue anticipated.
+
+## 8. Out of scope — to be filed as follow-ups
+
+- Removing the legacy-name fallback once the fleet is confirmed migrated (needs a second train).
+- GC of accumulated per-run manifests.
+- Removal of the now-redundant manifest lock (§2.4).
