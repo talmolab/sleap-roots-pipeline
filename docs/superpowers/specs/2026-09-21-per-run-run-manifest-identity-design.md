@@ -407,9 +407,28 @@ never as a parallel env reader.
 
 ## 4. Rollout — order is load-bearing
 
-**Readers must land before the writer.** If `bloomctl` flips first, an un-bumped predict looks
-for the legacy name, finds nothing, and falls through to unscoped discovery over the entire
-shared directory — briefly worse than the defect being fixed.
+**Readers must land before the writer** — corrected 2026-09-23, because the rationale first
+written here was wrong. It said an un-bumped predict "looks for the legacy name, finds nothing,
+and falls through to unscoped discovery … briefly worse than the defect being fixed". That holds
+only in a tree with no legacy manifest. Verified against the live `a4_poc` trees: `input/`,
+`predictions/` and `traits/` each still hold a `run_manifest.json` with 12 keys from run
+`hpdpf`. An un-bumped reader there finds that file and scopes to it exactly as it does today —
+the file simply stops growing, since the new writer no longer unions into it.
+
+Writer-first is therefore not *worse* than the defect. It is pointless and unattributable, which
+is the argument that actually carries:
+
+- **It fixes nothing.** Readers still scope to the stale union, so the 1-scan-request-processes-12-scans
+  behavior persists while production has changed.
+- **The per-run manifest dies at the first un-adopted hop.** An un-bumped predict forwards the
+  legacy file onward, so the new naming never reaches `predictions/`, `traits/` or write-back.
+- **Attribution is destroyed.** `ingest.py` and `download_for_predict.py` ship in one image, so
+  flipping the writer also flips write-back's reader, which then succeeds only by falling back to
+  whatever a hop forwarded — working by accident. When the E2E still reports 12 keys for a 1-scan
+  run, nothing distinguishes a wrong writer from an un-adopted hop.
+
+Overstating the hazard is the same defect class as understating it: the next reader checks the
+claim against the tree in front of them, finds it false, and discounts the conclusion with it.
 
 One seam makes this clean: `images-downloader`, `write-back` and `exit-gate` all run the **same**
 `bloomctl:sha-28034f6` image, so a single pin bump flips the writer and the write-back reader
