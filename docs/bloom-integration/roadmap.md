@@ -399,11 +399,16 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
 
-⚠️ **Adoption order is normative: readers before the writer.** Once `bloomctl` publishes
-`run_manifest.<id>.json`, an un-adopted reader finds no legacy manifest and falls back to
-whole-tree discovery — worse than the defect being fixed. Note `bloomctl` pins contracts
-`>=0.1.0a7` **unbounded**, so its next image build adopts a9 automatically; predict and traits
-pin `==0.1.0a7`.
+⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
+written here. A writer publishing `run_manifest.<id>.json` stops maintaining
+`run_manifest.json`; an un-adopted reader in the `a4_poc` trees then keeps scoping to the
+now-frozen stale manifest (**verified 2026-09-22: 12 keys, run `hpdpf`, in all three
+directories**), so writer-first is not *worse* than the defect — it simply fixes nothing, drops
+the per-run manifest at the first un-adopted hop so it never reaches write-back, and, because
+`ingest.py` and `download_for_predict.py` ship in one image, flips write-back's reader at the
+same moment so it succeeds only by falling back. The result is a rollout that produces no
+attributable signal. Note `bloomctl` pins contracts `>=0.1.0a7` **unbounded**, so its next image
+build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
 
 ⚠️ **#71 is not actually fixed until step 7.** Until `allow_legacy` is `False` everywhere, a
 reader that cannot find its own manifest still falls back to the stale shared one, so the
@@ -732,10 +737,13 @@ Adversarial 4-lens review. Resolutions:
     meaning the planned fleet-wide flip would have regressed local-WSL2 runs. Both were
     introduced by me and found by `/review-openspec` and `/review-pr`, on text rather than in
     production.
-  - ⚠️ **Adoption order is normative: readers before the writer.** Once `bloomctl` publishes
-    `run_manifest.<id>.json`, an un-adopted reader finds no legacy manifest and falls back to
-    whole-tree discovery — worse than the 12-key defect #71 exists to fix. Now stated in the
-    contracts module docstring and README. Note `bloomctl` pins `>=0.1.0a7` **unbounded**, so its
+  - ⚠️ **Adoption order is normative: readers before the writer.** Stated in the contracts
+    module docstring and README. **Corrected 2026-09-23:** the rationale first written here —
+    that an un-adopted reader "finds no legacy manifest and falls back to whole-tree discovery,
+    worse than the defect" — is false in these trees, which still hold a 12-key
+    `run_manifest.json` from run `hpdpf`. Such a reader keeps scoping to that frozen file. The
+    real argument is that writer-first fixes nothing, drops the per-run manifest at the first
+    un-adopted hop, and destroys attribution. See talmolab/sleap-roots-contracts#44. Note `bloomctl` pins `>=0.1.0a7` **unbounded**, so its
     next image build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
   - ⚠️ **Two claims in `sleap-roots-contracts/openspec/project.md` were verified false and
     corrected in passing** — that the library does "no DB/network/filesystem I/O" (`emit_schema`
