@@ -380,10 +380,39 @@ subscription develops against live data rather than mocks.
 into the shared manifest and never prunes, so every run operates on the union of all runs that ever
 used those paths. Measured four times on 2026-09-21: a **1-scan** request carried a **12-key**
 manifest and write-back delivered all 12, creating `cyl_trait_sources` rows for scans nobody
-requested. It reaches persisted state in Bloom, it will corrupt any per-run accounting the UI
-displays, and the fix shape is already decided in the issue (per-run manifest identity,
-`run_manifest.<pipeline_run_id>.json`, artifacts still shared so skip-if-done keeps working).
-Doing it before the UI avoids building a progress panel on top of counts the manifest can inflate.
+requested. It reaches persisted state in Bloom and will corrupt any per-run accounting the UI
+displays, so it goes before the UI.
+
+**Status as of 2026-09-22 — the contract half is DONE, the consumers are not.**
+`sleap-roots-contracts` **0.1.0a9** is released and verified from PyPI: per-run naming
+(`run_manifest.<pipeline_run_id>.json`) plus the shared resolution policy, with `load_run_manifest`
+as the recommended entry point. See that day's status-log entry. #71 stays **open** — it needs the
+four consumer changes and the template pin bumps. Remaining work, in dependency order:
+
+| # | work | state |
+|---|---|---|
+| 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | in progress |
+| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | in progress |
+| 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed, dry run clean, canary blocked on 1 | blocked on 1 |
+| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3 |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4 |
+| 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 |
+| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
+
+⚠️ **Adoption order is normative: readers before the writer.** Once `bloomctl` publishes
+`run_manifest.<id>.json`, an un-adopted reader finds no legacy manifest and falls back to
+whole-tree discovery — worse than the defect being fixed. Note `bloomctl` pins contracts
+`>=0.1.0a7` **unbounded**, so its next image build adopts a9 automatically; predict and traits
+pin `==0.1.0a7`.
+
+⚠️ **#71 is not actually fixed until step 7.** Until `allow_legacy` is `False` everywhere, a
+reader that cannot find its own manifest still falls back to the stale shared one, so the
+fail-loud guarantee is inert. The E2E at step 6 is the proof the naming works; #82 is the proof
+the guarantee does.
+
+**The acceptance test, unchanged:** dispatch an N-scan run via the Bloom route and assert the
+manifest holds exactly N keys and write-back reports `Ingested N/N`. Today any such run reports
+10–12 regardless of N.
 
 **Known, filed, and deliberately not blocking any of the above:**
 
