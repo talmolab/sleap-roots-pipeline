@@ -576,6 +576,62 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-23** — **A4: two comparators, one cluster, opposite verdicts — and nothing was checking
+  the edge that matters.** Bloom's `check_registered_templates.py` was comparing the five registered
+  `WorkflowTemplate`s against *this repo's* template files at the SHA pinned in Bloom's
+  `SLEAP_ROOTS_PIPELINE_REF`. That pin is the **Workflow's**, not the templates'; the templates
+  resolve by `templateRef` at submit time precisely so they can advance independently of it. So from
+  2026-09-17 — the moment #78/#79 landed — it reported DRIFT on all five *correct* templates, and
+  would have kept doing so until Bloom re-vendored for unrelated reasons.
+  - **Measured live 2026-09-21, same cluster (`runai-busch-lab`), minutes apart:** Bloom's comparator
+    → **DRIFT ×5, exit 1**; this repo's `scripts/check_cluster_drift.sh`, run from a clean checkout
+    at `04c2fc1c` on `main` → **IN SYNC ×5, exit 0**. Every one of the five diffs was an image tag, an
+    image digest, or a digest env var — i.e. all three of the legitimate changes this repo had just
+    made (#79's `bloomctl:sha-0614889` → `sha-28034f6`, and #78's `SRP_PREDICT_CONTAINER_DIGEST` /
+    `SRT_TRAITS_CONTAINER_DIGEST` injection that closed #70). The structural contract was intact
+    throughout: all five inner `template:` names matched, and `exit-gate` declared exactly the three
+    parameters the vendored `Workflow` passes it.
+  - **It had already corrupted one record.** A Bloom task note dated 2026-09-21 claimed all five
+    reported "IN SYNC with the pin, exit 0" — which cannot have happened, and is self-contradicting
+    besides (that task was confirming the `sha-28034f6` bump had *landed*, and "IN SYNC with the pin"
+    would have meant it had not). Retracted on the Bloom side; which comparator actually produced it
+    is not recoverable. Recorded here because it is the same class as bloom#780.
+  - **Fix, bloom PR #892, merged to `staging` 2026-09-23** (`378b5456`): renamed
+    `check_template_contract.py`, re-based on the contract Bloom owns — its vendored `Workflow` — and
+    the word `DRIFT` removed from its output entirely. Drift is this repo's question and
+    `check_cluster_drift.sh` answers it correctly; Bloom had no standing to assert it.
+  - **Why Bloom kept a comparator at all**, which is the part worth knowing here: nothing else
+    compares the vendored `Workflow` to the cluster.
+
+    | check | compares |
+    | --- | --- |
+    | `scripts/check_cluster_drift.sh` (this repo) | cluster ↔ *this repo's* template files |
+    | `scripts/check_manifests.py` (this repo) | this repo's files ↔ themselves (digest pinning) |
+    | `test_k8s_client.py::_EXPECTED_DAG` (bloom) | vendored `Workflow` ↔ a constant in bloom |
+    | `check_vendored_workflow_drift.py` (bloom) | vendored file ↔ this repo's `Workflow` at the pin |
+    | `check_template_contract.py` (bloom, new) | **vendored `Workflow` ↔ the cluster** |
+
+    Ours is blind to that edge by construction — it compares this repo to this repo — so if we rename
+    an inner template, add a required input, or rename a volume, and register it, we report IN SYNC
+    while Bloom's vendored refs go stale. Bloom's new comparator asserts six things per DAG task:
+    the object exists, it declares the referenced inner template, passed parameters are declared,
+    **required inputs (no `default`/`value`/`valueFrom`) are supplied**, `volumeMounts` are declared in
+    `spec.volumes`, and `{{workflow.parameters.*}}` references resolve.
+  - **Actionable for us: `check_cluster_drift.sh` has a bug Bloom's review just found in its own
+    equivalent.** At `scripts/check_cluster_drift.sh:143-147`, *any* non-zero `kubectl get` is treated
+    as `NOT REGISTERED` with `drift=1`. So VPN down, an expired token, a per-object RBAC denial, a
+    transient API error, or `kubectl` missing from `PATH` all report five fabricated drifts rather
+    than "could not check". Only `Error from server (NotFound)` actually means absent — verified live.
+    Bloom's now classifies this; ours does not. Worth a small follow-up here.
+  - **#72 is still open and unmitigated.** bloom#879's body claimed #78's digests "also address the
+    tag-mutability half" of #72; they do not — #72 is exclusively about `exit-gate`, and those digests
+    went to `predictor` and `trait-extractor`. Bloom's comparator now prints an advisory naming #72
+    wherever a template is tag-pinned with `imagePullPolicy: IfNotPresent`; verified live, that fires
+    on `exit-gate` only.
+  - **Worth stating plainly: neither of this repo's two checks runs in CI, because this repo has no
+    CI** (no `.github/`). "Upstream checks it" always means "a human ran a script". That is fine as a
+    deliberate posture but it should not be mistaken for enforcement — Bloom's design doc now says so
+    explicitly, having leaned on the opposite assumption in an earlier draft.
 - **2026-09-15 (later)** — **sleap-roots-predict#39 fixed and merged (PR #42): predict now forwards
   `run_manifest.json` to its own output — the real reason #54/#55's fix alone didn't stop leftover-scan
   contamination.** Separate thread from the bloom#772/#56 entry directly below (same day, unrelated).
