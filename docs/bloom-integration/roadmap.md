@@ -627,6 +627,43 @@ Adversarial 4-lens review. Resolutions:
     > **all 12** plus all 24 `.slp` blobs, which is the real idempotency oracle. One caveat this
     > surfaced: the "mtime stays frozen" signal is only valid *within* a fixed `predict_code_sha` —
     > across a pin bump a recompute of in-scope scans is correct behaviour, not contamination.
+- **2026-09-22** — **srp#71's enabling change is released: `sleap-roots-contracts 0.1.0a9`
+  is on PyPI**, verified from the index rather than a local checkout. The contract half of #71 is
+  done; the four consumer changes and the template pin bumps are not, so **#71 stays open**.
+  - **What shipped.** Per-run manifest naming (`run_manifest.<pipeline_run_id>.json`) plus the
+    shared resolution policy, so runs sharing an `out_dir` stop sharing a manifest. The
+    recommended entry point is `load_run_manifest`, which composes read → parse → identity
+    cross-check; the five primitives stay exported as an escape hatch. Additive — `RunManifest`
+    and `RUN_MANIFEST_FILENAME` are unchanged. PRs talmolab/sleap-roots-contracts#38 (change),
+    #39 (bump + CHANGELOG), #41 (OpenSpec archive). Capability spec is now 12 requirements / 63
+    scenarios.
+  - **Two silent-contamination bugs were caught in review, before any consumer encoded them.**
+    (1) A *dangling symlink* at the per-run name raised `FileNotFoundError(ENOENT)` exactly like
+    an absent file, so the reader advanced to the stale legacy manifest — a foreign scope, which
+    is the failure the open-don't-probe rule exists to prevent. Verified empirically on Linux,
+    then fixed by discriminating on `is_symlink()`. (2) The `allow_legacy` flag conflated the
+    rollout leftover with the *correct* no-identity name, so `pipeline_run_id=None` with
+    `allow_legacy=False` produced an empty candidate list and silently unscoped every local run —
+    meaning the planned fleet-wide flip would have regressed local-WSL2 runs. Both were
+    introduced by me and found by `/review-openspec` and `/review-pr`, on text rather than in
+    production.
+  - ⚠️ **Adoption order is normative: readers before the writer.** Once `bloomctl` publishes
+    `run_manifest.<id>.json`, an un-adopted reader finds no legacy manifest and falls back to
+    whole-tree discovery — worse than the 12-key defect #71 exists to fix. Now stated in the
+    contracts module docstring and README. Note `bloomctl` pins `>=0.1.0a7` **unbounded**, so its
+    next image build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
+  - ⚠️ **Two claims in `sleap-roots-contracts/openspec/project.md` were verified false and
+    corrected in passing** — that the library does "no DB/network/filesystem I/O" (`emit_schema`
+    writes files) and that predict/traits had not yet landed their consuming PRs (both have read
+    the manifest since a7). Same defect class this program keeps hitting.
+  - **W&B re-seed: 6.0(a) done, canary blocked — and the block is an ordering constraint worth
+    recording.** The baseline snapshot of the 13 flat production collections is committed
+    (`sleap-roots-training`, branch `migrate-model-card-selectors`); the dry run confirms 8
+    selector-shaped collections covering all 13 with no gaps. But task 6.1's canary requires
+    pointing an **upgraded** predict at the live registry, which needs predict#34's code to
+    exist. So **predict#34 comes before the re-seed**, and only predict#34's *deploy* waits for
+    it. The registry is still 13 flat / 0 selector-shaped as of this entry.
+
 - **2026-09-21** — **All three outstanding live verifications PASS. srp#56 is verified end to
   end, #78's acceptance test is closed, and srp#76's fix is proven rather than inferred.** What
   unblocked every one of them was the same thing: synthetic scans with no prior envelope.
