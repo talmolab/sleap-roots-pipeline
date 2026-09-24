@@ -391,10 +391,10 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 
 | # | work | state |
 |---|---|---|
-| 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | in progress |
+| 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3 **and** bloom#895 |
 | 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
 | 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed; **6.1 canary LANDED** (1 selector card live alongside the 13 flat); remaining 7 + 6.2 full `--verify` outstanding | **in progress** |
-| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3 |
+| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3's **6.2 full `--verify`** and bloom#895 *applied* |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
 | 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
@@ -636,6 +636,25 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-24 (later still)** — **Both #71 consumer code changes are merged, and the re-seed
+  is no longer blocked.** talmolab/sleap-roots-predict#45 landed (`87ca271`), pinning
+  `sleap-roots-contracts==0.1.0a9` and migrating `choose_models` onto `ModelCard.selectors`.
+  With talmolab/sleap-roots#269 already in, steps 1 and 2 of the frontier are done.
+  - **Reviewed with three adversarial lenses before merge** (selection equivalence, deploy
+    gating, test quality; 8/8/8). The matcher is a single `any()` over whole `Selector` objects,
+    so a cross product is structurally impossible; #34's exact canola/arabidopsis case is pinned
+    by construction; and the A1 artifact is a real equivalence proof over 270 grid cells
+    comparing physical `source_model_id`, not a file diff. All three blocking items — an
+    imperative deploy gate in the CHANGELOG, the recompute/re-baseline note, and two stale
+    "13 production models" claims — were fixed before merge.
+  - **What this unblocks.** Training 6.1's canary verification requires pointing an *upgraded*
+    predict at the live registry; that predict now exists. The canary collection is already
+    aliased, so 6.1(b)-(d) can complete, then the remaining 7 collections, then 6.2's full
+    `--verify` (expect exactly 13 orphans).
+  - **Nothing has been deployed.** Verified: the predictor and trait-extractor template pins are
+    both unchanged and pre-a9, and bloom#895 is still open. That is correct — a9 images must not
+    reach the cluster until Bloom accepts the new `contract_version` *and* 6.2 is clean.
+
 - **2026-09-24 (later)** — **The W&B 6.1 canary is live, and it silently removed the
   predictor's last automated safety net.** Found while reviewing talmolab/sleap-roots-predict#45,
   by re-probing the registry rather than trusting this document.
