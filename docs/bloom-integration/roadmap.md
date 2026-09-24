@@ -396,8 +396,8 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed; **6.1 canary LANDED** (1 selector card live alongside the 13 flat); remaining 7 + 6.2 full `--verify` outstanding | **in progress** |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3's **6.2 full `--verify`** and bloom#895 *applied* |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
-| 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
-| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
+| 6 | **Template pin bumps + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
+| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
 written here. A writer publishing `run_manifest.<id>.json` stops maintaining
@@ -416,15 +416,21 @@ was that #71 should land first to avoid "building a progress panel on counts the
 inflate". Tracing the data flow, that is not right: `done_count`/`failed_count` derive from
 `cyl_pipeline_run_scans`, which is populated **at dispatch** from the *requested* `scan_ids`
 (`services/workflows/pipeline.py:322`), while #71's defect inflates **`cyl_trait_sources`**, a
-different table written by write-back. A 1-scan request therefore yields **1** progress row and
-**12** trait-source rows. The split:
+different table written by write-back. A 1-scan request therefore yields **1** progress row. What #71 does to
+`cyl_trait_sources` is narrower than this section first said (**corrected 2026-09-24**): write-back
+gates on `ON CONFLICT (idempotency_key) DO NOTHING` (`20260917140000_fix_cyl_redelivery_status_fallback.sql:128`),
+and `compute_idempotency_key` hashes scan, models, params and code SHAs but **no run id** — so
+re-delivering an already-ingested scan is a no-op (run `hpdpf` printed `Ingested 0/12`). A 1-scan
+run writes *new* rows for the other scans only when models or code changed since those scans were
+last ingested, and then each row is a correct result for a real scan, not bad data. The harm is
+**unrequested writes**, not wrong rows. No data cleanup is needed. The split:
 
 | UI surface | safe to build before #71 completes |
 |---|---|
 | Trigger + params panel + pre-check preview | ✅ yes |
 | Progress panel, run status, `done_count`/`failed_count`, Realtime on `cyl_pipeline_runs` | ✅ yes — counts come from requested scans |
 | Per-scan drill-down into `cyl_pipeline_run_scans` | ✅ yes — same table, same provenance |
-| Anything listing **traits/sources per run** | ⚠️ shows 12 rows for a 1-scan run until step 7 (#82) |
+| Anything listing **traits/sources per run** | ⚠️ not buildable yet for a different reason — nothing links a `cyl_trait_sources` row to its run (`provenance.pipeline_run_id` is null, bloom#864 / sleap-roots#268), and until step 6 a run can also write rows for scans it never requested |
 
 Keep triggering real E2E runs during the build so the Realtime subscription develops against live
 data rather than mocks — that advice, from this document's earlier UI entry, still holds.
@@ -455,10 +461,28 @@ performs step 5 unintentionally — producing exactly the writer-before-reader s
 above exists to prevent. Treat a `bloomctl` rebuild in this window as a rollout event, not
 routine maintenance.
 
-⚠️ **#71 is not actually fixed until step 7.** Until `allow_legacy` is `False` everywhere, a
-reader that cannot find its own manifest still falls back to the stale shared one, so the
-fail-loud guarantee is inert. The E2E at step 6 is the proof the naming works; #82 is the proof
-the guarantee does.
+⚠️ **Deleting the stale legacy manifests is MANDATORY at step 6, and it is what makes #71's
+guarantee real — not step 7** (corrected 2026-09-24, verified against the released a9 resolver).
+While `allow_legacy=True`, a reader that cannot find its own `run_manifest.<id>.json` falls back to
+`run_manifest.json`. With the stale file present, that fallback silently scopes to `hpdpf`'s 12
+keys. With it **deleted**, the fallback finds nothing and the reader raises
+`RunManifestMissingError`, **exactly as `allow_legacy=False` would**. In the normal case (per-run
+manifest present) the two settings behave identically. So:
+
+1. **Timing.** Delete only *after* the a9 `bloomctl` image is live in the templates. The pre-a9
+   writer *merges* into an existing `run_manifest.json`, so deleting earlier just lets the next run
+   re-create a union.
+2. **Snapshot first.** The three files (`a4_poc/{input,predictions,traits}/run_manifest.json`) are
+   the only record of which scans the A4-period runs covered. Copy them to a dated folder beside
+   the trees, then delete. Deleting is irreversible; the snapshot is the evidence.
+3. **Scope.** This applies to the shared cluster trees only. A `local-WSL2` run has no run identity,
+   so for that run `run_manifest.json` is the *correct* name (design §2.9). Leave local trees alone.
+
+**Step 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) is hardening, not
+the fix.** After the deletion it protects against one thing: a legacy `run_manifest.json`
+*reappearing*. The plausible cause is a pre-a9 `bloomctl` image, hand-submitted or rolled back,
+that writes the legacy name again. **The pipeline is usable without step 7** as long as step 6's
+deletion is done and nobody runs a pre-a9 image against the shared trees.
 
 **The acceptance test, unchanged:** dispatch an N-scan run via the Bloom route and assert the
 manifest holds exactly N keys and write-back reports `Ingested N/N`. Today any such run reports
