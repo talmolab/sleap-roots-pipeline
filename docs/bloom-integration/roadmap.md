@@ -393,7 +393,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 |---|---|---|
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | in progress |
 | 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
-| 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed, dry run clean, canary blocked on 1 | blocked on 1 |
+| 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed; **6.1 canary LANDED** (1 selector card live alongside the 13 flat); remaining 7 + 6.2 full `--verify` outstanding | **in progress** |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3 |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
 | 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
@@ -419,6 +419,16 @@ are rejected until [bloom#895](https://github.com/Salk-Harnessing-Plants-Initiat
 is **applied** — merged is not enough. This is the third time this wall has been hit: a2→a3 was
 bloom#393/#399, a3→a7 was bloom#685/#766. It gates steps 4, 5 and 6, not just traits. Merging is
 always safe; deploying is what is gated.
+
+⚠️ **The predictor's empty-catalog guard is ALREADY DEFEATED — verified live 2026-09-24.**
+The registry now holds **14** production artifacts: 13 flat plus the 6.1 canary
+(`rice-younger-primary-…n-720`, selector-shaped). predict#45's `NoReadableModelCardsError` fires
+only on a **zero**-card catalog, so with one readable card a premature predictor pin bump yields a
+1-card catalog, zero models resolved for every non-rice-primary scan, per-scan failure, and exit
+**3** — which this pipeline's exit gate **passes**. There is no longer any automated protection
+against deploying predict before the re-seed completes; **deploy ordering is the only protection**.
+The same shape applies to alias manipulation generally, and training 6.3 removes `production` from
+13 collections.
 
 ⚠️ **`bloomctl` can adopt a9 by accident.** Its pin is `>=0.1.0a7`, unbounded
 (`bloomcli/pyproject.toml:28`), so any incidental image rebuild during the Bloom-gate window
@@ -626,6 +636,26 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-24 (later)** — **The W&B 6.1 canary is live, and it silently removed the
+  predictor's last automated safety net.** Found while reviewing talmolab/sleap-roots-predict#45,
+  by re-probing the registry rather than trusting this document.
+  - **Measured:** `production` now holds **14** artifacts — the 13 flat collections plus
+    `rice-younger-primary-230104_182346.multi_instance.n-720`, selector-shaped. Every document in
+    this program, including this roadmap as written earlier today, said 0 selector-shaped.
+  - **Why it matters.** predict#45 adds `NoReadableModelCardsError`, but it fires only on a
+    **zero**-card catalog. One readable card defeats it. A predictor pin bump now produces a
+    1-card catalog and exit 3, which the exit gate passes — a green run with almost no
+    predictions. The guard was sound when written; the canary invalidated it two days later.
+  - **Consequence for sequencing:** deploy ordering is now the only thing preventing that, so
+    step 4 must not begin until training 6.2's full `--verify` is clean. Also note predict's
+    `_collect_cards` returns `[]` *silently* when the alias filter matches nothing — relevant
+    because 6.3 removes `production` from 13 collections.
+  - **Third stale-document incident this session** (after the frontier's missing Bloom gate and
+    the overstated readers-first rationale). The pattern is consistent: claims about *live
+    external state* go stale fastest, and none of them are checked by CI. Worth a standing habit
+    of re-probing the registry and the NFS trees before acting on any document that describes
+    them.
+
 - **2026-09-24** — **The first #71 consumer has landed: `sleap-roots` traits adopts contracts
   0.1.0a9** (talmolab/sleap-roots#269, archived by #270). It is the reader leg, which is the
   correct one to go first.
@@ -798,7 +828,8 @@ Adversarial 4-lens review. Resolutions:
     selector-shaped collections covering all 13 with no gaps. But task 6.1's canary requires
     pointing an **upgraded** predict at the live registry, which needs predict#34's code to
     exist. So **predict#34 comes before the re-seed**, and only predict#34's *deploy* waits for
-    it. The registry is still 13 flat / 0 selector-shaped as of this entry.
+    it. The registry was 13 flat / 0 selector-shaped as of this entry; **the 6.1 canary
+    landed by 2026-09-24** — see that day's entry.
 
 - **2026-09-21** — **All three outstanding live verifications PASS. srp#56 is verified end to
   end, #78's acceptance test is closed, and srp#76's fix is proven rather than inferred.** What
