@@ -392,11 +392,11 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | # | work | state |
 |---|---|---|
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | in progress |
-| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | in progress |
+| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
 | 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed, dry run clean, canary blocked on 1 | blocked on 1 |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3 |
-| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4 |
-| 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
+| 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
@@ -409,6 +409,22 @@ the per-run manifest at the first un-adopted hop so it never reaches write-back,
 same moment so it succeeds only by falling back. The result is a rollout that produces no
 attributable signal. Note `bloomctl` pins contracts `>=0.1.0a7` **unbounded**, so its next image
 build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
+
+⚠️ **A second gate, independent of #71's own ordering: Bloom must accept `contract_version`
+`0.1.0a9` before ANY a9 image reaches the cluster.** Every emitted envelope stamps
+`provenance.contract_version` from the installed contracts version, and Bloom's live
+`insert_cyl_result_envelope` pins `'0.1.0a7'`
+(`supabase/migrations/20260917140000_fix_cyl_redelivery_status_fallback.sql:53`), so a9 envelopes
+are rejected until [bloom#895](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/895)
+is **applied** — merged is not enough. This is the third time this wall has been hit: a2→a3 was
+bloom#393/#399, a3→a7 was bloom#685/#766. It gates steps 4, 5 and 6, not just traits. Merging is
+always safe; deploying is what is gated.
+
+⚠️ **`bloomctl` can adopt a9 by accident.** Its pin is `>=0.1.0a7`, unbounded
+(`bloomcli/pyproject.toml:28`), so any incidental image rebuild during the Bloom-gate window
+performs step 5 unintentionally — producing exactly the writer-before-reader state the ordering
+above exists to prevent. Treat a `bloomctl` rebuild in this window as a rollout event, not
+routine maintenance.
 
 ⚠️ **#71 is not actually fixed until step 7.** Until `allow_legacy` is `False` everywhere, a
 reader that cannot find its own manifest still falls back to the stale shared one, so the
@@ -610,6 +626,33 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-24** — **The first #71 consumer has landed: `sleap-roots` traits adopts contracts
+  0.1.0a9** (talmolab/sleap-roots#269, archived by #270). It is the reader leg, which is the
+  correct one to go first.
+  - **What changed.** All three contracts pins moved `a7` → `a9` with `uv.lock` re-locked and a
+    test asserting the three agree. Run identity comes from `ARGO_WORKFLOW_NAME` via contracts'
+    `pipeline_run_id_from_env()`, and the manifest is read **once** by `load_run_manifest(...,
+    allow_legacy=True)` — replacing a local implementation that read the same file twice. A known
+    identity with no manifest, a per-run manifest naming another run, or an unusable id now abort
+    with exit 1 instead of widening to unscoped discovery. The forward hop republishes from the
+    loaded snapshot under the name it was read from, with the source's mode, and now cleans up its
+    temp file on failure — the `sleap-roots` residue of talmolab/sleap-roots-predict#40.
+  - **Reviewed with three adversarial lenses before merge** (reader semantics, test quality,
+    cross-repo rollout; scored 8/6/9). Two blocking items were test gaps rather than code
+    defects — a row the proposal called BREAKING with no test, and a behavior-change test whose
+    assertions the *old* behavior also satisfied — and both were fixed before merge, along with
+    the warning gap below.
+  - ⚠️ **The #71 defect is still reachable, by design, and was reproduced during review.** With no
+    run identity, a stale legacy manifest present and the correct per-run manifest sitting beside
+    it, the reader scopes to the stale 12-key file: `id=None → run_manifest.json, scope=12` versus
+    `id=wf-abc → run_manifest.wf-abc.json, scope=1`. That is contract-conformant — without an
+    identity the legacy name *is* the correct name — and it now emits a warning rather than
+    passing silently. It closes for real at step 7 (#82), not before.
+  - ⚠️ **Deploy is gated on bloom#895**, which is open. The cluster's trait-extractor pin is still
+    `sha-689cffb` (pre-a9), which is correct: an a9 image must not be applied until Bloom accepts
+    the new `contract_version`. Recorded in the frontier above, which previously carried no Bloom
+    gate at all — a gap in this document, not in the PR, which stated the gate in four places.
+
 - **2026-09-23** — **A4: two comparators, one cluster, opposite verdicts — and nothing was checking
   the edge that matters.** Bloom's `check_registered_templates.py` was comparing the five registered
   `WorkflowTemplate`s against *this repo's* template files at the SHA pinned in Bloom's
