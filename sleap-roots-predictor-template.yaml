@@ -77,7 +77,20 @@ spec:
         # a `sha-<gitsha>` tag is immutable in NAME only, and a rebuild of the same commit can
         # silently overwrite it in GHCR. The digest below is the source of truth for
         # SRP_PREDICT_CONTAINER_DIGEST in `env:`; `scripts/check_manifests.py` fails if they drift.
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-e025e309230de52cef0ccffa199048fe1dbd1b24@sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060
+        # Bumped 2026-09-24 (predict#34): sha-e025e309... -> sha-9ac819fb... (predict main; code-
+        # identical to the #45 squash 87ca271 -- 9ac819f only archives the OpenSpec change). Carries
+        # contracts ==0.1.0a9: predict now reads ONLY selector-shaped ModelCards, so this bump was
+        # gated on training's re-seed (update-model-card-selectors 6.2: 8 selector-shaped
+        # production collections, verified 2026-09-24). No readable card or an empty catalog now
+        # exits 1 at startup (NoReadableModelCardsError), and a missing WANDB_API_KEY exits 1, not 3.
+        # First run after this bump: every registry_id changed, so every scan fully recomputes once
+        # and every per-root .slp is renamed once (the model slug embeds registry_id). Re-baseline
+        # the A4 "re-run a done batch -> 0 GPU pods" oracle AFTER that run, never across it.
+        # Rollback BEFORE training 6.3 retires the 13 flat collections: re-pin sha-e025e309...
+        # @sha256:4d4064c6... (tag, digest AND SRP_PREDICT_CONTAINER_DIGEST together). AFTER 6.3 an
+        # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
+        # 3, which the exit gate passes -- so restore `production` on the flat collections first.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-9ac819fb4530bb86b8a1c1a65451b164d69aaac9@sha256:005b0abeb777f507c57062b7f17f58ed93d591ead957dd6106dc6b3b2f055409
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"
@@ -102,7 +115,7 @@ spec:
           #     https://ghcr.io/v2/talmolab/sleap-roots-predict/manifests/<tag> | grep -i docker-content-digest
           # Not an idempotency-key input, so changing it forces no recompute.
           - name: SRP_PREDICT_CONTAINER_DIGEST
-            value: "sha256:4d4064c6ac8dadc1bedcba594c74f0d7c4b9d907ee9001999d34e664317a4060"
+            value: "sha256:005b0abeb777f507c57062b7f17f58ed93d591ead957dd6106dc6b3b2f055409"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
