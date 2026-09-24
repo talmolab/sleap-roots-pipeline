@@ -201,8 +201,11 @@ there is no single loud error saying the registry is the problem.
 
 Consequences for this train:
 
-- The re-seed is a **prerequisite of the predictor pin bump**, not of the merge. predict#34 may
-  be merged and pinned at any time; only the deploy is ordered (§4).
+- The re-seed is a **prerequisite of the predictor pin bump**, not of the merge. predict#34
+  (predict PR #45) pins contracts **0.1.0a9**, not a8, and by decision merges only after the live
+  canary (training 6.1) passes from its branch, which keeps predict's `main` deployable until then;
+  only the deploy is ordered against the full re-seed (§4). *(Corrected 2026-09-24: this line
+  previously said #34 "may be merged and pinned at any time".)*
 - The old flat collections must keep their `production` alias until predict's upgrade is
   confirmed **deployed**, not merely merged — they are the only thing an un-upgraded deployment
   can read.
@@ -437,8 +440,10 @@ together, with no intermediate state.
 The registry migration (§2.8) interleaves with it, so the two are written as one sequence. Steps
 0a–0e are prerequisite work in *other* repos; #71's own train is steps 1–5.
 
-0a. **predict#34** — a8/`Selector` migration in predict. Merge, pin contracts a8, suite green.
-   Merging is ungated; only the deploy (0c) is ordered.
+0a. **predict#34** — a8/`Selector` migration in predict (PR #45). Pin contracts **a9**, suite
+   green; merge only after the canary in 0b passes from the branch (it did, 2026-09-24). Only the
+   deploy (0c) is ordered against the full re-seed. *(Corrected 2026-09-24: previously "pin
+   contracts a8 … Merging is ungated".)*
 0b. **Re-seed the W&B registry** — training tasks 6.0–6.2: rollback prep and snapshot of the 13
    current collection→version mappings; canary one collection with `--only` and prove an
    upgraded predict resolves it *and* an un-upgraded one still resolves the old card; then the
@@ -447,7 +452,10 @@ The registry migration (§2.8) interleaves with it, so the two are written as on
 0c. **Deploy predict#34** — predictor image build and pin bump in this repo. One falsifiable
    question: does model selection still resolve, now against the new collections. Keeping this
    deploy separate from step 2 is the whole point — an empty catalog is silent (§2.7), so it
-   must not share a deploy with the manifest change.
+   must not share a deploy with the manifest change. *(Refined 2026-09-24: predict PR #45 makes a
+   registry with **zero** readable production cards exit `1` at startup
+   (`NoReadableModelCardsError`); a partly re-seeded registry still fails silently with exit `3`,
+   so this separation still holds.)*
 0d. **Retire the 13 flat collections** — training task 6.3, gated on 0c being *confirmed
    deployed*, not merely merged. Acceptance: `--verify` reports zero orphans and zero
    legacy-shape expected collections.
