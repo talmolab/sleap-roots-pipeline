@@ -305,7 +305,7 @@ wording) before merge — see the archived OpenSpec change's `design.md` for the
 | **traits wiring** | wire A3-traits (emits `ResultEnvelope`) into the workflow | EPIC #9 → #11 | 🔵 (emitter ✅ [#254](https://github.com/talmolab/sleap-roots/pull/254); **GHCR image ✅ shipped** [sleap-roots #257](https://github.com/talmolab/sleap-roots/pull/257) `sha-bb2199c`; **Argo template wired** — A4 plan 2 / OpenSpec `add-per-scan-argo-workflow`: template `args` rewritten to the two dirs + image pinned, `argo lint` clean. Driver Argo-readiness [#259](https://github.com/talmolab/sleap-roots/issues/259) **✅ shipped 2026-08-21** ([sleap-roots #266](https://github.com/talmolab/sleap-roots/pull/266) — see A3-traits row for the full convention). Remaining: **write-back** step (D re-pin ✅ #399 — RPC accepts a3; ingest CLI #397 ✅ shipped, but see gap (4) in the 2026-08-19 status-log entries — the manifest still isn't forwarded into traits' output in production) + the A4 Argo template itself still needs `retryStrategy`/`continueOn` wiring to react to the new `3`=partial exit code (not yet a code change anywhere); **PoC ✅ ran green** 2026-07-07 [PR #23](https://github.com/talmolab/sleap-roots-pipeline/pull/23) — emitted `scan_6791737.result.json` = `ResultEnvelope 0.1.0a3`, 918 traits) |
 | **write-back** | `bloomctl → insert_cyl_result_envelope` RPC + the MinIO/Box blob upload (old "step G"); idempotent re-delivery via D's `idempotency_key` | [#397](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/397) ingest CLI ✅ + [#398](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/398) auth + [#407](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/407) blob upload ✅ | 🔵 **Ingest CLI ✅ merged** ([bloom #408](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/408)). **Blob upload ✅ merged** ([bloom #508](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/508), closes #407): `bloomctl cyl ingest-result --predictions-dir` constructs `BlobRef`s from predict's manifest, verifies checksums, uploads to a new `cyl-intermediates` bucket (MinIO only — Box deferred, no client exists yet). Remaining: non-interactive auth (#398); scoped `bloom_workflows` credential ([#391](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/391) role ✅ + [#404](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/404) EXECUTE grant ✅ [bloom #470](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/470) + [#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17) provision ⬜); wire the write-back step into the DAG — **unblocked 2026-07-24**: [bloom #515](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/515) merged, `bloomctl` container published (`ghcr.io/salk-harnessing-plants-initiative/bloomctl:0.1.0a2`), same prerequisite `images-downloader`'s Argo wiring needs (see that row). **⚠️ Scope pivot 2026-07-24:** Phase 2 will build a batch-capable write-back command (looping/extending, exact shape TBD w/ Bloom-side coordination) rather than wiring `ingest-result` as-is per-scan into the DAG. The merged single-scan `ingest-result` (#408/#508) stays the correct per-scan primitive either way. **✅ Batch CLI landed 2026-07-27:** [bloom #532](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/532) merged to `staging` (closes [bloom #529](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/529)) — `bloomctl cyl batch-ingest-result <envelopes_dir> [--predictions-dir DIR]` ingests every flat `{scan_key}.result.json` in a directory (the exact shape `trait_extractor.extract_batch`'s output already produces, no glue/reshaping needed), isolates per-envelope failures, reports a no-op re-delivery as `skipped` not `failed`; `--predictions-dir` reuses the existing single-scan blob-upload logic (#407/#508) unchanged. Both new batch commands implement the design doc's §8 exit-code/empty-input policy (`--json` per-item report; non-zero exit if any item failed, zero on empty input or all ok/skipped) — the **first place that policy is real code**, ahead of predict ([#26](https://github.com/talmolab/sleap-roots-predict/issues/26)) and traits ([sleap-roots #259](https://github.com/talmolab/sleap-roots/issues/259)), neither of which has implemented it yet. One finding deliberately deferred rather than patched: **[bloom #533](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/533)** (new tracked risk) — concurrent `batch-download-for-predict` invocations against the same `out_dir` can race (skip-check + clear-and-write have no lock/lease); the real fix is deferred to the not-yet-built dispatch worker ([#404](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/404)) + Argo `retryStrategy`, not a bolted-on bloomctl-side lock. Row stays short of ✅ — the Argo DAG task itself still doesn't call this command. **⚠️ Image-pin gap (found 2026-07-27):** same as the `images-downloader` row — the `bloomctl` tag documented above/elsewhere in this row (`0.1.0a2`/`sha-1bb03f6`, from #515) predates #532 and does not contain `batch-ingest-result`. Pin **`sha-61959bd`** (auto-built on #532's push to `staging`; no versioned release cut yet), not the `0.1.0a2`/`sha-1bb03f6` reference. **✅ Real cluster run succeeded 2026-07-30** ([sleap-roots-pipeline#33](https://github.com/talmolab/sleap-roots-pipeline/pull/33)) — wrote real `cyl_trait_sources` rows (`source_id` 6/7/8) into Bloom staging, confirmed via idempotent re-ingest. Required an external bloomctl fix first ([bloom #555](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/555)/[#556](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/556), see status log). |
 | **notification** | fire on success **and** failure — **channel undefined (set it)** | **[#18](https://github.com/talmolab/sleap-roots-pipeline/issues/18)** | ⬜ **May be subsumed by the UI panel below for v1** — design doc §14 puts Slack/email explicitly out of scope for v1, treating the Realtime status panel itself as the v1 notification mechanism. Revisit #18 only if a push-style channel is still wanted alongside the panel. |
-| **Bloom UI — pipeline trigger + progress panel** | Design doc §10: a "Trigger" button (scan/wave/experiment pages, multi-select) + params panel + pre-check preview ("38/40 already have results... 2 will run"); a shared **"Pipeline runs" panel** (all members) reading `cyl_pipeline_runs` via **Realtime** — status + "N/M" progress, no polling — with per-scan drill-down into `cyl_pipeline_run_scans`. Results reuse existing trait-table views (no new results/prediction viewer in v1 scope). | [bloom #15](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/15) (existing since 2026-02-11, pre-dates this design — originally scoped much broader: prediction-viewer w/ image overlay + analysis-results viewer, labeled `post-deployment`; scope note added 2026-08-24 pointing to §10 as the current, narrower v1 target) | ⬜ **Not started — found missing from this roadmap's own tracking during the 2026-08-24 sweep.** Was marked "out of scope" in the EPIC #9 mapping below when filed (before the A4 backend existed to build against); backend is now fully live on staging (trigger route all 3 phases ✅, `cyl_pipeline_runs`/`_scans` ✅, `GET /workflows/runs/{run_id}` ✅) so the UI is now actually buildable. **Blocked on `done_count`/`failed_count` for the "N/M" progress number**: defined in the schema but nothing populates them yet ([bloom #716](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/716), found 2026-08-21). No session currently assigned. |
+| **Bloom UI — pipeline trigger + progress panel** | Design doc §10: a "Trigger" button (scan/wave/experiment pages, multi-select) + params panel + pre-check preview ("38/40 already have results... 2 will run"); a shared **"Pipeline runs" panel** (all members) reading `cyl_pipeline_runs` via **Realtime** — status + "N/M" progress, no polling — with per-scan drill-down into `cyl_pipeline_run_scans`. Results reuse existing trait-table views (no new results/prediction viewer in v1 scope). | [bloom #15](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/15) (existing since 2026-02-11, pre-dates this design — originally scoped much broader: prediction-viewer w/ image overlay + analysis-results viewer, labeled `post-deployment`; scope note added 2026-08-24 pointing to §10 as the current, narrower v1 target) | ⬜ **Not started — found missing from this roadmap's own tracking during the 2026-08-24 sweep.** Was marked "out of scope" in the EPIC #9 mapping below when filed (before the A4 backend existed to build against); backend is now fully live on staging (trigger route all 3 phases ✅, `cyl_pipeline_runs`/`_scans` ✅, `GET /workflows/runs/{run_id}` ✅) so the UI is now actually buildable. **UNBLOCKED as of 2026-09-24 — this row's blocker is resolved.** It previously read "blocked on `done_count`/`failed_count` … nothing populates them yet" ([bloom #716](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/716), found 2026-08-21). bloom PR #774 merged 2026-09-15: `status_poller.py`'s `update_run_status` now computes both from `cyl_pipeline_run_scans.status` and passes them as `p_done_count`/`p_failed_count` every sweep. Verified on `origin/staging`, not inferred from the merge. |
 
 ### Track B — analyze / analysis-input contract  *(cross-linked dependency — owned by the analyze / bloom-mcp effort, not managed here)*
 
@@ -391,13 +391,13 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 
 | # | work | state |
 |---|---|---|
-| 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | in progress |
-| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | in progress |
-| 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed, dry run clean, canary blocked on 1 | blocked on 1 |
-| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3 |
-| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4 |
-| 6 | **Template pin bumps + `argo template update`**, then the live E2E | after 5 |
-| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** | after 6 |
+| 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3's 6.2 only (not bloom#895 — see the gate note below) |
+| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
+| 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
+| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
+| 6 | **Template pin bumps + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
+| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
 written here. A writer publishing `run_manifest.<id>.json` stops maintaining
@@ -408,12 +408,90 @@ the per-run manifest at the first un-adopted hop so it never reaches write-back,
 `ingest.py` and `download_for_predict.py` ship in one image, flips write-back's reader at the
 same moment so it succeeds only by falling back. The result is a rollout that produces no
 attributable signal. Note `bloomctl` pins contracts `>=0.1.0a7` **unbounded**, so its next image
-build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
+build adopts a9 automatically. (**Updated 2026-09-25:** predict and traits now both pin `==0.1.0a9` in
+source, predict#45 and sleap-roots#269. Only predict's a9 image is deployed, since 2026-09-25; the
+cluster's trait-extractor is still `sha-689cffb`, on a7.)
 
-⚠️ **#71 is not actually fixed until step 7.** Until `allow_legacy` is `False` everywhere, a
-reader that cannot find its own manifest still falls back to the stale shared one, so the
-fail-loud guarantee is inert. The E2E at step 6 is the proof the naming works; #82 is the proof
-the guarantee does.
+**The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
+2026-09-24, and narrower than this roadmap previously implied.** The earlier sequencing argument
+was that #71 should land first to avoid "building a progress panel on counts the manifest can
+inflate". Tracing the data flow, that is not right: `done_count`/`failed_count` derive from
+`cyl_pipeline_run_scans`, which is populated **at dispatch** from the *requested* `scan_ids`
+(`services/workflows/pipeline.py:322`), while #71's defect inflates **`cyl_trait_sources`**, a
+different table written by write-back. A 1-scan request therefore yields **1** progress row. What #71 does to
+`cyl_trait_sources` is narrower than this section first said (**corrected 2026-09-24**): write-back
+gates on `ON CONFLICT (idempotency_key) DO NOTHING` (`20260917140000_fix_cyl_redelivery_status_fallback.sql:128`),
+and `compute_idempotency_key` hashes scan, models, params and code SHAs but **no run id** — so
+re-delivering an already-ingested scan is a no-op (run `hpdpf` printed `Ingested 0/12`). A 1-scan
+run writes *new* rows for the other scans only when models or code changed since those scans were
+last ingested, and then each row is a correct result for a real scan, not bad data. The harm is
+**unrequested writes**, not wrong rows. No data cleanup is needed. The split:
+
+| UI surface | safe to build before #71 completes |
+|---|---|
+| Trigger + params panel + pre-check preview | ✅ yes |
+| Progress panel, run status, `done_count`/`failed_count`, Realtime on `cyl_pipeline_runs` | ✅ yes — counts come from requested scans |
+| Per-scan drill-down into `cyl_pipeline_run_scans` | ✅ yes — same table, same provenance |
+| Anything listing **traits/sources per run** | ⚠️ not buildable yet for a different reason — nothing links a `cyl_trait_sources` row to its run (`provenance.pipeline_run_id` is null, bloom#864 / sleap-roots#268), and until step 6 a run can also write rows for scans it never requested |
+
+Keep triggering real E2E runs during the build so the Realtime subscription develops against live
+data rather than mocks — that advice, from this document's earlier UI entry, still holds.
+
+⚠️ **A second gate, independent of #71's own ordering: Bloom must accept `contract_version`
+`0.1.0a9` before the a9 *trait-extractor* image reaches the cluster.** The envelope is built by
+traits, which stamps `provenance.contract_version` from *its own* installed contracts version
+(`tests/trait_extractor/test_envelope.py:40`), and Bloom's live
+`insert_cyl_result_envelope` pins `'0.1.0a7'`
+(`supabase/migrations/20260917140000_fix_cyl_redelivery_status_fallback.sql:53`), so a9 envelopes
+are rejected until [bloom#895](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/895)
+is **applied** — merged is not enough. This is the third time this wall has been hit: a2→a3 was
+bloom#393/#399, a3→a7 was bloom#685/#766. **It gates the traits deploy only** (corrected
+2026-09-24; this note previously said steps 4, 5 and 6). Predict never touches the field, and
+between a7 and a9 only `ModelCard`/`LabelCard` changed, not the `ModelRef` that predict's output
+carries, so a7 traits reads a9 predict's output fine. `bloomctl` forwards the envelope and only
+*reports* the server's rejection (`ingest.py:528`). `contract_version` is a plain `str`, so a9
+`bloomctl` accepts a7 envelopes. In step 6, the traits pin bump waits for bloom#895 to be
+*applied*; the predictor and bloomctl pins do not. Merging is always safe; deploying traits is
+what is gated.
+
+⚠️ **The predictor's empty-catalog guard is ALREADY DEFEATED — verified live 2026-09-24.**
+The registry now holds **14** production artifacts: 13 flat plus the 6.1 canary
+(`rice-younger-primary-…n-720`, selector-shaped). predict#45's `NoReadableModelCardsError` fires
+only on a **zero**-card catalog, so with one readable card a premature predictor pin bump yields a
+1-card catalog, zero models resolved for every non-rice-primary scan, per-scan failure, and exit
+**3** — which this pipeline's exit gate **passes**. There is no longer any automated protection
+against deploying predict before the re-seed completes; **deploy ordering is the only protection**.
+The same shape applies to alias manipulation generally, and training 6.3 removes `production` from
+13 collections.
+
+⚠️ **`bloomctl` can adopt a9 by accident.** Its pin is `>=0.1.0a7`, unbounded
+(`bloomcli/pyproject.toml:28`), so any incidental image rebuild during the Bloom-gate window
+performs step 5 unintentionally — producing exactly the writer-before-reader state the ordering
+above exists to prevent. Treat a `bloomctl` rebuild in this window as a rollout event, not
+routine maintenance.
+
+⚠️ **Deleting the stale legacy manifests is MANDATORY at step 6, and it is what makes #71's
+guarantee real — not step 7** (corrected 2026-09-24, verified against the released a9 resolver).
+While `allow_legacy=True`, a reader that cannot find its own `run_manifest.<id>.json` falls back to
+`run_manifest.json`. With the stale file present, that fallback silently scopes to `hpdpf`'s 12
+keys. With it **deleted**, the fallback finds nothing and the reader raises
+`RunManifestMissingError`, **exactly as `allow_legacy=False` would**. In the normal case (per-run
+manifest present) the two settings behave identically. So:
+
+1. **Timing.** Delete only *after* the a9 `bloomctl` image is live in the templates. The pre-a9
+   writer *merges* into an existing `run_manifest.json`, so deleting earlier just lets the next run
+   re-create a union.
+2. **Snapshot first.** The three files (`a4_poc/{input,predictions,traits}/run_manifest.json`) are
+   the only record of which scans the A4-period runs covered. Copy them to a dated folder beside
+   the trees, then delete. Deleting is irreversible; the snapshot is the evidence.
+3. **Scope.** This applies to the shared cluster trees only. A `local-WSL2` run has no run identity,
+   so for that run `run_manifest.json` is the *correct* name (design §2.9). Leave local trees alone.
+
+**Step 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) is hardening, not
+the fix.** After the deletion it protects against one thing: a legacy `run_manifest.json`
+*reappearing*. The plausible cause is a pre-a9 `bloomctl` image, hand-submitted or rolled back,
+that writes the legacy name again. **The pipeline is usable without step 7** as long as step 6's
+deletion is done and nobody runs a pre-a9 image against the shared trees.
 
 **The acceptance test, unchanged:** dispatch an N-scan run via the Bloom route and assert the
 manifest holds exactly N keys and write-back reports `Ingested N/N`. Today any such run reports
@@ -610,6 +688,119 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-25** — **The selector-shaped predictor is deployed and confirmed on a real batch (predict#34
+  C2). Training 6.3 is unblocked.**
+  - **Pin bump.** [#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), merged as `e30f962`,
+    re-pins the predictor from `sha-e025e309…@sha256:4d4064c6…` to
+    `sha-9ac819fb4530bb86b8a1c1a65451b164d69aaac9@sha256:005b0abe…055409`. The tag, the digest and
+    `SRP_PREDICT_CONTAINER_DIGEST` moved together.
+    - It was applied with `argo template update`. The read-back shows the new digest, and
+      `check_cluster_drift.sh` reports all 5 templates IN SYNC.
+    - Nothing else moved: traits is still `sha-689cffb` (a7) and bloomctl is still `sha-28034f6`.
+    - Before submit, predict `main`'s own `list_cards()` read **8** selector-shaped `v0` cards live
+      and skipped the 13 flat ones.
+  - **Real batch: `sleap-roots-pipeline-6bhzn`** (`scan-ids=289,577,1009`) → Succeeded, every stage
+    exit `0`.
+    - The predictor pod ran image `…@sha256:005b0abe…` on `gpu-node4`:
+      `Batch complete: 15 ok, 0 skipped, 0 failed`.
+    - **15 scans, not 3.** bloomctl merged the 3 canola keys into `hpdpf`'s 12 in the shared
+      manifest, which is #71's accumulation. All 3 manifests now carry 15 keys.
+    - **The one-time full recompute happened.** `registry_id`, `version` and `predict_code_sha` all
+      changed. Every in-scope `.slp` was renamed exactly once, with no stale file left, and the
+      out-of-scope `scan_6791737` was untouched.
+    - **Predictions against the pre-migration outputs.**
+      - The 12 `hpdpf` scans, last predicted by `e025e309`, match **exactly**: 24/24 per-root
+        predictions, maxdiff 0.0. The migration is prediction-neutral.
+      - The 3 canola scans' baseline is a July `4a70e599` run, two pins back. `scan_577` differs by
+        up to 3.8 px on 0.07–0.46% of coordinates, with one lateral instance lost in one frame.
+        `scan_1009` has no moved coordinates.
+      - `sleap-nn`/`torch`/`sleap-io` and the inference code are identical across all three
+        commits, so GPU non-determinism across nodes is the likely cause. That is unproven.
+      - **Don't use the canola scans as a like-for-like pre-migration oracle.**
+    - **Write-back:** 15 new source rows (159–173) and 0 `refusing to overwrite`. The
+      `Ingested 0/15` headline is the known hand-submit residue.
+  - **The A4 batch-oracle was re-baselined *after* the recompute: `sleap-roots-pipeline-fcdrk`**, same
+    scan ids → Succeeded.
+    - Predictor `0 ok, 15 skipped` (a 93 s pod, catalog load only) and traits `15 skipped`.
+    - Write-back re-delivered to the same source ids 159–173, so no new rows.
+    - **80/80 prediction and trait data files are byte-identical** to the post-`6bhzn` checksums.
+      Only the forwarded `run_manifest.json` copies were rewritten, as they are on every run.
+    - **This is the new oracle baseline. Never compare across `6bhzn`.**
+  - **Next: training 6.3,** which removes `production` from the 13 flat collections and never deletes
+    them. It is its own step, with explicit confirmation.
+    - Until 6.3, rollback is a re-pin to `sha-e025e309…@sha256:4d4064c6…`.
+    - After 6.3, an image-only rollback is **silent**: the old image exits 3 and the gate passes it.
+      Restore `production` first, from dc216c7 `docs/migration/2026-09-22-pre-reseed-baseline.json`.
+  - Reported on predict#34 ([comment](https://github.com/talmolab/sleap-roots-predict/issues/34#issuecomment-5837523443)).
+    Still open there: C3, the parity-harness re-run against the re-seeded registry.
+- **2026-09-24 (later still)** — **Both #71 consumer code changes are merged, and the re-seed
+  is no longer blocked.** talmolab/sleap-roots-predict#45 landed (`87ca271`), pinning
+  `sleap-roots-contracts==0.1.0a9` and migrating `choose_models` onto `ModelCard.selectors`.
+  With talmolab/sleap-roots#269 already in, steps 1 and 2 of the frontier are done.
+  - **Reviewed with three adversarial lenses before merge** (selection equivalence, deploy
+    gating, test quality; 8/8/8). The matcher is a single `any()` over whole `Selector` objects,
+    so a cross product is structurally impossible; #34's exact canola/arabidopsis case is pinned
+    by construction; and the A1 artifact is a real equivalence proof over 270 grid cells
+    comparing physical `source_model_id`, not a file diff. All three blocking items — an
+    imperative deploy gate in the CHANGELOG, the recompute/re-baseline note, and two stale
+    "13 production models" claims — were fixed before merge.
+  - **What this unblocks.** Training 6.1's canary verification requires pointing an *upgraded*
+    predict at the live registry; that predict now exists. The canary collection is already
+    aliased, so 6.1(b)-(d) can complete, then the remaining 7 collections, then 6.2's full
+    `--verify` (expect exactly 13 orphans).
+  - **Nothing has been deployed.** Verified: the predictor and trait-extractor template pins are
+    both unchanged and pre-a9, and bloom#895 is still open. That is correct — a9 images must not
+    reach the cluster until Bloom accepts the new `contract_version` *and* 6.2 is clean. (**Corrected
+    2026-09-24:** only the *traits* image needs Bloom to accept a9. The predictor waits for 6.2 alone.
+    See the gate note in the frontier.)
+
+- **2026-09-24 (later)** — **The W&B 6.1 canary is live, and it silently removed the
+  predictor's last automated safety net.** Found while reviewing talmolab/sleap-roots-predict#45,
+  by re-probing the registry rather than trusting this document.
+  - **Measured:** `production` now holds **14** artifacts — the 13 flat collections plus
+    `rice-younger-primary-230104_182346.multi_instance.n-720`, selector-shaped. Every document in
+    this program, including this roadmap as written earlier today, said 0 selector-shaped.
+  - **Why it matters.** predict#45 adds `NoReadableModelCardsError`, but it fires only on a
+    **zero**-card catalog. One readable card defeats it. A predictor pin bump now produces a
+    1-card catalog and exit 3, which the exit gate passes — a green run with almost no
+    predictions. The guard was sound when written; the canary invalidated it two days later.
+  - **Consequence for sequencing:** deploy ordering is now the only thing preventing that, so
+    step 4 must not begin until training 6.2's full `--verify` is clean. Also note predict's
+    `_collect_cards` returns `[]` *silently* when the alias filter matches nothing — relevant
+    because 6.3 removes `production` from 13 collections.
+  - **Third stale-document incident this session** (after the frontier's missing Bloom gate and
+    the overstated readers-first rationale). The pattern is consistent: claims about *live
+    external state* go stale fastest, and none of them are checked by CI. Worth a standing habit
+    of re-probing the registry and the NFS trees before acting on any document that describes
+    them.
+
+- **2026-09-24** — **The first #71 consumer has landed: `sleap-roots` traits adopts contracts
+  0.1.0a9** (talmolab/sleap-roots#269, archived by #270). It is the reader leg, which is the
+  correct one to go first.
+  - **What changed.** All three contracts pins moved `a7` → `a9` with `uv.lock` re-locked and a
+    test asserting the three agree. Run identity comes from `ARGO_WORKFLOW_NAME` via contracts'
+    `pipeline_run_id_from_env()`, and the manifest is read **once** by `load_run_manifest(...,
+    allow_legacy=True)` — replacing a local implementation that read the same file twice. A known
+    identity with no manifest, a per-run manifest naming another run, or an unusable id now abort
+    with exit 1 instead of widening to unscoped discovery. The forward hop republishes from the
+    loaded snapshot under the name it was read from, with the source's mode, and now cleans up its
+    temp file on failure — the `sleap-roots` residue of talmolab/sleap-roots-predict#40.
+  - **Reviewed with three adversarial lenses before merge** (reader semantics, test quality,
+    cross-repo rollout; scored 8/6/9). Two blocking items were test gaps rather than code
+    defects — a row the proposal called BREAKING with no test, and a behavior-change test whose
+    assertions the *old* behavior also satisfied — and both were fixed before merge, along with
+    the warning gap below.
+  - ⚠️ **The #71 defect is still reachable, by design, and was reproduced during review.** With no
+    run identity, a stale legacy manifest present and the correct per-run manifest sitting beside
+    it, the reader scopes to the stale 12-key file: `id=None → run_manifest.json, scope=12` versus
+    `id=wf-abc → run_manifest.wf-abc.json, scope=1`. That is contract-conformant — without an
+    identity the legacy name *is* the correct name — and it now emits a warning rather than
+    passing silently. It closes for real at step 7 (#82), not before.
+  - ⚠️ **Deploy is gated on bloom#895**, which is open. The cluster's trait-extractor pin is still
+    `sha-689cffb` (pre-a9), which is correct: an a9 image must not be applied until Bloom accepts
+    the new `contract_version`. Recorded in the frontier above, which previously carried no Bloom
+    gate at all — a gap in this document, not in the PR, which stated the gate in four places.
+
 - **2026-09-23** — **A4: two comparators, one cluster, opposite verdicts — and nothing was checking
   the edge that matters.** Bloom's `check_registered_templates.py` was comparing the five registered
   `WorkflowTemplate`s against *this repo's* template files at the SHA pinned in Bloom's
@@ -755,7 +946,8 @@ Adversarial 4-lens review. Resolutions:
     selector-shaped collections covering all 13 with no gaps. But task 6.1's canary requires
     pointing an **upgraded** predict at the live registry, which needs predict#34's code to
     exist. So **predict#34 comes before the re-seed**, and only predict#34's *deploy* waits for
-    it. The registry is still 13 flat / 0 selector-shaped as of this entry.
+    it. The registry was 13 flat / 0 selector-shaped as of this entry; **the 6.1 canary
+    landed by 2026-09-24** — see that day's entry.
 
 - **2026-09-21** — **All three outstanding live verifications PASS. srp#56 is verified end to
   end, #78's acceptance test is closed, and srp#76's fix is proven rather than inferred.** What
