@@ -77,19 +77,28 @@ spec:
         # a `sha-<gitsha>` tag is immutable in NAME only, and a rebuild of the same commit can
         # silently overwrite it in GHCR. The digest below is the source of truth for
         # SRP_PREDICT_CONTAINER_DIGEST in `env:`; `scripts/check_manifests.py` fails if they drift.
-        # Bumped 2026-09-24 (predict#34): sha-e025e309... -> sha-9ac819fb... (predict main; code-
-        # identical to the #45 squash 87ca271 -- 9ac819f only archives the OpenSpec change). Carries
-        # contracts ==0.1.0a9: predict now reads ONLY selector-shaped ModelCards, so this bump was
-        # gated on training's re-seed (update-model-card-selectors 6.2: 8 selector-shaped
-        # production collections, verified 2026-09-24). No readable card or an empty catalog now
-        # exits 1 at startup (NoReadableModelCardsError), and a missing WANDB_API_KEY exits 1, not 3.
-        # First run after this bump: every registry_id changed, so every scan fully recomputes once
-        # and every per-root .slp is renamed once (the model slug embeds registry_id). Re-baseline
-        # the A4 "re-run a done batch -> 0 GPU pods" oracle AFTER that run, never across it.
+        # Bumped 2026-09-24 (predict#45, part of predict#34): sha-e025e309... -> sha-9ac819fb...
+        # (predict main; code-identical to the #45 squash 87ca271 -- 9ac819f only archives the
+        # OpenSpec change). Carries contracts ==0.1.0a9: predict now reads ONLY selector-shaped
+        # ModelCards, so this bump was gated on training's re-seed (update-model-card-selectors 6.2:
+        # 8 selector-shaped production collections, verified 2026-09-24; record in
+        # talmolab/sleap-roots-training@dc216c7 docs/migration/). Not gated on Bloom accepting a9:
+        # predict never stamps contract_version, and nothing predict writes changed a7 -> a9.
+        # No readable card, an empty catalog, a missing WANDB_API_KEY, or a registry error now exits
+        # 1 (was 3) at catalog load -- before the first scan is predicted, but AFTER the
+        # run_manifest.json forward-copy, so continueOn still runs traits/write-back and the exit
+        # gate then fails the run. retryPolicy: Always retries that exit 1 like any failure (~4
+        # attempts / ~14m for a misconfiguration); keep it -- it is now also how a transient
+        # registry error recovers.
+        # First run after this bump: registry_id, version AND predict_code_sha all changed, so every
+        # scan in the (accumulated) run manifest fully recomputes once, and every per-root .slp is
+        # renamed once (the model slug embeds registry_id). Re-baseline the A4 "re-run a done batch
+        # -> 0 GPU pods" oracle AFTER that run, never across it.
         # Rollback BEFORE training 6.3 retires the 13 flat collections: re-pin sha-e025e309...
         # @sha256:4d4064c6... (tag, digest AND SRP_PREDICT_CONTAINER_DIGEST together). AFTER 6.3 an
         # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
-        # 3, which the exit gate passes -- so restore `production` on the flat collections first.
+        # 3, which the exit gate passes -- so restore `production` on the flat collections first,
+        # from training's 6.0(a) snapshot (dc216c7 docs/migration/2026-09-22-pre-reseed-baseline.json).
         image: ghcr.io/talmolab/sleap-roots-predict:sha-9ac819fb4530bb86b8a1c1a65451b164d69aaac9@sha256:005b0abeb777f507c57062b7f17f58ed93d591ead957dd6106dc6b3b2f055409
         imagePullPolicy: Always
         args:
