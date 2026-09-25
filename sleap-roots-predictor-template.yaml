@@ -99,18 +99,38 @@ spec:
         # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
         # 3, which the exit gate passes -- so restore `production` on the flat collections first,
         # from training's 6.0(a) snapshot (dc216c7 docs/migration/2026-09-22-pre-reseed-baseline.json).
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-9ac819fb4530bb86b8a1c1a65451b164d69aaac9@sha256:005b0abeb777f507c57062b7f17f58ed93d591ead957dd6106dc6b3b2f055409
+        # Bumped 2026-09-25 (predict#47, #71's predict reader): sha-9ac819fb... -> sha-9a6f20c0...
+        # (predict main; code-identical to the #47 squash 9f39691 -- 9a6f20c only archives the
+        # OpenSpec change). Predict now resolves its scope through contracts'
+        # load_run_manifest(allow_legacy=True): run_manifest.<ARGO_WORKFLOW_NAME>.json first, then
+        # the legacy run_manifest.json, and forwards the manifest under the name it read. The
+        # fleet's writer still publishes only the legacy file, so scoping, forwarding and exit
+        # codes are unchanged; the new log line is a warning when the legacy file names another
+        # run (another workflow merged into the shared directory after this one). One exit change:
+        # a missing manifest under a known ARGO_WORKFLOW_NAME now exits 1 instead of falling back
+        # to unscoped discovery. The bloomctl writer flip must come AFTER this deploy (and traits'
+        # and ingest's dual-read); once it lands, this image is the rollback floor -- 9ac819fb
+        # reads only run_manifest.json, and without it falls back to unscoped discovery.
+        # First run after this bump: predict_code_sha changed (SRP_PREDICT_CODE_SHA is baked from
+        # the build sha), so every scan in the accumulated run manifest fully recomputes once, as
+        # at the 09-24 bump. Re-baseline the A4 "0 GPU pods" oracle AFTER that run.
+        # Rollback: re-pin sha-9ac819fb...@sha256:005b0abe... (tag, digest AND
+        # SRP_PREDICT_CONTAINER_DIGEST together) -- safe only while the writer is legacy-only.
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-9a6f20c00762e327b9aea39c8e06a81443252d01@sha256:afc8da823838bff85d93013e85b8d0c18c2d4f01117a0914944df1a845c73adc
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"
           - "/workspace/output"
         env:
-          # #56: inert today — predict does not read it yet. Carried because the stage directories
-          # are fixed, shared hostPaths and run_manifest.json accumulates scan_keys across every
-          # run (and every environment) that writes into them. Now that continueOn can carry the
-          # DAG past an upstream failure, the manifest this stage is scoped by may belong to a
-          # different run, and predict has no way to detect that without knowing its own workflow
-          # identity. This is the prerequisite for that check; see sleap-roots-predict#44.
+          # #56 carried this before predict read it; since predict#47 (pinned 2026-09-25) it is
+          # NOT inert. predict reads it through contracts' pipeline_run_id_from_env() as the run
+          # identity: it selects run_manifest.<name>.json ahead of the legacy file, makes a missing
+          # manifest exit 1 instead of scanning everything, and triggers the "legacy manifest names
+          # another run" warning. The stage directories are fixed, shared hostPaths, and the legacy
+          # run_manifest.json accumulates scan_keys across every run (and every environment)
+          # writing into them, so without this identity predict cannot tell its own scope from
+          # another run's. Removing it silently reverts predict to legacy-only reads (and to unscoped
+          # discovery when run_manifest.json is absent).
           - name: ARGO_WORKFLOW_NAME
             value: "{{workflow.name}}"
           # #70: NOT inert -- predict reads this today (`sleap_roots_predict/output_contract.py`,
@@ -124,7 +144,7 @@ spec:
           #     https://ghcr.io/v2/talmolab/sleap-roots-predict/manifests/<tag> | grep -i docker-content-digest
           # Not an idempotency-key input, so changing it forces no recompute.
           - name: SRP_PREDICT_CONTAINER_DIGEST
-            value: "sha256:005b0abeb777f507c57062b7f17f58ed93d591ead957dd6106dc6b3b2f055409"
+            value: "sha256:afc8da823838bff85d93013e85b8d0c18c2d4f01117a0914944df1a845c73adc"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
