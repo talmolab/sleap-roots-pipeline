@@ -393,8 +393,8 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 |---|---|---|
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3's 6.2 only (not bloom#895 — see the gate note below) |
 | 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
-| 3 | **W&B re-seed** (training group 6) — 6.0(a) baseline committed; **6.1 canary LANDED** (1 selector card live alongside the 13 flat); remaining 7 + 6.2 full `--verify` outstanding | **in progress** |
-| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | after 3's **6.2 full `--verify`** (bloom#895 does *not* gate this — predict never stamps `contract_version`) |
+| 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
+| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
 | 6 | **Template pin bumps + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
@@ -408,7 +408,9 @@ the per-run manifest at the first un-adopted hop so it never reaches write-back,
 `ingest.py` and `download_for_predict.py` ship in one image, flips write-back's reader at the
 same moment so it succeeds only by falling back. The result is a rollout that produces no
 attributable signal. Note `bloomctl` pins contracts `>=0.1.0a7` **unbounded**, so its next image
-build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
+build adopts a9 automatically. (**Updated 2026-09-25:** predict and traits now both pin `==0.1.0a9` in
+source, predict#45 and sleap-roots#269. Only predict's a9 image is deployed, since 2026-09-25; the
+cluster's trait-extractor is still `sha-689cffb`, on a7.)
 
 **The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
 2026-09-24, and narrower than this roadmap previously implied.** The earlier sequencing argument
@@ -686,6 +688,51 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-25** — **The selector-shaped predictor is deployed and confirmed on a real batch (predict#34
+  C2). Training 6.3 is unblocked.**
+  - **Pin bump.** [#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), merged as `e30f962`,
+    re-pins the predictor from `sha-e025e309…@sha256:4d4064c6…` to
+    `sha-9ac819fb4530bb86b8a1c1a65451b164d69aaac9@sha256:005b0abe…055409`. The tag, the digest and
+    `SRP_PREDICT_CONTAINER_DIGEST` moved together.
+    - It was applied with `argo template update`. The read-back shows the new digest, and
+      `check_cluster_drift.sh` reports all 5 templates IN SYNC.
+    - Nothing else moved: traits is still `sha-689cffb` (a7) and bloomctl is still `sha-28034f6`.
+    - Before submit, predict `main`'s own `list_cards()` read **8** selector-shaped `v0` cards live
+      and skipped the 13 flat ones.
+  - **Real batch: `sleap-roots-pipeline-6bhzn`** (`scan-ids=289,577,1009`) → Succeeded, every stage
+    exit `0`.
+    - The predictor pod ran image `…@sha256:005b0abe…` on `gpu-node4`:
+      `Batch complete: 15 ok, 0 skipped, 0 failed`.
+    - **15 scans, not 3.** bloomctl merged the 3 canola keys into `hpdpf`'s 12 in the shared
+      manifest, which is #71's accumulation. All 3 manifests now carry 15 keys.
+    - **The one-time full recompute happened.** `registry_id`, `version` and `predict_code_sha` all
+      changed. Every in-scope `.slp` was renamed exactly once, with no stale file left, and the
+      out-of-scope `scan_6791737` was untouched.
+    - **Predictions against the pre-migration outputs.**
+      - The 12 `hpdpf` scans, last predicted by `e025e309`, match **exactly**: 24/24 per-root
+        predictions, maxdiff 0.0. The migration is prediction-neutral.
+      - The 3 canola scans' baseline is a July `4a70e599` run, two pins back. `scan_577` differs by
+        up to 3.8 px on 0.07–0.46% of coordinates, with one lateral instance lost in one frame.
+        `scan_1009` has no moved coordinates.
+      - `sleap-nn`/`torch`/`sleap-io` and the inference code are identical across all three
+        commits, so GPU non-determinism across nodes is the likely cause. That is unproven.
+      - **Don't use the canola scans as a like-for-like pre-migration oracle.**
+    - **Write-back:** 15 new source rows (159–173) and 0 `refusing to overwrite`. The
+      `Ingested 0/15` headline is the known hand-submit residue.
+  - **The A4 batch-oracle was re-baselined *after* the recompute: `sleap-roots-pipeline-fcdrk`**, same
+    scan ids → Succeeded.
+    - Predictor `0 ok, 15 skipped` (a 93 s pod, catalog load only) and traits `15 skipped`.
+    - Write-back re-delivered to the same source ids 159–173, so no new rows.
+    - **80/80 prediction and trait data files are byte-identical** to the post-`6bhzn` checksums.
+      Only the forwarded `run_manifest.json` copies were rewritten, as they are on every run.
+    - **This is the new oracle baseline. Never compare across `6bhzn`.**
+  - **Next: training 6.3,** which removes `production` from the 13 flat collections and never deletes
+    them. It is its own step, with explicit confirmation.
+    - Until 6.3, rollback is a re-pin to `sha-e025e309…@sha256:4d4064c6…`.
+    - After 6.3, an image-only rollback is **silent**: the old image exits 3 and the gate passes it.
+      Restore `production` first, from dc216c7 `docs/migration/2026-09-22-pre-reseed-baseline.json`.
+  - Reported on predict#34 ([comment](https://github.com/talmolab/sleap-roots-predict/issues/34#issuecomment-5837523443)).
+    Still open there: C3, the parity-harness re-run against the re-seeded registry.
 - **2026-09-24 (later still)** — **Both #71 consumer code changes are merged, and the re-seed
   is no longer blocked.** talmolab/sleap-roots-predict#45 landed (`87ca271`), pinning
   `sleap-roots-contracts==0.1.0a9` and migrating `choose_models` onto `ModelCard.selectors`.
