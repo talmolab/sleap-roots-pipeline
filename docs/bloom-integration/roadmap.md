@@ -393,9 +393,10 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 |---|---|---|
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3's 6.2 only (not bloom#895 — see the gate note below) |
 | 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **deploy gated on bloom#895** |
+| 2b | **predict adopts the a9 reader** — resolve per-run via `load_run_manifest(allow_legacy=True)`, fail loud with a known run id, forward under the name read (step 1 only *pinned* a9) | ✅ **merged** 2026-09-25 ([predict#47](https://github.com/talmolab/sleap-roots-predict/pull/47)); **not deployed** — its own predictor pin bump (C2 gate met); not bloom#895-gated (envelopes unchanged) |
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
-| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2, 2b and 4, with both reader images **deployed** (traits is still `sha-689cffb`, pre-#269); transitively Bloom-gated |
 | 6 | **Template pin bumps + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
@@ -688,6 +689,35 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-25 (later)** — **predict's #71 reader has merged:
+  [predict#47](https://github.com/talmolab/sleap-roots-predict/pull/47) (`9f39691`, closing
+  predict#46 and predict#43). Both #71 readers are now merged; neither new reader is deployed.**
+  - **What changed.** Predict resolves `run_manifest.<ARGO_WORKFLOW_NAME>.json` through contracts'
+    `load_run_manifest(..., allow_legacy=True)`, falling back to the legacy `run_manifest.json`.
+    - A known run with no manifest, or a per-run file naming another run, fails the batch with
+      exit `1` rather than falling back to unscoped discovery.
+    - The manifest is forwarded byte-exact under the name it was read.
+    - With `ARGO_WORKFLOW_NAME` unset (local and `local-WSL2-*`), behavior is unchanged.
+    - The same PR fixes predict#43: per-writer temp names for the three per-scan atomic writes.
+  - ⚠️ **Correction to the 2026-09-24 (later still) entry.** "Both #71 consumer code changes are
+    merged" counted predict#45, but #45 only *pinned* `sleap-roots-contracts==0.1.0a9`. Predict
+    kept reading only the fixed `run_manifest.json` until #47. The frontier gains row **2b** for
+    it.
+  - **Deploy.** The C2 gate is met (row 4), so this goes out as its **own** predictor pin bump. It
+    is not gated on bloom#895, because predict's envelopes are unchanged.
+    - It stays inert while the fleet's writer publishes only the legacy name and every `a4_poc`
+      directory still holds `run_manifest.json`. The cluster template's "inert today" comment on
+      `ARGO_WORKFLOW_NAME` goes stale with that pin bump.
+  - **Before the writer flips (row 5):**
+    - Deploy both readers; traits is still `sha-689cffb`, which reads only the legacy name.
+    - The flip must be the bloomctl image with ingest's dual-read.
+    - Once it flips, this predict version is predict's **rollback floor**. An older image would
+      read only the stale legacy union and re-scope traits to it.
+  - **Reviewed** with a five-lens `/review-openspec` before approval, a fresh whole-branch review,
+    and a five-lens `/review-pr` (no blockers; 8.5 / 7.5 / 8 / 9 / 9).
+    - A mutation probe found an untested invariant, "one manifest resolution per batch". It is now
+      pinned.
+    - Deferred items are listed on the PR review.
 - **2026-09-25** — **The selector-shaped predictor is deployed and confirmed on a real batch (predict#34
   C2). Training 6.3 is unblocked.**
   - **Pin bump.** [#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), merged as `e30f962`,
