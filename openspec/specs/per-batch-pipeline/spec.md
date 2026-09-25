@@ -440,8 +440,10 @@ Every batch-processing stage template SHALL set an `ARGO_WORKFLOW_NAME` environm
 sourced from Argo's built-in `{{workflow.name}}` — `images-downloader`, `predictor`,
 `trait-extractor` and `write-back` alike.
 
-The two `bloomctl` stages already consume it. The `predictor` and `trait-extractor` stages do not
-consume it yet, and it is inert for them today; it is required because the stage directories are
+The two `bloomctl` stages already consume it. The `predictor` consumes it since its predict#47 pin
+(2026-09-25): predict resolves `run_manifest.<ARGO_WORKFLOW_NAME>.json` ahead of the legacy file.
+The `trait-extractor` does not consume it yet (its pinned image predates sleap-roots#269), and it
+is inert there today. It is required because the stage directories are
 fixed, shared `hostPath`s and `run_manifest.json` accumulates `scan_keys` across every run that
 writes into them. Once a producer stage can be reached after an upstream failure, the manifest a
 stage is scoped by may belong to a different run, and a stage has no way to detect that without
