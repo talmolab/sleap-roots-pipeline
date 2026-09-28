@@ -38,24 +38,32 @@ spec:
         # first GHCR publish, never bumped since) predated manifest-scoped discovery + skip-if-done
         # (sleap-roots#263, merged 08-17) and the a7 contract_version re-pin (bloom#685, resolved
         # 2026-09-08) by weeks. Confirmed causing real leftover-scan contamination live
-        # (2026-09-01 batch-oracle testing). bloom#685 is now genuinely deployed and verified —
-        # this image's a7-emitting envelopes will be accepted, not silently rejected.
+        # (2026-09-01 batch-oracle testing).
         # Digest-pinned 2026-09-16 (#70), for the same reason as the predictor template: the tag
         # names a commit, only the digest names bytes, and a `sha-<gitsha>` tag can be silently
         # overwritten by a rebuild of the same commit. This digest is the source of truth for
         # SRT_TRAITS_CONTAINER_DIGEST in `env:`; `scripts/check_manifests.py` fails if they drift.
-        # Verified against GHCR: resolves to org.opencontainers.image.revision 689cffb8143594e…
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-689cffb@sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369
+        # Bumped 2026-09-28 (bloom#895 step 2, sleap-roots#269/srp#71): Bloom PR #903 re-pinned
+        # `insert_cyl_result_envelope` to `contract_version = 0.1.0a9` and pulled EXECUTE from
+        # anon/authenticated; a7-emitting envelopes are rejected as of that PR's staging apply.
+        # This image emits a9 envelopes. Only the contracts pin changed vs. sha-689cffb — the
+        # `sleap_roots` trait library itself is unchanged — so recomputed values should be
+        # identical to the a7 ones.
+        # Verified against GHCR: resolves to org.opencontainers.image.revision e373b0f…
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4
         imagePullPolicy: Always
         args:
           - "/workspace/input"
           - "/workspace/output"
         env:
-          # #56: inert today — trait_extractor does not read it yet. Carried for the same reason as
-          # the predictor template: the stage directories are fixed, shared hostPaths and
-          # run_manifest.json accumulates scan_keys across every run (and every environment) that
-          # writes into them, so a manifest this stage is scoped by may belong to a different run.
-          # Prerequisite for validating that; see sleap-roots-pipeline#56.
+          # #56: NOT inert as of the 2026-09-28 bump to sha-e373b0f (sleap-roots#269, srp#71) —
+          # trait_extractor now reads the per-run `run_manifest.<pipeline_run_id>.json`, deriving
+          # pipeline_run_id from this (stripped) env var, and falls back to the legacy
+          # `run_manifest.json` only when no per-run manifest exists (allow_legacy=True). Carried
+          # for the same reason as the predictor template: the stage directories are fixed, shared
+          # hostPaths that every run (and every environment) writes into, so an unscoped manifest
+          # may belong to a different run. See sleap-roots-pipeline#56 and #82 (the later
+          # allow_legacy=False hardening).
           - name: ARGO_WORKFLOW_NAME
             value: "{{workflow.name}}"
           # #70: NOT inert -- trait_extractor reads this today (`trait_extractor/envelope.py`,
@@ -70,7 +78,7 @@ spec:
           # envelope threaded through predict's own manifest, so setting SRP_* here would fabricate
           # rather than record. Not an idempotency-key input, so changing it forces no recompute.
           - name: SRT_TRAITS_CONTAINER_DIGEST
-            value: "sha256:ab5a1f43a74f2d00e809f2deb0dc886876028cc3028b0fdaf600f408e860f369"
+            value: "sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4"
         volumeMounts:
           - name: predictions-output-dir
             mountPath: /workspace/input
