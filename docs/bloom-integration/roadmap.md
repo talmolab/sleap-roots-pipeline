@@ -392,7 +392,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | # | work | state |
 |---|---|---|
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3's 6.2 only (not bloom#895 — see the gate note below) |
-| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); **gate lifted 2026-09-28** — Bloom PR #903 applied to staging (bloom#895); template pin bump PR open (this repo), cluster **not yet updated** |
+| 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); ✅ **deployed and confirmed** 2026-09-28 ([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), run `cdbnp`); both reader images are now deployed |
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2 and 4; transitively Bloom-gated |
@@ -412,10 +412,10 @@ build adopts a9 automatically. (**Updated 2026-09-25:** predict and traits now b
 source, predict#45 and sleap-roots#269. Only predict's a9 image is deployed, since 2026-09-25; the
 cluster's trait-extractor is still `sha-689cffb`, on a7. **Updated 2026-09-28:** bloom#895 is now
 **applied** to staging (Bloom PR #903, merged `0564010b`) — `insert_cyl_result_envelope` pins
-`0.1.0a9` and `anon`/`authenticated` no longer have EXECUTE. The traits deploy's Bloom-side gate is
-lifted; a PR bumping this repo's trait-extractor template to `sha-e373b0f` is open, pending merge
-and a subsequent `argo template update`. Until that update runs, the cluster still emits a7
-envelopes, which staging now rejects — every traits write-back fails loud until the bump deploys.)
+`0.1.0a9` and `anon`/`authenticated` no longer have EXECUTE. **Both readers are now deployed**:
+traits' template was bumped to `sha-e373b0f` and applied via `argo template update` the same day
+([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), run `cdbnp`) — see the Status log
+for the acceptance evidence. Only `bloomctl` (reader+writer, row 5) is still on the pre-a9 image.)
 
 **The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
 2026-09-24, and narrower than this roadmap previously implied.** The earlier sequencing argument
@@ -462,9 +462,10 @@ what is gated.
 ✅ **bloom#895 applied to staging 2026-09-28** (Bloom PR #903, merged `0564010b`): verified
 read-only that `insert_cyl_result_envelope(jsonb,text)` now pins `0.1.0a9` and that `anon`/
 `authenticated` lost EXECUTE, with migrations `20260928130000`/`20260928130100` recorded as
-applied. **The gate is lifted; the cluster's trait-extractor is not yet bumped**, so every
-write-back is rejected until the pin-bump PR (this repo, `sha-e373b0f`) merges and
-`argo template update` runs. Until then this is the *fourth* time this wall has been hit.
+applied. **The gate is lifted, and the traits deploy is done the same day**
+([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), `argo template update`, run
+`cdbnp`) — see the Status log for acceptance evidence. This was the *fourth* time this wall has
+been hit; it closed within the day this time.
 
 ⚠️ **The predictor's empty-catalog guard is ALREADY DEFEATED — verified live 2026-09-24.**
 The registry now holds **14** production artifacts: 13 flat plus the 6.1 canary
@@ -700,6 +701,43 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-28 (later)** — **The traits deploy is done and accepted. Both #71 readers are now
+  deployed; only bloomctl (row 5, reader+writer) is left pre-a9.**
+  - **Pin bump.** [#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), merged as
+    `245cf2c`, re-pins the trait-extractor from `sha-689cffb@sha256:ab5a1f43…` to
+    `sha-e373b0f@sha256:2cbbe602…`. The tag, digest and `SRT_TRAITS_CONTAINER_DIGEST` moved
+    together; also fixed the two comments the bump made false (a7-acceptance, and
+    `ARGO_WORKFLOW_NAME` "inert today").
+  - **Drain checked first.** `argo list -n runai-busch-lab` showed no `sleap-roots-pipeline-*`
+    workflow in a non-terminal state before touching the cluster.
+  - **Applied with `argo template update`.** Pre-image `check_cluster_drift.sh` showed only the
+    trait-extractor drifted (still `sha-689cffb` live, repo already at `sha-e373b0f`) — the
+    expected pre-bump state, everything else in sync. Post-update, all 5 templates read IN SYNC.
+    `salk-bloom`'s `scripts/check_template_contract.py` (run in WSL, against the live cluster)
+    reported the vendored Workflow's contract satisfied.
+  - **Real batch: `sleap-roots-pipeline-cdbnp`** (`scan-ids=289,577,1009`) → Succeeded, 5/5, no
+    retries. Trait-extractor: `15 succeeded, 0 skipped, 0 failed` — the expected full recompute
+    (the image bakes a new `SRT_TRAITS_CODE_SHA`, forcing a new idempotency key). Write-back wrote
+    15 new `cyl_trait_sources` rows, `source_id` 219–233; the `Ingested 0/15` + per-scan `FAILED
+    ... status was not updated` lines are the known hand-submit artifact (no
+    `cyl_pipeline_run_scans` row for a manually-submitted workflow to resolve) — the written trait
+    data itself is correct.
+  - **Acceptance, verified read-only on staging:** all 15 new rows (`id` 219–233, `id > 203`
+    baseline) carry `metadata->>'contract_version' = '0.1.0a9'`. Value check for `scan_1009`:
+    joined its new source (219, a9) against its immediately-prior source (189, a7) across
+    `cyl_scan_traits` — **1035/1035 trait values identical**, 0 differing, 0 missing on either
+    side. Recomputed a9 values equal the a7 ones, as predicted.
+  - **Also checked:** no real Bloom-triggered pipeline run had hit the rejection window at all
+    (`cyl_pipeline_run_scans` had zero rows updated since 2026-09-28 00:00 UTC, any status) — no
+    scans needed re-triggering; no real user traffic was affected by the a7/a9 gap.
+  - **A4 batch-oracle re-baselined, same scan-ids: `sleap-roots-pipeline-rr4zj`** → Succeeded,
+    5/5. Images-downloader `3 skipped`, predictor `0 ok, 15 skipped, 0 failed`, trait-extractor
+    `0 succeeded, 15 skipped, 0 failed` — the idempotency key from `cdbnp` is stable across an
+    immediate re-run, as expected. Write-back re-delivered to the same `source_id`s 219–233;
+    `max(cyl_trait_sources.id)` is still **233** — no new rows. **This is the new oracle
+    baseline (`rr4zj`). Never compare across `cdbnp`** — the trait recompute for `689cffb` → 
+    `e373b0f` already happened there.
+  - Refs: bloom#895, Bloom PR #903, sleap-roots#269, this repo's #71/#82/#86/#88.
 - **2026-09-28** — **bloom#895 is applied to staging; the traits deploy's Bloom-side gate is
   lifted. The template pin bump is a PR, not yet merged or deployed.**
   - **Verified read-only on the live staging DB.** `insert_cyl_result_envelope(jsonb,text)` now
