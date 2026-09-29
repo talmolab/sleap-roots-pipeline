@@ -535,6 +535,26 @@ manifest holds exactly N keys and write-back reports `Ingested N/N`. Today any s
   pipeline's output; not filed as its own issue yet.
 - **bloom#864** — `provenance.pipeline_run_id` is still `None` even on a Bloom-dispatched run
   (reconfirmed 2026-09-21). Needs the producer-side change tracked as talmolab/sleap-roots#268.
+  **bloom#937** narrows it: write-back already receives the Argo workflow name, so Bloom can stamp
+  each source with its workflow and Bloom run itself, including unrequested scans.
+- **Recipe-consistent trait reads (bloom#935, bloom#936, bloom#937)** — write-back creates one
+  `cyl_trait_sources` row per scan, but every Bloom trait reader still treats one source as a
+  coherent result set:
+  - bloommcp's unpinned load returns only the newest source's scans, which is usually **one scan**
+    (bloom#936).
+  - The web and RPC reads mix builds scan by scan without saying so.
+  - bloomctl's `datasets create` captures one source, so one scan.
+
+  Bloom is adding a `recipe_key`: the idempotency payload minus `scan_key`, `images_checksum` and
+  `param_hash`, because `param_hash` hashes each scan's `age`. Exports would follow "one recipe per
+  file, list the scans left out". An age-window model switch counts as a different recipe.
+
+  Doesn't block anything in this repo. Every image bump now adds a recipe to each scan it
+  recomputes, including unrequested ones (#71).
+
+  Provenance follow-ups, to bundle into a future contract bump rather than cut one for them:
+  talmolab/sleap-roots-contracts#45 (`traits_pipeline_class`), #46 (`predict_model_alias`) and the
+  question #47 (a shared `compute_recipe_key`).
 
 **Production promotion is still NOT next**, unchanged in substance from the 2026-09-17 entry:
 blocked by **bloom#863** (prod-dispatched Workflows would mount *staging* Supabase credentials) and
@@ -826,6 +846,29 @@ Adversarial 4-lens review. Resolutions:
 
     Rollback is the reverse order, **restoring** the snapshots if the deletion has happened.
     Traits' best-effort manifest forward is tracked in talmolab/sleap-roots#271.
+- **2026-09-29** — **The traits recompute's values hold across all 15 scans. 12 of them were never
+  requested, and none can be traced to a run. Recipe-consistent reads filed as bloom#935–937.**
+  - **Values, extending the `scan_1009` check below.** The same comparison ran across all 15 new
+    a9 sources (219–233), each joined to that scan's previous pipeline source: **15,525/15,525
+    trait values identical**, 0 differing. Read-only, staging.
+  - **3 requested, 15 written.** `cdbnp` requested `scan-ids=289,577,1009`. The other 12 sources
+    (synthetic experiment 12880747) came from the legacy `run_manifest.json` union. That is #71 at
+    work: unrequested writes, not wrong rows. All 15 have `pipeline_run_id = null` (bloom#864).
+    Being hand-submitted, they have no `cyl_pipeline_run_scans` rows either, so nothing links them
+    to `cdbnp`. bloom#937 proposes stamping the workflow name at write-back.
+  - **Recipe mix, measured before the recompute (sources 6–203, all a7):**
+    - 5 `predict_code_sha` values, 2 `traits_code_sha` values and 3 model sets;
+    - 1 `predict_output_params` value;
+    - `param_hash` takes 9 values, because it hashes each scan's `age`.
+
+    Diversity Screen's four pipeline-latest scans span 2 recipes. `e373b0f` adds a third
+    `traits_code_sha`.
+  - **bloommcp reads one scan.** An unpinned `core_load_experiment_data("12880747")` returns
+    `Samples: 1` for a 12-scan experiment (bloom#936). Diversity Screen can't be read at all:
+    source 5 is 13.9M rows, and PostgREST cancels the read at 8s (`57014`).
+  - Filed: bloom#935 (recipe key and recipe-aware reads), bloom#936 (bloommcp bug), bloom#937
+    (run and Argo stamping), and talmolab/sleap-roots-contracts#45, #46 and #47. Design comments on
+    bloom#865, #481, #482 and #864.
 - **2026-09-28 (later)** — **The traits deploy is done and accepted. Both #71 readers are now
   deployed; only bloomctl (row 5, reader+writer) is left pre-a9.**
   - **Pin bump.** [#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), merged as
