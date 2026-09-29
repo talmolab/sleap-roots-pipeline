@@ -464,6 +464,14 @@ def main() -> int:
     # would leave two stages on one build and the gate on another with nothing complaining.
     bloomctl = {i for i in images.values() if "bloomctl" in i}
     check("all bloomctl references are identical", len(bloomctl), 1)
+    # The gate runs IfNotPresent, so a tag-only pin would let a node-cached layer stand in for an
+    # overwritten tag (#72, risk 1). Same tag-beside-digest shape the producers must carry.
+    check(
+        "bloomctl is digest-pinned with its sha-<sha> tag",
+        [i for i in bloomctl if not COMMIT_TAG_RE.search(i)],
+        [],
+    )
+    bloomctl_digests = {m.group(1) for i in bloomctl if (m := IMAGE_DIGEST_RE.search(i))}
 
     # --- Requirement: each provenance-emitting stage records the image that produced its results --
     # The digest env var must agree with the digest pinned on the SAME line, so the `image:`
@@ -504,13 +512,18 @@ def main() -> int:
     # the registry -- that is the deliberate offline trade-off design.md records, closed by the
     # round-trip at pin time. The label says only what the check delivers.
     #
-    # There is deliberately NO "digest collides with a bloomctl pin" assertion. All three bloomctl
-    # references are tag-pinned, so the set of bloomctl digests is empty and such a check could
-    # never fail -- a guard that greens unconditionally while naming a real mistake is worse than
-    # no guard, which is the whole argument of this change. The working cross-wiring guards are the
+    # The bloomctl collision check below only became able to fail once bloomctl was digest-pinned
+    # (2026-09-29). While those pins were tag-only, the set of bloomctl digests was empty and it
+    # would have greened unconditionally, so it was deliberately absent until then. The
+    # digest-pinned assertion above keeps that set non-empty. The other cross-wiring guards are the
     # repository-path assertion above (catches a producer pointed at the wrong repo) and the
     # equality assertion (catches a foreign digest pasted into either side alone).
     check("the two producer digests are distinct", len(set(producer_digests.values())), 2)
+    check(
+        "no producer digest collides with the bloomctl pin",
+        sorted(set(producer_digests.values()) & bloomctl_digests),
+        [],
+    )
     # predict's digest reaches the traits envelope threaded through predict's own manifest, never
     # from the trait-extractor pod's env -- so setting it here would fabricate, not record.
     te_env = load(BATCH_STAGES["trait-extractor"])["spec"]["templates"][0]["container"].get("env", []) or []

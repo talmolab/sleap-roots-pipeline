@@ -133,8 +133,8 @@ rewritten to warm-predict → traits; only the local-WSL2 variant still referenc
 
 Pin a tag/digest — never `:latest`. The two producers must carry an `@sha256:` digest, which is
 what their `SRP_PREDICT_CONTAINER_DIGEST` / `SRT_TRAITS_CONTAINER_DIGEST` env vars are validated
-against; the `bloomctl` stages are tag-pinned (the exit-gate's tag pin is tracked as #72; the
-images-downloader and write-back pins are not yet tracked). Confirm the reference resolves in the registry
+against. The three `bloomctl` stages carry one identical `sha-<sha>@sha256:<digest>` reference
+(digest-pinned since 2026-09-29). Confirm the reference resolves in the registry
 before submitting.
 
 ## 6. Example — run the predictor stage interactively
