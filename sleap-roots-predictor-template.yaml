@@ -115,11 +115,10 @@ spec:
         # falling back to unscoped discovery. It is deterministic, so retryPolicy: Always spends 4
         # attempts on it: 4 GPU-slice schedulings, each pod exiting after import time (before any
         # model loads), plus >= ~14m of backoff delay -- not 14m of GPU time. Unlike the
-        # catalog-load exit 1 above it fires BEFORE the
-        # forward-copy: continueOn still runs traits/write-back, scoped by whatever
-        # predictions/run_manifest.json an earlier run left, and the exit gate then fails the run
-        # (the old image had the same downstream exposure). Unreachable while the legacy file
-        # accumulates in the input tree.
+        # catalog-load exit 1 above, it fires BEFORE the forward-copy: continueOn still runs
+        # traits/write-back, scoped by whatever predictions/run_manifest.json an earlier run left,
+        # and the exit gate then fails the run (the old image had the same downstream exposure).
+        # Unreachable while the legacy file accumulates in the input tree.
         # Write-path change (predict#43): temp files are now per-writer (.<dst>.<uuid16>.tmp, was
         # <dst>.tmp). One orphaned by a SIGKILL is no longer overwritten by the next run, so such
         # orphans accumulate in the output trees; no consumer glob matches them.
