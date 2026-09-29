@@ -66,8 +66,9 @@ are YAML manifests and shell scripts.
   one, check the other for *path* drift.
 - **Pin images by tag/digest**, never `:latest`. The two producer templates
   (`predictor`, `trait-extractor`) MUST be pinned by `@sha256:` digest, because each injects a
-  digest env var validated against that line; the `bloomctl` stages remain tag-pinned (the exit-gate's pin is tracked as #72; images-downloader
-  and write-back are untracked).
+  digest env var validated against that line. The three `bloomctl` stages are pinned the same way
+  (`sha-<sha>@sha256:<digest>`, one identical string) since 2026-09-29; `check_manifests.py`
+  enforces both.
 - Shell scripts should be safe (`set -euo pipefail`) and must never echo `ARGO_TOKEN` or
   other secrets.
 

@@ -1,10 +1,11 @@
 # https://argo-workflows.readthedocs.io/en/latest/fields/#workflowspec
 # A4: batch stage-in via bloomctl (bloom #532). Image is a commit-sha tag auto-built on bloomcli's
 # push to `staging` — no versioned bloomcli release exists yet, so this is the only correct
-# reference for now; expect to bump it once a real version tag exists. Tighten to `@sha256:<digest>`
-# once bloomcli publishes one (a `sha-<gitsha>` tag is immutable in *name* only — a re-run of the
-# build workflow against the same commit would silently overwrite it in GHCR unless immutable tags
-# are enabled on that package; unverified from this repo).
+# reference for now; expect to bump it once a real version tag exists. Digest-pinned since
+# 2026-09-29 (`sha-<gitsha>@sha256:<digest>`, the producers' format): a `sha-<gitsha>` tag is
+# immutable in *name* only — a re-run of the build workflow against the same commit would silently
+# overwrite it in GHCR unless immutable tags are enabled on that package (unverified from this repo)
+# — and the digest is what resolves. Keep the tag beside it so the build commit stays readable.
 # Bumped 2026-07-30: sha-61959bd (#532) -> sha-c21d11b (bloom #556, fixes #555 — build_sidecar()
 # now writes image_ids as str via sleap_roots_contracts.InputRef; scan_is_already_staged() now
 # rejects pre-fix int-typed sidecars so already-staged scans re-stage cleanly).
@@ -29,6 +30,17 @@
 # a divergence is open the drift check cannot serve as a gate, because an intended divergence is
 # indistinguishable from a real one. Re-derive the current pin from the cluster before using any
 # recorded rollback target.
+# Bumped 2026-09-29: sha-28034f6 -> sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+# (salk-bloom #940, squash 1bc3056c: bloomctl adopts sleap-roots-contracts 0.1.0a9; tracking
+# bloom#934). The first bloomctl pin to carry a digest. THIS stage's code changes: the writer now
+# writes `run_manifest.<ARGO_WORKFLOW_NAME>.json` (whitespace-stripped run id), OVERWRITING it with
+# this invocation's ok+skipped keys (no union), and never writes or reads the legacy
+# `run_manifest.json` while a run id is set. A run id the contract rejects exits 1 before staging.
+# ORDERING: register write-back's matching bump BEFORE this one. `argo template update` is not
+# atomic across templates, and this writer paired with the sha-28034f6 write-back ingests the wrong
+# envelopes; the reverse pairing is safe. Roll back in the opposite order (this template first).
+# The legacy 12-key `run_manifest.json` files (run hpdpf) must be deleted from the shared input,
+# predictions and traits dirs only after both templates are live, and restored on rollback.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -48,7 +60,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-28034f6
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
         imagePullPolicy: Always
         args:
           - "cyl"
