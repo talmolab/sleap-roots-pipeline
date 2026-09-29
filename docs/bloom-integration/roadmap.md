@@ -802,7 +802,8 @@ Adversarial 4-lens review. Resolutions:
     backoff. But predict fails at manifest resolution, before any model loads, so each pod exits
     within seconds to tens of seconds (import time only). The cost is 4 GPU-slice (`gpu-memory`)
     schedulings and registry pull checks plus at least ~14 min of delay (more if pods sit
-    Pending), not 14 min of GPU time. The template comment itself is not yet corrected.
+    Pending), not 14 min of GPU time. *(The template comment was corrected 2026-09-29, along with
+    the living spec's stale "trait-extractor … is inert there today", false since #92.)*
   - **Next, with explicit confirmation for each:**
     - the traits deploy (gated on bloom#895) — *done 2026-09-28, #92;*
     - then the bloomctl writer flip, which must include ingest's dual-read. After the flip,
