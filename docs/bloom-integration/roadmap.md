@@ -876,8 +876,8 @@ Adversarial 4-lens review. Resolutions:
     for each physical model. Old ids were mapped to `source_model_id` through training's 6.0(a)
     baseline, and new ids through the post-reseed state (sleap-roots-training@dc216c7). The
     comparison and results are in
-    [predict#48](https://github.com/talmolab/sleap-roots-predict/pull/48), which is awaiting
-    merge.
+    [predict#48](https://github.com/talmolab/sleap-roots-predict/pull/48), merged as `81e02c6`
+    at 17:28 UTC on 2026-09-29.
   - **Result.**
     - All 8 physical models were evaluated, with none missing or gapped, and all are within
       the `prediction-parity` tolerance.
