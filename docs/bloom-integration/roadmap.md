@@ -396,8 +396,8 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 2b | **predict adopts the a9 reader** — resolve per-run via `load_run_manifest(allow_legacy=True)`, fail loud with a known run id, forward under the name read (step 1 only *pinned* a9) | ✅ **merged** 2026-09-25 ([predict#47](https://github.com/talmolab/sleap-roots-predict/pull/47)); ✅ **deployed and confirmed** 2026-09-25 ([#91](https://github.com/talmolab/sleap-roots-pipeline/pull/91), runs `rmdg7` + `lg2hg`); not bloom#895-gated (envelopes unchanged) |
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
-| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2, 2b and 4, with both reader images **deployed** (predict's since #91, traits' since #92); transitively Bloom-gated |
-| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903) |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), which stays open until 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; **not deployed** — the templates still pin `sha-28034f6` until 6 |
+| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861 |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
@@ -408,15 +408,20 @@ directories**), so writer-first is not *worse* than the defect — it simply fix
 the per-run manifest at the first un-adopted hop so it never reaches write-back, and, because
 `ingest.py` and `download_for_predict.py` ship in one image, flips write-back's reader at the
 same moment so it succeeds only by falling back. The result is a rollout that produces no
-attributable signal. Note `bloomctl` pins contracts `>=0.1.0a7` **unbounded**, so its next image
-build adopts a9 automatically. (**Updated 2026-09-25:** predict and traits now both pin `==0.1.0a9` in
+attributable signal. (**Corrected 2026-09-29:** this used to say that `bloomctl`'s unbounded
+`>=0.1.0a7` pin meant its next image build adopts a9 automatically. It could not. `bloomcli/uv.lock` locked
+`0.1.0a7` and the Dockerfile runs `uv sync --frozen`, which ignores the pyproject range, so a rebuild
+stayed on a7; and bloomctl's code imported only the legacy `RUN_MANIFEST_FILENAME`. Adoption needed
+an explicit re-lock plus code, which is [bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940).) (**Updated 2026-09-25:** predict and traits now both pin `==0.1.0a9` in
 source, predict#45 and sleap-roots#269. Only predict's a9 image is deployed, since 2026-09-25; the
 cluster's trait-extractor is still `sha-689cffb`, on a7. **Updated 2026-09-28:** bloom#895 is now
 **applied** to staging (Bloom PR #903, merged `0564010b`) — `insert_cyl_result_envelope` pins
 `0.1.0a9` and `anon`/`authenticated` no longer have EXECUTE. **Both readers are now deployed**:
 traits' template was bumped to `sha-e373b0f` and applied via `argo template update` the same day
 ([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), run `cdbnp`) — see the Status log
-for the acceptance evidence. Only `bloomctl` (reader+writer, row 5) is still on the pre-a9 image.)
+for the acceptance evidence. Only `bloomctl` (reader+writer, row 5) is still on the pre-a9 image.
+**Updated 2026-09-29:** row 5 is merged ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940)) and its image is built, but
+the templates still pin the pre-a9 `sha-28034f6` until row 6.)
 
 **The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
 2026-09-24, and narrower than this roadmap previously implied.** The earlier sequencing argument
@@ -478,11 +483,12 @@ against deploying predict before the re-seed completes; **deploy ordering is the
 The same shape applies to alias manipulation generally, and training 6.3 removes `production` from
 13 collections.
 
-⚠️ **`bloomctl` can adopt a9 by accident.** Its pin is `>=0.1.0a7`, unbounded
-(`bloomcli/pyproject.toml:28`), so any incidental image rebuild during the Bloom-gate window
-performs step 5 unintentionally — producing exactly the writer-before-reader state the ordering
-above exists to prevent. Treat a `bloomctl` rebuild in this window as a rollout event, not
-routine maintenance.
+**`bloomctl` could not adopt a9 by accident** (corrected 2026-09-29; this used to warn that its
+unbounded `>=0.1.0a7` pin let any incidental image rebuild perform step 5 unintentionally). `bloomcli/uv.lock` held
+`0.1.0a7` and the image builds with `uv sync --frozen`, so no rebuild could change the version; and
+the a7-era code named the manifest itself. Row 5 adopted a9 deliberately in
+[bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), which raised the floor to `>=0.1.0a9`, re-locked, and changed both
+scripts.
 
 ⚠️ **Deleting the stale legacy manifests is MANDATORY at step 6, and it is what makes #71's
 guarantee real — not step 7** (corrected 2026-09-24, verified against the released a9 resolver).
@@ -702,6 +708,34 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-29** — **Row 5 merged: bloomctl adopts a9 as reader and writer
+  ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`). Not deployed; row 6 is next.**
+  - **Writer** (`cyl batch-download-for-predict`): names the manifest
+    `run_manifest_name_for_writing(pipeline_run_id_from_env())` — `run_manifest.<ARGO_WORKFLOW_NAME>.json`
+    in Argo, `run_manifest.json` without it — and **overwrites** it with this invocation's usable
+    keys instead of unioning (design §2.4). The manifest lock is unchanged.
+  - **Reader** (`cyl batch-ingest-result`): `load_run_manifest(..., allow_legacy=True)`, accepting a
+    legacy file only if it names this run. With a run id and no manifest for this run — neither file,
+    or only a legacy one naming another run — it ingests nothing, still reconciles the workflow's
+    scans ("no run manifest reached write-back … re-dispatch"), and exits 1. One stripped run id
+    feeds the manifest, `p_argo_workflow_name` and reconciliation; a blank value is unset.
+  - **Stricter than the other readers at write-back, on purpose.** predict and traits still fall
+    back to a stale legacy file with a warning, but write-back now treats a legacy file naming
+    another run as no manifest: its own writer never writes that name when a run id is set, and
+    scoping to it would ingest `hpdpf`'s envelopes and mark every real scan failed with exit 0.
+  - **Image:** `ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802` — OCI revision label is the
+    merge SHA; the build log installs `sleap-roots-contracts==0.1.0a9`.
+  - **Correction:** the "unbounded pin adopts a9 automatically" claim above was wrong (`uv.lock` +
+    `--frozen`); corrected in place.
+  - **Row 6 prerequisites** (bloom `openspec/changes/adopt-cyl-contract-a9-run-manifest/tasks.md` §10.3):
+    - drain;
+    - bump `write-back` before `images-downloader`, pinning by digest;
+    - run `check_manifests.py` before `argo template update`;
+    - snapshot, then delete the three stale `run_manifest.json`;
+    - run the Bloom-dispatched N=1, N=3 and all-fail E2E.
+
+    Rollback is the reverse order, **restoring** the snapshots if the deletion has happened.
+    Traits' best-effort manifest forward is tracked in talmolab/sleap-roots#271.
 - **2026-09-28 (later)** — **The traits deploy is done and accepted. Both #71 readers are now
   deployed; only bloomctl (row 5, reader+writer) is left pre-a9.**
   - **Pin bump.** [#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), merged as
@@ -1092,7 +1126,9 @@ Adversarial 4-lens review. Resolutions:
     `run_manifest.json` from run `hpdpf`. Such a reader keeps scoping to that frozen file. The
     real argument is that writer-first fixes nothing, drops the per-run manifest at the first
     un-adopted hop, and destroys attribution. See talmolab/sleap-roots-contracts#44. Note `bloomctl` pins `>=0.1.0a7` **unbounded**, so its
-    next image build adopts a9 automatically; predict and traits pin `==0.1.0a7`.
+    next image build adopts a9 automatically; predict and traits pin `==0.1.0a7`. (**Corrected
+    2026-09-29:** not automatically — `uv.lock` plus `uv sync --frozen` held bloomctl at a7 until
+    bloom#940 re-locked it.)
   - ⚠️ **Two claims in `sleap-roots-contracts/openspec/project.md` were verified false and
     corrected in passing** — that the library does "no DB/network/filesystem I/O" (`emit_schema`
     writes files) and that predict/traits had not yet landed their consuming PRs (both have read
