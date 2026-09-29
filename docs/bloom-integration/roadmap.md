@@ -397,7 +397,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | after 2, 2b and 4, with both reader images **deployed** (predict's since #91, traits' since #92); transitively Bloom-gated |
-| 6 | **Template pin bumps + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged |
+| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903) |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
@@ -767,9 +767,9 @@ Adversarial 4-lens review. Resolutions:
     re-pins the predictor from `sha-9ac819fb…@sha256:005b0abe…` to
     `sha-9a6f20c00762e327b9aea39c8e06a81443252d01@sha256:afc8da82…c73adc`. The tag, the digest and
     `SRP_PREDICT_CONTAINER_DIGEST` moved together.
-    - 9a6f20c is predict `main`, code-identical to the #47 squash `9f39691`: only the OpenSpec archive
-      differs. Its Docker Build and Push run (36187712059) succeeded, and the digest is GHCR's index
-      digest for the full-sha tag.
+    - 9a6f20c is predict `main`, code-identical to the #47 squash `9f39691`: only OpenSpec files
+      differ (the archive move plus living-spec deltas). Its Docker Build and Push run
+      (36187712059) succeeded, and the digest is GHCR's index digest for the full-sha tag.
     - The same PR corrects the living `per-batch-pipeline` spec. Only trait-extractor is still inert
       to `ARGO_WORKFLOW_NAME`.
     - It was applied with `argo template update`. The read-back shows the new digest, and
@@ -781,25 +781,28 @@ Adversarial 4-lens review. Resolutions:
       0 failed` (11 min).
     - It scoped by and forwarded the legacy `run_manifest.json`, and logged no "names another run"
       warning. That is expected, because this run's downloader stamped the legacy file `rmdg7`.
-    - `input/`, `predictions/` and `traits/run_manifest.json` are byte-identical (run `rmdg7`, 15
-      keys).
+    - `run_manifest.json` in `input/`, `predictions/` and `traits/` is byte-identical across the
+      three (stamped `rmdg7`, 15 keys).
     - **The one-time full recompute happened.** `predict_code_sha` changed, and it is a skip-key input. Traits then recomputed too (`15 succeeded, 0 skipped`).
     - **Write-back:** 15 new source rows (189–203) and 0 `refusing to overwrite`. `Ingested 0/15` is
       the known hand-submit residue.
-    - No `.tmp` files remain in the `a4_poc` tree after the run (predict#43's per-writer temp names).
+    - No `.tmp` files remain in the `a4_poc` tree after the run: no writer was killed mid-write.
+      That is not predict#43's doing — under its per-writer (dot-prefixed) temp names, a SIGKILL
+      orphan would now persist rather than be overwritten.
   - **The A4 batch-oracle was re-baselined *after* the recompute: `sleap-roots-pipeline-lg2hg`**, same
     scan ids → Succeeded.
     - Predictor `0 ok, 15 skipped` (a 1-min pod) and traits `15 skipped`.
     - Write-back re-delivered to the same source ids 189–203, so no new rows.
     - **80/80 prediction and trait data files are byte-identical** to the post-`rmdg7` checksums.
-      Only the forwarded `run_manifest.json` copies were rewritten.
+      Only the three `run_manifest.json` files (re-stamped `lg2hg`) changed.
     - **This is the new oracle baseline. Never compare across `rmdg7`.** *(Superseded 2026-09-28 by
       `rr4zj`, after the traits recompute in `cdbnp`.)*
   - **A cost correction to #91's pin comment.** It says the new missing-manifest exit `1` "burns ~4
     GPU pods / ~14m". The retry count is right: `limit: 3` gives 4 attempts, with 2+4+8 min of
-    backoff. But predict fails at manifest resolution, before any model loads, so each pod exits in
-    seconds. The cost is 4 GPU-slice schedulings and image pulls plus ~14 min of delay, not 14 min
-    of GPU time.
+    backoff. But predict fails at manifest resolution, before any model loads, so each pod exits
+    within seconds to tens of seconds (import time only). The cost is 4 GPU-slice (`gpu-memory`)
+    schedulings and registry pull checks plus at least ~14 min of delay (more if pods sit
+    Pending), not 14 min of GPU time. The template comment itself is not yet corrected.
   - **Next, with explicit confirmation for each:**
     - the traits deploy (gated on bloom#895) — *done 2026-09-28, #92;*
     - then the bloomctl writer flip, which must include ingest's dual-read. After the flip,
@@ -813,7 +816,9 @@ Adversarial 4-lens review. Resolutions:
     - A known run with no manifest, or a per-run file naming another run, fails the batch with
       exit `1` rather than falling back to unscoped discovery.
     - The manifest is forwarded byte-exact under the name it was read.
-    - With `ARGO_WORKFLOW_NAME` unset (local and `local-WSL2-*`), behavior is unchanged.
+    - With `ARGO_WORKFLOW_NAME` unset (local CLI runs), behavior is unchanged. The
+      `local-WSL2-*` templates are not a parity environment for this: their predictor runs the
+      legacy `registry.gitlab.com/salk-tm/sleap-roots-predict:latest` image, not #47's.
     - The same PR fixes predict#43: per-writer temp names for the three per-scan atomic writes.
   - ⚠️ **Correction to the 2026-09-24 (later still) entry.** "Both #71 consumer code changes are
     merged" counted predict#45, but #45 only *pinned* `sleap-roots-contracts==0.1.0a9`. Predict
@@ -828,6 +833,7 @@ Adversarial 4-lens review. Resolutions:
       `ARGO_WORKFLOW_NAME` goes stale with that pin bump.
   - **Before the writer flips (row 5):**
     - Deploy both readers; traits is still `sha-689cffb`, which reads only the legacy name.
+      *(Done: predict's via #91 on 2026-09-25, traits' via #92 on 2026-09-28.)*
     - The flip must be the bloomctl image with ingest's dual-read.
     - Once it flips, this predict version is predict's **rollback floor**. An older image would
       read only the stale legacy union and re-scope traits to it.
@@ -873,7 +879,8 @@ Adversarial 4-lens review. Resolutions:
     - Write-back re-delivered to the same source ids 159–173, so no new rows.
     - **80/80 prediction and trait data files are byte-identical** to the post-`6bhzn` checksums.
       Only the forwarded `run_manifest.json` copies were rewritten, as they are on every run.
-    - **This is the new oracle baseline. Never compare across `6bhzn`.**
+    - **This is the new oracle baseline. Never compare across `6bhzn`.** *(Superseded 2026-09-25 by
+      `lg2hg`, then 2026-09-28 by `rr4zj`.)*
   - **Next: training 6.3,** which removes `production` from the 13 flat collections and never deletes
     them. It is its own step, with explicit confirmation.
     - Until 6.3, rollback is a re-pin to `sha-e025e309…@sha256:4d4064c6…`.
@@ -882,7 +889,9 @@ Adversarial 4-lens review. Resolutions:
   - Reported on predict#34 ([comment](https://github.com/talmolab/sleap-roots-predict/issues/34#issuecomment-5837523443)).
     Still open there: C3, the parity-harness re-run against the re-seeded registry.
 - **2026-09-24 (later still)** — **Both #71 consumer code changes are merged, and the re-seed
-  is no longer blocked.** talmolab/sleap-roots-predict#45 landed (`87ca271`), pinning
+  is no longer blocked.** (**Corrected 2026-09-25:** not both — #45 only *pinned* a9; predict's
+  reader is predict#47, frontier row 2b. See the 2026-09-25 (later) entry.)
+  talmolab/sleap-roots-predict#45 landed (`87ca271`), pinning
   `sleap-roots-contracts==0.1.0a9` and migrating `choose_models` onto `ModelCard.selectors`.
   With talmolab/sleap-roots#269 already in, steps 1 and 2 of the frontier are done.
   - **Reviewed with three adversarial lenses before merge** (selection equivalence, deploy
