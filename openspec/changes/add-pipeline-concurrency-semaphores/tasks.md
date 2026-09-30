@@ -116,8 +116,8 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   - 8.3 Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
     panel can't tell computing from queued behind the semaphore from waiting for a GPU (e.g.
     `NonPreemptibleOverQuota`). Split `'running'` into queued (node lock message, in the Workflow
-    Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition; needs
-    pod read access for Bloom's identity, unverified) and running.
+    Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition;
+    `bloom-pipeline` already has `get`/`list`/`watch` on pods, re-checked 2026-09-30) and running.
   - 8.4 Record whether the workflow-controller's service account can `get` ConfigMaps in
     `runai-busch-lab` (from 7.0 or 7.5) in `docs/cluster-identities.md`.
   - 8.5 Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
