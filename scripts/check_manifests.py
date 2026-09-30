@@ -66,6 +66,22 @@ BATCH_STAGES = {
     "trait-extractor": "sleap-roots-trait-extractor-template.yaml",
     "write-back": "sleap-roots-write-back-template.yaml",
 }
+# #98: namespace-wide concurrency limits. Each gated stage acquires ONE key of one ConfigMap.
+SEMAPHORES = "sleap-roots-pipeline-semaphores.yaml"
+SEMAPHORE_CM = "sleap-roots-pipeline-semaphores"
+SEMAPHORE_KEY_BY_STAGE = {
+    "predictor": "pipeline-gpu",
+    "images-downloader": "pipeline-stage-in",
+}
+# Upper bound on pipeline-gpu: predictor slices busch-lab's 2-GPU deserved quota can hold. A live
+# predictor pod's RunAI GPU ConfigMap recorded gpu-memory 8192 MB as RUNAI_NUM_OF_GPUS 0.18
+# (2026-09-30): floor(1/0.18) = 5 per GPU, 10 across 2. Valid ONLY at that gpu-memory, which is why
+# the predictor's annotation is pinned below.
+GPU_SLICE_CAPACITY = 10
+GPU_SLICE_MEMORY = "8192"
+# Quoted decimal >= 1. The controller parses it with strconv.Atoi; anything else Errors every gated
+# node, running ones included.
+SEMAPHORE_VALUE_RE = re.compile(r"^[1-9][0-9]*$")
 ACCEPTED_GATE_CODES = {"0", "3"}
 
 # Values the gate must reject, in every producer position. Each is a real failure mode:
@@ -531,6 +547,37 @@ def main() -> int:
         "trait-extractor declares no SRP_PREDICT_CONTAINER_DIGEST",
         [e["name"] for e in te_env if e.get("name") == "SRP_PREDICT_CONTAINER_DIGEST"],
         [],
+    )
+
+    # --- Requirement: GPU and stage-in concurrency are bounded by namespace semaphores ---
+    sem = load(SEMAPHORES)
+    sem_meta = sem.get("metadata") or {}
+    sem_data = sem.get("data") or {}
+    check("semaphore manifest is a ConfigMap", sem.get("kind"), "ConfigMap")
+    check("semaphore ConfigMap name", sem_meta.get("name"), SEMAPHORE_CM)
+    check(
+        "semaphore ConfigMap namespace equals the Workflow's",
+        sem_meta.get("namespace"),
+        wf["metadata"]["namespace"],
+    )
+    check("semaphore ConfigMap carries the quota label", (sem_meta.get("labels") or {}).get("project"), "busch-lab")
+    check(
+        "semaphore ConfigMap defines exactly the keys the templates acquire",
+        sorted(sem_data),
+        sorted(SEMAPHORE_KEY_BY_STAGE.values()),
+    )
+    for key in sorted(SEMAPHORE_KEY_BY_STAGE.values()):
+        value = sem_data.get(key)
+        check(
+            f"ConfigMap {key} is a quoted decimal integer >= 1",
+            isinstance(value, str) and bool(SEMAPHORE_VALUE_RE.match(value)),
+            True,
+        )
+    gpu = sem_data.get("pipeline-gpu")
+    check(
+        f"pipeline-gpu fits the quota's slice capacity (<= {GPU_SLICE_CAPACITY})",
+        isinstance(gpu, str) and bool(SEMAPHORE_VALUE_RE.match(gpu)) and int(gpu) <= GPU_SLICE_CAPACITY,
+        True,
     )
 
     print()
