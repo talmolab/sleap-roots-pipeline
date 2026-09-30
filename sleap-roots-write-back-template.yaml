@@ -27,6 +27,18 @@
 # srp#76 returns. #871 surfaces that as a per-scan `warning` in both the summary and the JSON
 # report specifically because the log sink it would otherwise go to is unreadable under Argo — so
 # treat a `WARNING <scan_key>:` line in this stage's output as "the fix is not in effect".
+# Bumped 2026-09-29: sha-28034f6 -> sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+# (salk-bloom #940, squash 1bc3056c; see sleap-roots-images-downloader-template.yaml). THIS stage's
+# code changes: `batch-ingest-result` reads the run manifest via
+# `load_run_manifest(dir, pipeline_run_id_from_env(), allow_legacy=True)`, which accepts a legacy
+# `run_manifest.json` only when its pipeline_run_id equals this run. With a run id set and no
+# manifest for this run, it ingests nothing, reconciles this workflow's queued scans to 'failed'
+# ("write-back found no run manifest ... re-dispatch the run"), prints a `<run-manifest>` entry and
+# exits 1. One stripped run id feeds the manifest lookup, p_argo_workflow_name and the reconcile
+# call; a blank value counts as unset. Also carried, first live run here: bloom #880's
+# cross-workflow redelivery status fallback.
+# ORDERING: register THIS template before images-downloader's matching bump (the old writer stamps
+# its own workflow name, so new-reader/old-writer is safe; the reverse is not).
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -43,7 +55,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-28034f6
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
         imagePullPolicy: Always
         args:
           - "cyl"
