@@ -113,8 +113,11 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 - [ ] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
   - 8.2 bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
     the downloader's retries spend attempts on it.
-  - 8.3 Bloom: a Workflow waiting on a semaphore is `Running` in Argo (its step is `Pending`), so
-    the run panel shows a queued batch as a slow one; surface the lock wait.
+  - 8.3 Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
+    panel can't tell computing from queued behind the semaphore from waiting for a GPU (e.g.
+    `NonPreemptibleOverQuota`). Split `'running'` into queued (node lock message, in the Workflow
+    Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition; needs
+    pod read access for Bloom's identity, unverified) and running.
   - 8.4 Record whether the workflow-controller's service account can `get` ConfigMaps in
     `runai-busch-lab` (from 7.0 or 7.5) in `docs/cluster-identities.md`.
   - 8.5 Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
