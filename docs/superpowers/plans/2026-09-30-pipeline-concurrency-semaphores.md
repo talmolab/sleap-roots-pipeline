@@ -16,7 +16,7 @@
 - Keys and values exactly: `pipeline-gpu: "5"` (predictor), `pipeline-stage-in: "5"` (images-downloader). Values are quoted strings.
 - Use the plural `synchronization.semaphores:` list, never the deprecated singular `semaphore:`.
 - `pipeline-gpu` ≤ 10, derived at predictor `gpu-memory: "8192"` (0.18 GPU per pod → 5 per GPU × 2 GPUs).
-- Local-WSL2 manifests get no `synchronization` (CPU-only Docker-Desktop counterparts, broken for the A4 DAG, #21).
+- Do not touch or assert anything about the `local-WSL2-*` manifests: unmaintained, to be removed later.
 - The launcher creates the ConfigMap only if absent, never updates it, and aborts before registering templates if it cannot read it.
 - No cluster-changing command (`kubectl create/apply/edit`, `argo template create/update`, `argo submit/delete`) runs without the owner's explicit go-ahead for that step. Read-only `kubectl get`, `argo list/get` are fine.
 - `argo` and `kubectl` exist only in WSL: invoke as `wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; cd /mnt/c/repos/sleap-roots-pipeline/.worktrees/argo-semaphore-98 && <cmd>'` from PowerShell.
@@ -119,14 +119,6 @@ At the end of `main()`, immediately before the final `print()`, add:
         ((pred_tmpl.get("metadata") or {}).get("annotations") or {}).get("gpu-memory"),
         GPU_SLICE_MEMORY,
     )
-    local_synced = []
-    for p in sorted(ROOT.glob("local-WSL2-*.yaml")):
-        doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        spec = doc.get("spec") or {}
-        if "synchronization" in spec:
-            local_synced.append(p.name)
-        local_synced += [f"{p.name}:{t.get('name')}" for t in spec.get("templates") or [] if "synchronization" in t]
-    check("local-WSL2 manifests declare no synchronization", local_synced, [])
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -239,7 +231,6 @@ Write `<scratchpad>/mutate.py`. It copies the worktree's tracked files to a temp
 import pathlib, shutil, subprocess, sys, tempfile
 SRC = pathlib.Path(r"C:\repos\sleap-roots-pipeline\.worktrees\argo-semaphore-98")
 CM, PRED, DL = "sleap-roots-pipeline-semaphores.yaml", "sleap-roots-predictor-template.yaml", "sleap-roots-images-downloader-template.yaml"
-LOCAL = "local-WSL2-sleap-roots-predictor-template.yaml"
 M = [
     ("M1 gpu over capacity", CM, 'pipeline-gpu: "5"', 'pipeline-gpu: "11"', "fits the quota's slice capacity"),
     ("M2 zero", CM, 'pipeline-stage-in: "5"', 'pipeline-stage-in: "0"', "pipeline-stage-in is a quoted decimal"),
@@ -248,7 +239,6 @@ M = [
     ("M5 singular", PRED, "        semaphores:\n          - configMapKeyRef:", "        semaphore:\n            configMapKeyRef:", "predictor uses only the plural"),
     ("M6 gpu-memory bump", PRED, 'gpu-memory: "8192"', 'gpu-memory: "12288"', "predictor gpu-memory is the value"),
     ("M7 extra key", CM, 'pipeline-stage-in: "5"', 'pipeline-stage-in: "5"\n  unused: "1"', "defines no key that no template"),
-    ("M8 local gated", LOCAL, "      retryStrategy:", "      synchronization:\n        semaphores:\n          - configMapKeyRef: {name: x, key: y}\n      retryStrategy:", "local-WSL2 manifests declare no"),
 ]
 bad = 0
 for label, f, old, new, expect in M:
@@ -265,7 +255,7 @@ sys.exit(bad)
 ```
 
 Run: `python <scratchpad>/mutate.py`
-Expected: eight `OK` lines, exit 0. For M8, first confirm the anchor with `grep -n "retryStrategy" local-WSL2-sleap-roots-predictor-template.yaml` (the plan read it at line 9, indented 6 spaces); adjust the anchor if the indent differs.
+Expected: seven `OK` lines, exit 0.
 
 - [ ] **Step 10: Commit**
 

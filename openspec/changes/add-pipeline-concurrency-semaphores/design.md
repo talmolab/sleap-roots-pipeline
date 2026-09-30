@@ -22,7 +22,7 @@ soon as the templates are updated in the cluster, with no Bloom change.
   namespace with retrying pods; make the caps live-tunable and drift-checked.
 - Non-Goals: bounding whole runs (a Workflow-level gate, cross-repo); Bloom-side backpressure
   (bloom#964); stopping retries on a deterministic 404 (bloomctl); gating trait-extractor or
-  write-back; the local-WSL2 manifests.
+  write-back; the unmaintained `local-WSL2-*` manifests.
 
 ## Verified facts this design rests on (2026-09-30)
 
@@ -97,14 +97,10 @@ It never updates an existing ConfigMap, so a manual run cannot silently undo an 
 retune (for example, dropping `pipeline-gpu` to 2 while colleagues need the GPUs). Repo changes to the limits are applied by the deploy procedure,
 not by the launcher, and `check_cluster_drift.sh` reports any live value that differs from the repo.
 
-### Local-WSL2 templates are exempt
+### Local-WSL2 manifests are out of scope
 
-The `local-WSL2-*` manifests are Docker-Desktop/WSL2 counterparts, not mirrors, and parity between
-them is mount/path parity (`openspec/project.md`). Local testing is CPU-only (the local predictor's
-`nvidia.com/gpu: 1` is a known stale spot, per `project.md`), so there is no GPU quota to protect,
-and the local launcher is currently broken for the A4 DAG (#21). A gate there would also need its
-own ConfigMap in the local namespace. `check_manifests.py` asserts the local templates carry no `synchronization`, so the
-exemption is explicit rather than accidental.
+The `local-WSL2-*` manifests are unmaintained and slated for removal (owner, 2026-09-30), so this
+change neither gates them nor asserts anything about them.
 
 ## Risks
 

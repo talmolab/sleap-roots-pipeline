@@ -13,8 +13,6 @@ The ConfigMap SHALL be defined in this repo in `sleap-roots-pipeline-semaphores.
 `pipeline-gpu` SHALL NOT exceed 10, the number of predictor GPU slices busch-lab's 2-GPU deserved
 quota holds at `gpu-memory: "8192"` (5 per GPU).
 
-The local-WSL2 templates SHALL NOT declare `synchronization`.
-
 #### Scenario: Both stages acquire their own semaphore key
 
 - **WHEN** `sleap-roots-predictor-template.yaml` and `sleap-roots-images-downloader-template.yaml`
@@ -42,11 +40,6 @@ The local-WSL2 templates SHALL NOT declare `synchronization`.
 - **THEN** each excess predictor node is `Pending` with a message naming the
   `runai-busch-lab/ConfigMap/sleap-roots-pipeline-semaphores/pipeline-gpu` lock
 - **AND** no pod exists for that node until a slot is released
-
-#### Scenario: Local templates are exempt
-
-- **WHEN** the `local-WSL2-*-template.yaml` files are inspected
-- **THEN** none of their templates declares `synchronization`
 
 ## MODIFIED Requirements
 

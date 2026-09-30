@@ -41,8 +41,7 @@ the operator's observation, not something this change re-measured.)
 - `runai_run_pipeline.sh` creates the ConfigMap if it is absent, before registering templates, and
   never overwrites an existing one.
 - `scripts/check_manifests.py` asserts the wiring: both refs name the repo ConfigMap and a key it
-  defines; every value is an integer ≥ 1; `pipeline-gpu` stays within the quota's slice capacity;
-  the local-WSL2 templates carry no gate.
+  defines; every value is an integer ≥ 1; `pipeline-gpu` stays within the quota's slice capacity.
 - `scripts/check_cluster_drift.sh` also compares the live ConfigMap's `data` against the repo's, so
   a live retune is reported as drift.
 - Document the gate in `docs/cluster-identities.md`, annotate A4 design §9 with what was built, and
@@ -50,7 +49,7 @@ the operator's observation, not something this change re-measured.)
   kubeconfig).
 
 Out of scope: a Workflow-level (whole-run) gate, which would need Bloom's vendored Workflow; the
-local-WSL2 manifests (CPU-only Docker-Desktop counterparts, currently broken for the A4 DAG, #21);
+`local-WSL2-*` manifests, which are unmaintained and slated for removal;
 and stopping retries on a deterministic 404, which is a bloomctl exit-code distinction (retrying exit 3 is deliberate — see the 2026-09-15
 partial-success design, line 249).
 

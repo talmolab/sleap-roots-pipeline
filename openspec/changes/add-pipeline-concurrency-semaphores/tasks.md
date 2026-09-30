@@ -26,7 +26,7 @@
 ## 3. Offline checks
 
 - [ ] 3.1 `scripts/check_manifests.py`: assert each ADDED scenario (both refs; keys resolve; values
-  are integers ≥ 1; `pipeline-gpu` ≤ 10; local templates have no `synchronization`) and the launcher
+  are integers ≥ 1; `pipeline-gpu` ≤ 10) and the launcher
   scenario (create-if-absent before the loop; no `apply`/`replace`/`edit` of the ConfigMap).
   Validate: `bash scripts/check_all.sh` passes; then temporarily set `pipeline-gpu: "11"` and
   confirm it fails, and revert.
@@ -73,3 +73,5 @@
 - [ ] 6.4 Draft (do not file) a follow-up to confirm the workflow-controller's service account can
   read ConfigMaps in `runai-busch-lab` (cluster-scoped RBAC is Forbidden to `argo-user`, so only
   task 5.4's live lock test evidences it), and record the result in `docs/cluster-identities.md`.
+- [ ] 6.5 Draft (do not file) a follow-up to remove the unmaintained `local-WSL2-*` manifests and
+  `local_run_pipeline_first_time.sh` (see #21), with the `project.md` and README references to them.
