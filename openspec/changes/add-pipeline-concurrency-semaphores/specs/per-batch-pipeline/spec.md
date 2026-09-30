@@ -17,8 +17,9 @@ The ConfigMap SHALL be defined in this repo in `sleap-roots-pipeline-semaphores.
 `runai-busch-lab`, and SHALL define exactly the keys the templates acquire. Each value SHALL be a
 quoted decimal integer string of at least 1.
 
-`pipeline-gpu` SHALL NOT exceed 10, the number of predictor GPU slices busch-lab's 2-GPU deserved
-quota holds at the predictor's `gpu-memory: "8192"` (5 per GPU), and the predictor's `gpu-memory`
+`pipeline-gpu` SHALL NOT exceed 10, the number of whole predictor GPU slices busch-lab's two
+deserved-quota GPUs hold at the predictor's `gpu-memory: "8192"` (5 per GPU; conservative, since
+RunAI's fractional quota accounting would admit about 11), and the predictor's `gpu-memory`
 annotation SHALL be `"8192"` for as long as that bound stands.
 
 #### Scenario: Both stages acquire their own semaphore key

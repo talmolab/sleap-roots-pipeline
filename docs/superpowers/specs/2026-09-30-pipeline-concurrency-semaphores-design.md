@@ -17,7 +17,8 @@ batch acquires `pipeline-gpu: K`"), in this repo.
   `predictor` and `pipeline-stage-in` on `images-downloader`. One namespace-wide pool shared by prod,
   staging and manual runs.
 - **Limits:** `pipeline-gpu: 8`, `pipeline-stage-in: 5` (owner, 2026-09-30: the pipeline outranks
-  the lab's interactive sessions). Eight predictor slices = 1.44 GPU; the quota holds 10. Retunable live by editing the ConfigMap.
+  the lab's interactive sessions). Eight predictor slices = 1.44 GPU; the quota holds 10 whole slices.
+  Retune live with the validated patch in the ConfigMap header, never `kubectl edit`.
 - **Launcher:** creates the ConfigMap only if absent, never overwrites a live retune, and aborts if
   it can't read it or it's incomplete (BREAKING for operators: now needs `kubectl` + `KUBECONFIG`).
 - **Known limits (from Argo v3.6.7 source, reviewed 2026-09-30):** a missing/malformed ConfigMap Errors running tasks too; a controller restart can

@@ -227,7 +227,9 @@ templates acquire slots from the ConfigMap `sleap-roots-pipeline-semaphores`. Th
 namespace-wide, shared by Bloom prod, Bloom staging and manual runs, and a task waiting for a slot
 is a Pending Argo node with no pod. `pipeline-gpu` keeps the pipeline's non-preemptible GPU use
 inside the quota RunAI enforces on non-preemptible allocations, so a large trigger no longer puts a
-predictor pod per batch into `NonPreemptibleOverQuota`. Preemptible sessions don't count toward
+predictor pod per batch into `NonPreemptibleOverQuota` — provided other non-preemptible work in the
+project stays small, and except briefly after a workflow-controller restart (see the ConfigMap
+header). Preemptible sessions don't count toward
 that quota and the predictor outranks them, so it can preempt them when GPUs are physically short;
 coordinating before a large run still applies. To change the limit, use the validated patch in the
 header of `sleap-roots-pipeline-semaphores.yaml` — never `kubectl edit`, since a non-integer value

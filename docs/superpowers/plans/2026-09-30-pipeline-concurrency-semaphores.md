@@ -30,7 +30,7 @@
 2. **The launcher with no working kubeconfig, or an incomplete ConfigMap.** It must exit before any `argo` call. Covered by the Task 2 stub harness in modes `fail` and `missingkey`.
 3. **A `gpu-memory` bump without re-deriving the ≤ 10 bound.** Covered by Task 3 mutation M6.
 4. **Drift check: an unreadable ConfigMap, or a CHECK FAILED followed by drift.** It must exit 2, not 1 or 0. Covered by the Task 4 stub harness in cases `fail` and `garbage+retuned`.
-5. **A task that waited, then acquired, must still retry and still pass its exit code to the gate.** The node is created as a Pod type while waiting. Covered only live, by tasks.md 7.5.
+5. **A task that waited, then acquired, must still retry and still pass its exit code to the gate.** (A waiting node is created as `Retry` type — `Template.GetNodeType()` returns `NodeTypeRetry` for any template with a `retryStrategy` — so the retry parent is correct.) Covered only live, by tasks.md 7.0.
 
 ---
 

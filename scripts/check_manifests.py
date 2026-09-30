@@ -73,7 +73,8 @@ SEMAPHORE_KEY_BY_STAGE = {
     "predictor": "pipeline-gpu",
     "images-downloader": "pipeline-stage-in",
 }
-# Upper bound on pipeline-gpu: predictor slices busch-lab's 2-GPU deserved quota can hold. A live
+# Upper bound on pipeline-gpu: WHOLE predictor slices busch-lab's 2-GPU deserved quota holds
+# (conservative -- RunAI's fractional accounting would admit ~11: 11 x 0.18 = 1.98). A live
 # predictor pod's RunAI GPU ConfigMap recorded gpu-memory 8192 MB as RUNAI_NUM_OF_GPUS 0.18
 # (2026-09-30): floor(1/0.18) = 5 per GPU, 10 across 2. Valid ONLY at that gpu-memory, which is why
 # the predictor's annotation is pinned below.

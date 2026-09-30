@@ -69,21 +69,27 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 6. Pre-PR sweep
 
-- [ ] 6.1 `bash scripts/check_all.sh` → `=== OK: all suites pass ===`; `lint_manifests.sh` (WSL)
+- [x] 6.1 `bash scripts/check_all.sh` → `=== OK: all suites pass ===`; `lint_manifests.sh` (WSL)
   clean; `openspec validate add-pipeline-concurrency-semaphores --strict` → "is valid". The offline
   checks prove shape and wiring only; scheduling and lock claims rest on section 7.
 
 ## 7. Deploy and live verification — after merge, each step needs the owner's go-ahead
 
-- [ ] 7.0 (Optional) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
+- [ ] 7.0 (Required before 7.3) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
   1, a sleep template with retries and the semaphore, three `busybox` Workflows. Confirms: Pending
   with no pod and the message format; FIFO; lazy raise; release on `kubectl delete wf`; Error on a
-  deleted ConfigMap; and that the controller can read ConfigMaps. First confirm its pods run
-  `argoexec:v3.6.7` and `kubectl auth can-i create workflows,configmaps`.
+  deleted ConfigMap; and that the controller can read ConfigMaps. Include one gated template with a
+  `retryStrategy` whose first attempt fails (`exit 1` when `{{retries}}` is `0`) and that must wait
+  for a slot first: assert its node type is `Retry`, a child `(1)` runs after the backoff, and the
+  slot stays held meanwhile. First confirm its pods run `argoexec:v3.6.7` and
+  `kubectl auth can-i create workflows,configmaps`.
 - [ ] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
 - [ ] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
 - [ ] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
-  images-downloader and predictor templates, from `main` at the squash commit.
+  images-downloader and predictor templates, from `main` at the squash commit. Immediately submit
+  one small manual run and `argo get` it: if a gated node shows a ConfigMap error (the controller
+  cannot read it), roll back at once per design.md's Migration Plan — Bloom batches dispatched in
+  the meantime would Error the same way.
 - [ ] 7.4 `check_cluster_drift.sh` → exit 0, `IN SYNC sleap-roots-pipeline-semaphores`.
 - [ ] 7.5 Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
   re-check the namespace is idle immediately before each retune (it throttles prod and staging too).

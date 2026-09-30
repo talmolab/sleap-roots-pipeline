@@ -7,9 +7,10 @@
 # `pipeline-stage-in`. The pool is shared by EVERY Workflow in runai-busch-lab that uses those
 # templates -- Bloom prod, Bloom staging and manual runs -- as they share the 2-GPU deserved quota.
 # pipeline-gpu 8 = 1.44 GPU of non-preemptible work (8192 MB = 0.18 GPU per predictor), inside the
-# quota RunAI enforces on NON-preemptible allocations; ceiling 10, enforced by
-# scripts/check_manifests.py. Preemptible sessions don't count toward that quota, and the predictor
-# (priorityClassName high) outranks them.
+# quota RunAI enforces on NON-preemptible allocations -- provided other non-preemptible busch-lab
+# work holds <= 0.56 GPU, and except transiently after a controller restart (below). Ceiling 10
+# whole slices, enforced by scripts/check_manifests.py. Preemptible sessions don't count toward
+# that quota, and the predictor (priorityClassName high) outranks them.
 #
 # Argo v3.6.7 behaviour (read from source 2026-09-30):
 #   - One slot = one TASK, held across all its retries AND the backoff between them.

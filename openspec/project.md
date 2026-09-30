@@ -23,9 +23,8 @@ this per-batch Argo workflow (stage-in → predict → traits → write-back wit
 `add-per-batch-argo-workflow` and was validated end-to-end on the real RunAI cluster
 (2026-07-30). Bloom's trigger route and dispatch worker have since shipped (Bloom-dispatched
 runs pass end to end), and the Argo semaphore bounding concurrent predictor and stage-in tasks is
-built (#98). Still
-open: Bloom's UI trigger (bloom PR #965, draft) and per-run path isolation (#71) — see the
-roadmap's A4 change-breakdown table for the full remaining list.
+built (#98). Still open: Bloom's UI trigger (bloom PR #965, draft) and per-run path isolation
+(#71) — see the roadmap's A4 change-breakdown table for the full remaining list.
 
 ## Tech Stack
 

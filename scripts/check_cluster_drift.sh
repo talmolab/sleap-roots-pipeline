@@ -13,7 +13,7 @@
 #
 # Usage:  wsl -e bash scripts/check_cluster_drift.sh [namespace]
 #         default namespace: runai-busch-lab
-# Exit:   0 = in sync, 1 = real drift, 2 = could not reach the cluster.
+# Exit:   0 = in sync, 1 = real drift, 2 = could not reach the cluster, or a CHECK FAILED.
 #
 # Ignored by design: metadata stamped by whatever REGISTERED the object rather than by this
 # repo -- `argo template create` writes a `workflows.argoproj.io/creator*` LABEL, `kubectl
