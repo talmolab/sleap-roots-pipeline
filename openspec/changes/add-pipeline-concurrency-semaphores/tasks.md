@@ -6,25 +6,25 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 1. ConfigMap
 
-- [ ] 1.1 Add `sleap-roots-pipeline-semaphores.yaml` (ConfigMap `sleap-roots-pipeline-semaphores`,
+- [x] 1.1 Add `sleap-roots-pipeline-semaphores.yaml` (ConfigMap `sleap-roots-pipeline-semaphores`,
   namespace `runai-busch-lab`, label `project: busch-lab`, `pipeline-gpu: "8"`,
   `pipeline-stage-in: "5"`), whose header is the canonical statement of the gate's semantics, deploy
   order and safe retune.
-- [ ] 1.2 `check_manifests.py`: ConfigMap kind/name/namespace/label; keys exactly the two; values
+- [x] 1.2 `check_manifests.py`: ConfigMap kind/name/namespace/label; keys exactly the two; values
   quoted `^[1-9][0-9]*$`; `pipeline-gpu` ≤ 10. Validate: `check_all.sh` green; mutation harness
   (tasks 3.3, 2.3) fails on `"11"`, `"0"`, unquoted `8`, an extra key, a deleted key and a wrong
   namespace.
 
 ## 2. Launcher
 
-- [ ] 2.1 `runai_run_pipeline.sh`, before the template loop: abort without `kubectl`; print the
+- [x] 2.1 `runai_run_pipeline.sh`, before the template loop: abort without `kubectl`; print the
   `kubectl` context; `kubectl get configmap … --ignore-not-found -o name` (abort if it fails);
   create only if empty; otherwise validate each key and abort if missing or non-integer. Never
   update. Update the header's manual steps and the runtime NOTE lines.
-- [ ] 2.2 `check_manifests.py`: exactly one `kubectl create`, of the ConfigMap file, on the
+- [x] 2.2 `check_manifests.py`: exactly one `kubectl create`, of the ConfigMap file, on the
   empty-result branch, before the loop; abort branches end in `exit 1` within their own `if`; no
   `kubectl apply|replace|edit|patch`; the launcher's validated key list equals the ConfigMap's keys.
-- [ ] 2.3 Validate behaviour with stubbed `kubectl`/`argo` on a `/c/...` PATH (Git Bash), asserting
+- [x] 2.3 Validate behaviour with stubbed `kubectl`/`argo` on a `/c/...` PATH (Git Bash), asserting
   `command -v kubectl` is the stub and logging every call: `get` fails → exit 1, no `argo` call;
   `get` empty → `kubectl create` logged before the first `argo`; exists with valid keys → no create;
   exists with a key missing → exit 1, no `argo` call. Plus launcher mutations (create moved after the
@@ -32,39 +32,39 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 3. Templates
 
-- [ ] 3.1 Gate `predictor` on `pipeline-gpu` and `images-downloader` on `pipeline-stage-in`
+- [x] 3.1 Gate `predictor` on `pipeline-gpu` and `images-downloader` on `pipeline-stage-in`
   (`synchronization.semaphores[].configMapKeyRef`), each with a short comment pointing to the
   ConfigMap file.
-- [ ] 3.2 `check_manifests.py`: each template holds exactly its own ref, and no other
+- [x] 3.2 `check_manifests.py`: each template holds exactly its own ref, and no other
   `synchronization` field; predictor `gpu-memory` is `"8192"`.
-- [ ] 3.3 Validate: `check_all.sh` green; `lint_manifests.sh` (WSL) clean with "Linting 6
+- [x] 3.3 Validate: `check_all.sh` green; `lint_manifests.sh` (WSL) clean with "Linting 6
   manifests"; mutations fail (wrong key; singular `semaphore:`; `gpu-memory: "12288"`).
 
 ## 4. Drift check
 
-- [ ] 4.1 `check_cluster_drift.sh`: compare the live ConfigMap's `data` (`--ignore-not-found -o
+- [x] 4.1 `check_cluster_drift.sh`: compare the live ConfigMap's `data` (`--ignore-not-found -o
   yaml`: non-zero → CHECK FAILED 2; empty → NOT CREATED; differs → DRIFT with repo/live values);
   change the template loop's `drift=1` to `[ "$drift" -eq 0 ] && drift=1`.
-- [ ] 4.2 Validate with a stubbed `kubectl` (Git Bash; `python3` stubbed to `python`): in sync → 0;
+- [x] 4.2 Validate with a stubbed `kubectl` (Git Bash; `python3` stubbed to `python`): in sync → 0;
   retuned → DRIFT, 1; missing → NOT CREATED, 1; `get` fails → CHECK FAILED, 2; an earlier CHECK
   FAILED plus a later DRIFT → still 2. Then read-only live (WSL): the gated templates show DRIFT and
   the ConfigMap NOT CREATED, exit 1 — record as the pre-deploy baseline.
 
 ## 5. Docs
 
-- [ ] 5.1 `README.md`: prerequisites (`kubectl` + `KUBECONFIG`), the folder tree, "This script
+- [x] 5.1 `README.md`: prerequisites (`kubectl` + `KUBECONFIG`), the folder tree, "This script
   will", and the manual Kubernetes-mode steps (create the ConfigMap first).
-- [ ] 5.2 `docs/cluster-identities.md`: what the gate bounds (the pipeline's non-preemptible GPU
+- [x] 5.2 `docs/cluster-identities.md`: what the gate bounds (the pipeline's non-preemptible GPU
   use), and a pointer to the ConfigMap header for values and the validated retune.
-- [ ] 5.3 `.claude/commands/ci-debug.md` and `.claude/skills/runai/SKILL.md` §8: "Waiting for …
+- [x] 5.3 `.claude/commands/ci-debug.md` and `.claude/skills/runai/SKILL.md` §8: "Waiting for …
   lock" (expected; retune) and "Error: … not found in ConfigMap" (deploy order / deleted ConfigMap).
-- [ ] 5.4 A4 design §9: annotate what was built (tasks, not batches; two keys; write-back not gated;
+- [x] 5.4 A4 design §9: annotate what was built (tasks, not batches; two keys; write-back not gated;
   busch-lab, not talmo-lab).
-- [ ] 5.5 `openspec/project.md`: fix the Purpose sentence's whole open-work list (the semaphore and
+- [x] 5.5 `openspec/project.md`: fix the Purpose sentence's whole open-work list (the semaphore and
   the Bloom dispatch worker are built), the Domain Context's equivalent claim, the
   `NonPreemptibleOverQuota` advice (don't move the predictor to `interactive-preemptible`), and the
   launcher's prerequisites.
-- [ ] 5.6 Validate: `python scripts/check_docs.py` green; `grep -n "semaphore" openspec/project.md`
+- [x] 5.6 Validate: `python scripts/check_docs.py` green; `grep -n "semaphore" openspec/project.md`
   shows no open-work claim.
 
 ## 6. Pre-PR sweep

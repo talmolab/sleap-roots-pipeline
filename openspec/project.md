@@ -21,10 +21,11 @@ The roadmap target (see `docs/bloom-integration/roadmap.md`, tier **A4**) is
 this per-batch Argo workflow (stage-in → predict → traits → write-back with provenance).
 **A4 is in progress, not out of scope** — the batch DAG above landed via
 `add-per-batch-argo-workflow` and was validated end-to-end on the real RunAI cluster
-(2026-07-30). Still open: the Bloom-side trigger route/dispatch worker (so a UI click
-submits this workflow instead of a manual `argo submit`), the Argo semaphore for
-concurrent-batch concurrency, and per-run path isolation — see the roadmap's A4
-change-breakdown table for the full remaining list.
+(2026-07-30). Bloom's trigger route and dispatch worker have since shipped (Bloom-dispatched
+runs pass end to end), and the Argo semaphore bounding concurrent predictor and stage-in tasks is
+built (#98). Still
+open: Bloom's UI trigger (bloom PR #965, draft) and per-run path isolation (#71) — see the
+roadmap's A4 change-breakdown table for the full remaining list.
 
 ## Tech Stack
 
@@ -96,9 +97,10 @@ are YAML manifests and shell scripts.
   the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai treats
   `priorityClassName` ≥ 100 as non-preemptible and < 100 as preemptible; the lab's
   preemptible GPU class is `interactive-preemptible`. The predictor's GPU jobs typically run
-  *within* quota, so over-quota preemption isn't usually exercised — but if a GPU pod is
-  blocked at quota (`NonPreemptibleOverQuota`), set
-  `priorityClassName: interactive-preemptible` to go over quota.
+  *within* quota, so over-quota preemption isn't usually exercised. If a GPU pod is blocked at
+  quota (`NonPreemptibleOverQuota`), do **not** move the predictor to `interactive-preemptible`:
+  it is deliberately `high` (#37). Check who holds the quota instead — see
+  `docs/cluster-identities.md`. The pipeline's own share is capped by the #98 semaphore.
 
 ### Testing Strategy
 
@@ -154,9 +156,9 @@ git/GitHub/OpenSpec/docs commands.
 - The broader program is tracked in `docs/bloom-integration/roadmap.md` (canonical for
   scope/sequencing) and Bloom EPIC #9 (canonical for Bloom-side implementation detail).
   This repo is the orchestration component slated to **deliver** roadmap tier **A4 —
-  event-driven orchestration**; A4 is **in progress** — the batch DAG is built
-  and cluster-validated, but the Bloom-side trigger route (so a UI click submits it,
-  rather than a manual `argo submit`) is not yet built.
+  event-driven orchestration**; A4 is **in progress** — the batch DAG is built and
+  cluster-validated, and Bloom's trigger route submits it; Bloom's UI trigger (so a click on a
+  scan or experiment page starts a run) is still in progress.
 - **Vocabulary:** a *scan* is one imaging run of a plant; the pipeline runs per scan (A4),
   while experiment-level `analyze` is a separate, on-request path (not in this repo).
 
@@ -174,7 +176,8 @@ git/GitHub/OpenSpec/docs commands.
 ## External Dependencies
 
 - **RunAI GPU cluster** (`gpu-master:8888` Argo server, `runai-busch-lab` namespace);
-  requires `runai login` + an exported `ARGO_TOKEN`.
+  requires `runai login` + an exported `ARGO_TOKEN`. `runai_run_pipeline.sh` also needs
+  `kubectl` + a working `KUBECONFIG`, to ensure the #98 semaphore ConfigMap exists.
 - **Stage container images**, all on GHCR: `sleap-roots-predict` and `sleap-roots` (which
   publishes `sleap-roots-trait-extractor`) under `ghcr.io/talmolab`, and `bloomctl` under
   `ghcr.io/salk-harnessing-plants-initiative`.

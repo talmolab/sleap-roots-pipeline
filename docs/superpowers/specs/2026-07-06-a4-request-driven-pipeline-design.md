@@ -248,6 +248,12 @@ or a truncated manifest is skipped as done.)
 - **Argo semaphore (ConfigMap-backed)** = app-level gate: every GPU batch acquires `pipeline-gpu: K`
   (K ≤ quota) → at most K pipeline batches active at once; the rest wait in Argo. Protects other
   RunAI users and the write-back rate. (A `mutex` would serialize to 1.)
+  **Built 2026-09-30 ([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98)), differently
+  from the above:** template-level, bounding **tasks**, not batches — `predictor` acquires
+  `pipeline-gpu` and `images-downloader` acquires `pipeline-stage-in` from ConfigMap
+  `sleap-roots-pipeline-semaphores`; trait-extractor and write-back are not gated, so it does not
+  bound the write-back rate. The quota is **busch-lab's** (2 GPUs), not talmo-lab's. See
+  `openspec/changes/add-pipeline-concurrency-semaphores/design.md`.
 - **Batching** inherently bounds pod count (experiment = ⌈N/BATCH_SIZE⌉ GPU pods, not N).
 - Optional: workflow `parallelism` (CPU fan-out per run), workflow **priorities** (manual > backfill).
 

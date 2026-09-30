@@ -147,6 +147,7 @@ echo "Argo CLI configured for Argo Server at gpu-master:8888 using token auth."
 ```text
 .
 ├── sleap-roots-pipeline.yaml                    # Main Argo Workflow definition
+├── sleap-roots-pipeline-semaphores.yaml         # ConfigMap: namespace-wide GPU / stage-in concurrency limits (#98)
 ├── sleap-roots-images-downloader-template.yaml  # WorkflowTemplate: stages scans in via bloomctl
 ├── sleap-roots-predictor-template.yaml          # WorkflowTemplate: runs predictions
 ├── sleap-roots-trait-extractor-template.yaml    # WorkflowTemplate: extracts traits
@@ -182,7 +183,9 @@ You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed
 chmod +x runai_run_pipeline.sh
 ```
 
-Ensure that `ARGO_TOKEN` is exported and you have access to the cluster.
+Ensure that `ARGO_TOKEN` is exported and you have access to the cluster. The launcher also needs
+`kubectl` and a `KUBECONFIG` that can read and create ConfigMaps in `runai-busch-lab` (the #98
+semaphore ConfigMap; in WSL, `export PATH=$HOME/bin:$PATH`).
 
 ### ▶️ Run the Pipeline
 
@@ -191,6 +194,8 @@ Ensure that `ARGO_TOKEN` is exported and you have access to the cluster.
 ```
 
 This script will:
+- Create the `sleap-roots-pipeline-semaphores` ConfigMap if absent (never updates it; aborts if it
+  can't read it or it is incomplete)
 - Automatically create or update your `WorkflowTemplates`
 - Submit the pipeline as a `Workflow`
 - Stream logs to your terminal
@@ -256,6 +261,7 @@ kubectl describe node docker-desktop | grep -A 5 "Capacity"
 ## 📋 Creating WorkflowTemplates (One-Time per Namespace)
 
 ```bash
+kubectl create -f sleap-roots-pipeline-semaphores.yaml -n runai-busch-lab   # first: the predictor and downloader templates Error without it
 argo template create sleap-roots-exit-gate-template.yaml -n runai-busch-lab
 argo template create sleap-roots-images-downloader-template.yaml -n runai-busch-lab
 argo template create sleap-roots-predictor-template.yaml -n runai-busch-lab
