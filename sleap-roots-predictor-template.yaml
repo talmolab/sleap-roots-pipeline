@@ -38,6 +38,15 @@ spec:
       # none resolved to priority 0, the lowest tier. This file previously recorded "very-high
       # (150)"; that was never verified and is very likely wrong — see the exit-gate template.
       priorityClassName: high
+      # #98: at most `pipeline-gpu` predictor tasks run at once across runai-busch-lab. The slot is
+      # held across every retry below AND the backoff between them (>= ~14m for a failing batch).
+      # The ConfigMap must exist before this template is updated. Semantics, limit, deploy order
+      # and safe retune: the header of sleap-roots-pipeline-semaphores.yaml.
+      synchronization:
+        semaphores:
+          - configMapKeyRef:
+              name: sleap-roots-pipeline-semaphores
+              key: pipeline-gpu
       retryStrategy:
         # GPU stage (priorityClassName high is non-preemptible, so not evicted for quota; the
         # retries cover image-pull failures, node loss, transient registry errors and OOM) -- allow

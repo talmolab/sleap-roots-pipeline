@@ -630,6 +630,26 @@ def main() -> int:
         [],
     )
 
+    # --- Scenario: Both stages acquire their own semaphore key ---------------------------
+    for stage, key in SEMAPHORE_KEY_BY_STAGE.items():
+        sync = load(BATCH_STAGES[stage])["spec"]["templates"][0].get("synchronization") or {}
+        check(
+            f"{stage} acquires exactly its own semaphore key",
+            [r.get("configMapKeyRef") for r in (sync.get("semaphores") or [])],
+            [{"name": SEMAPHORE_CM, "key": key}],
+        )
+        check(
+            f"{stage} uses only the plural semaphores list (no singular semaphore, no mutex)",
+            sorted(k for k in sync if k != "semaphores"),
+            [],
+        )
+    pred_tmpl = load(BATCH_STAGES["predictor"])["spec"]["templates"][0]
+    check(
+        "predictor gpu-memory is the value GPU_SLICE_CAPACITY was derived at",
+        ((pred_tmpl.get("metadata") or {}).get("annotations") or {}).get("gpu-memory"),
+        GPU_SLICE_MEMORY,
+    )
+
     print()
     if _failures:
         print(f"=== {len(_failures)} FAILED, {_passes} passed ===")
