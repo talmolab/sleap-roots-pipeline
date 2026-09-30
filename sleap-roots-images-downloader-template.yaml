@@ -39,8 +39,10 @@
 # ORDERING: register write-back's matching bump BEFORE this one. `argo template update` is not
 # atomic across templates, and this writer paired with the sha-28034f6 write-back ingests the wrong
 # envelopes; the reverse pairing is safe. Roll back in the opposite order (this template first).
-# The legacy 12-key `run_manifest.json` files (run hpdpf) must be deleted from the shared input,
-# predictions and traits dirs only after both templates are live, and restored on rollback.
+# The legacy `run_manifest.json` files in the shared input, predictions and traits dirs had to be
+# deleted only after both templates were live. Done 2026-09-29: they were run rr4zj's (15 keys;
+# not hpdpf's 12 as first written here), snapshotted to a4_poc/_stale-manifests-2026-09-29/.
+# RESTORE them from there on any rollback to sha-28034f6.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
