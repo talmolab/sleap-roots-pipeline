@@ -40,7 +40,10 @@
   the GPU-quota section. Validate: `python scripts/check_docs.py`.
 - [ ] 4.2 Annotate A4 design §9 with what was built (template-level, two keys, busch-lab not
   talmo-lab). Validate: `python scripts/check_docs.py`.
-- [ ] 4.3 `openspec validate add-pipeline-concurrency-semaphores --strict`.
+- [ ] 4.3 `openspec/project.md`: drop "the Argo semaphore" from A4's still-open list, and note under
+  External Dependencies that `runai_run_pipeline.sh` also needs a working `KUBECONFIG` for its
+  ConfigMap step. Validate: `grep -n "semaphore" openspec/project.md` shows no still-open claim.
+- [ ] 4.4 `openspec validate add-pipeline-concurrency-semaphores --strict`.
 
 ## 5. Deploy and live verification (each step needs the owner's go-ahead)
 

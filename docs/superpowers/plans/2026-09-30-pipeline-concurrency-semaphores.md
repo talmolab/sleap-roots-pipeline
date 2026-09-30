@@ -16,7 +16,7 @@
 - Keys and values exactly: `pipeline-gpu: "5"` (predictor), `pipeline-stage-in: "5"` (images-downloader). Values are quoted strings.
 - Use the plural `synchronization.semaphores:` list, never the deprecated singular `semaphore:`.
 - `pipeline-gpu` ≤ 10, derived at predictor `gpu-memory: "8192"` (0.18 GPU per pod → 5 per GPU × 2 GPUs).
-- Local-WSL2 manifests get no `synchronization`.
+- Local-WSL2 manifests get no `synchronization` (CPU-only Docker-Desktop counterparts, broken for the A4 DAG, #21).
 - The launcher creates the ConfigMap only if absent, never updates it, and aborts before registering templates if it cannot read it.
 - No cluster-changing command (`kubectl create/apply/edit`, `argo template create/update`, `argo submit/delete`) runs without the owner's explicit go-ahead for that step. Read-only `kubectl get`, `argo list/get` are fine.
 - `argo` and `kubectl` exist only in WSL: invoke as `wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; cd /mnt/c/repos/sleap-roots-pipeline/.worktrees/argo-semaphore-98 && <cmd>'` from PowerShell.
@@ -460,6 +460,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `docs/cluster-identities.md` (new paragraph after the predictor-`high` bullet and its "So non-preemptible work…" paragraph, before `**\`argo submit -n <ns>\` does not redirect…`)
 - Modify: `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md` (§9, after the "Argo semaphore" bullet)
+- Modify: `openspec/project.md` (A4 still-open list, line ~25; External Dependencies, line ~177)
 - Modify: `openspec/changes/add-pipeline-concurrency-semaphores/tasks.md` (tick 1.x–4.x)
 
 - [ ] **Step 1: `docs/cluster-identities.md`**
@@ -492,17 +493,29 @@ After the "Argo semaphore (ConfigMap-backed)" bullet, add:
   `openspec/changes/add-pipeline-concurrency-semaphores/design.md`.
 ```
 
-- [ ] **Step 3: Full offline sweep**
+- [ ] **Step 3: `openspec/project.md`**
+
+In Purpose, change "the Bloom-side trigger route/dispatch worker (so a UI click submits this workflow
+instead of a manual `argo submit`), the Argo semaphore for concurrent-batch concurrency, and per-run
+path isolation" by removing "the Argo semaphore for concurrent-batch concurrency, " (read the
+surrounding sentence first and keep it grammatical; do not change its other claims). Under External
+Dependencies, after "requires `runai login` + an exported `ARGO_TOKEN`.", add: "`runai_run_pipeline.sh`
+also needs a working `KUBECONFIG` for `kubectl`, to create the #98 semaphore ConfigMap if absent."
+
+Run: `grep -n "semaphore" openspec/project.md`
+Expected: only the new External Dependencies line.
+
+- [ ] **Step 4: Full offline sweep**
 
 Run: `bash scripts/check_all.sh`
 Expected: `=== OK: all suites pass ===`.
 Run: the Task 1 Step 8 lint command. Expected: clean.
 Run: `openspec validate add-pipeline-concurrency-semaphores --strict`. Expected: `is valid`.
 
-- [ ] **Step 4: Tick tasks 1.1–4.3 in the OpenSpec `tasks.md`, then commit**
+- [ ] **Step 5: Tick tasks 1.1–4.4 in the OpenSpec `tasks.md`, then commit**
 
 ```bash
-git add docs/cluster-identities.md docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md openspec/changes/add-pipeline-concurrency-semaphores/tasks.md
+git add docs/cluster-identities.md docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md openspec/project.md openspec/changes/add-pipeline-concurrency-semaphores/tasks.md
 git commit -m "docs: document the #98 concurrency semaphores; annotate A4 design §9
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"

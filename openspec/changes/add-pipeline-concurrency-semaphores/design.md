@@ -15,6 +15,15 @@ Bloom's vendored Workflow references both stages by `templateRef`
 `images-downloader`), so a gate on the WorkflowTemplates applies to every Bloom-dispatched run as
 soon as the templates are updated in the cluster, with no Bloom change.
 
+## Goals / Non-Goals
+
+- Goals: cap the pipeline's concurrent GPU (predictor) and stage-in (images-downloader) tasks
+  namespace-wide, so a large Bloom trigger cannot queue past busch-lab's GPU quota or flood the
+  namespace with retrying pods; make the caps live-tunable and drift-checked.
+- Non-Goals: bounding whole runs (a Workflow-level gate, cross-repo); Bloom-side backpressure
+  (bloom#964); stopping retries on a deterministic 404 (bloomctl); gating trait-extractor or
+  write-back; the local-WSL2 manifests.
+
 ## Verified facts this design rests on (2026-09-30)
 
 - **Controller version is v3.6.7.** Every pod in `runai-busch-lab` carries
@@ -53,9 +62,14 @@ the GPU quota, so a per-environment pool would let two environments together exc
 No deadlock is possible: each task holds only its own stage's lock, and releases it before any
 downstream task can start.
 
+Alternatives considered: predictor-only (one key, as A4 §9 wrote it) leaves the stage-in pod flood
+unbounded; a Workflow-level semaphore bounds whole runs but must live in Bloom's vendored Workflow;
+workflow `parallelism` bounds fan-out within one Workflow, not across Workflows; a controller-wide
+namespace parallelism limit is controller configuration this repo cannot set.
+
 ### Starting limits: K = 5, M = 5
 
-Chosen by the repo owner. Five predictors are 0.9 GPU (5 × 0.18), one GPU's worth of slices, leaving
+Chosen by the repo owner (alternatives offered: 4/4, 2/4, 10/10). Five predictors are 0.9 GPU (5 × 0.18), one GPU's worth of slices, leaving
 the other GPU for the lab's interactive sessions. The downloader limit matches, so stage-in keeps
 roughly one batch ahead of each GPU slot without flooding the namespace with pods.
 
@@ -79,15 +93,17 @@ aborts before registering any template, rather than updating templates whose gat
 The launcher otherwise talks to the Argo Server (`gpu-master:8888`, `ARGO_TOKEN`), which has no
 ConfigMap API, so this step is its only `kubectl` use and needs a working `KUBECONFIG`.
 
-It never updates an existing ConfigMap, so a manual run cannot silently undo an operator's live retune (for example, dropping `pipeline-gpu` to 2
-while colleagues need the GPUs). Repo changes to the limits are applied by the deploy procedure,
+It never updates an existing ConfigMap, so a manual run cannot silently undo an operator's live
+retune (for example, dropping `pipeline-gpu` to 2 while colleagues need the GPUs). Repo changes to the limits are applied by the deploy procedure,
 not by the launcher, and `check_cluster_drift.sh` reports any live value that differs from the repo.
 
 ### Local-WSL2 templates are exempt
 
-`local-WSL2-sleap-roots-predictor-template.yaml` requests `nvidia.com/gpu: 1` on a single-GPU local
-cluster, where the Kubernetes scheduler already serializes GPU pods, and a gate would need a local
-ConfigMap too. `check_manifests.py` asserts the local templates carry no `synchronization`, so the
+The `local-WSL2-*` manifests are Docker-Desktop/WSL2 counterparts, not mirrors, and parity between
+them is mount/path parity (`openspec/project.md`). Local testing is CPU-only (the local predictor's
+`nvidia.com/gpu: 1` is a known stale spot, per `project.md`), so there is no GPU quota to protect,
+and the local launcher is currently broken for the A4 DAG (#21). A gate there would also need its
+own ConfigMap in the local namespace. `check_manifests.py` asserts the local templates carry no `synchronization`, so the
 exemption is explicit rather than accidental.
 
 ## Risks
@@ -100,6 +116,13 @@ exemption is explicit rather than accidental.
   missing ConfigMap as drift.
 - **Throughput.** A 61-batch experiment now runs at most 5 predictor tasks at a time. That is the
   point of the change; raise K live if the quota is free.
+
+## Open Questions
+
+- Can the workflow-controller's service account read ConfigMaps in `runai-busch-lab`? Standard in
+  Argo's install, but cluster-scoped RBAC is Forbidden to `argo-user`; task 5.4's lock test is the
+  evidence, and task 6.4 records it.
+- Deploy from the branch before merge, or from `main` after? The owner's call at task 5.2.
 
 ## Deploy and rollback
 

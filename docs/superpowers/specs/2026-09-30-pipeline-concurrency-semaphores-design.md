@@ -21,7 +21,8 @@ batch acquires `pipeline-gpu: K`"), in this repo.
 - **Launcher:** creates the ConfigMap only if absent; never overwrites a live retune.
 - **Checks:** `check_manifests.py` asserts the wiring and `pipeline-gpu ≤ 10`;
   `check_cluster_drift.sh` compares the live ConfigMap.
-- **Exempt:** local-WSL2 templates (asserted).
+- **Exempt:** local-WSL2 manifests (asserted): CPU-only Docker-Desktop counterparts, broken for the
+  A4 DAG (#21), with no GPU quota to protect.
 - **Follow-ups, not this change:** the deterministic-404 downloader retry (bloomctl), and a
   whole-run gate (Bloom).
 

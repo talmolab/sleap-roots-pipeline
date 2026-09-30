@@ -45,11 +45,13 @@ the operator's observation, not something this change re-measured.)
   the local-WSL2 templates carry no gate.
 - `scripts/check_cluster_drift.sh` also compares the live ConfigMap's `data` against the repo's, so
   a live retune is reported as drift.
-- Document the gate in `docs/cluster-identities.md` and annotate A4 design §9 with what was built.
+- Document the gate in `docs/cluster-identities.md`, annotate A4 design §9 with what was built, and
+  update `openspec/project.md` (the semaphore is no longer open work; the launcher now also needs a
+  kubeconfig).
 
-Out of scope: a Workflow-level (whole-run) gate, which would need Bloom's vendored Workflow;
-the local-WSL2 templates (single-GPU local cluster); and stopping retries on a deterministic 404,
-which is a bloomctl exit-code distinction (retrying exit 3 is deliberate — see the 2026-09-15
+Out of scope: a Workflow-level (whole-run) gate, which would need Bloom's vendored Workflow; the
+local-WSL2 manifests (CPU-only Docker-Desktop counterparts, currently broken for the A4 DAG, #21);
+and stopping retries on a deterministic 404, which is a bloomctl exit-code distinction (retrying exit 3 is deliberate — see the 2026-09-15
 partial-success design, line 249).
 
 ## Impact
@@ -59,7 +61,8 @@ partial-success design, line 249).
 - Affected files: `sleap-roots-pipeline-semaphores.yaml` (new),
   `sleap-roots-predictor-template.yaml`, `sleap-roots-images-downloader-template.yaml`,
   `runai_run_pipeline.sh`, `scripts/check_manifests.py`, `scripts/check_cluster_drift.sh`,
-  `docs/cluster-identities.md`, `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`.
+  `docs/cluster-identities.md`, `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`,
+  `openspec/project.md`.
 - **Deploy order matters.** In Argo v3.6.7 a missing ConfigMap or key makes the acquiring node
   Error rather than wait; with `continueOn: {failed: true}` only, the DAG stops and the run ends
   red. Create the ConfigMap before `argo template update`.
