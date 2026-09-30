@@ -31,13 +31,13 @@ the operator's observation, not something this change re-measured.)
 ## What Changes
 
 - Add a namespaced ConfigMap, `sleap-roots-pipeline-semaphores` (new file
-  `sleap-roots-pipeline-semaphores.yaml`), holding two limits: `pipeline-gpu: "5"` and
+  `sleap-roots-pipeline-semaphores.yaml`), holding two limits: `pipeline-gpu: "8"` and
   `pipeline-stage-in: "5"`.
 - The `predictor` template acquires `pipeline-gpu` and the `images-downloader` template acquires
-  `pipeline-stage-in`, each via `synchronization.semaphores[].configMapKeyRef`. At most 5 predictor
-  tasks and 5 downloader tasks hold a slot across the whole namespace (prod, staging and manual runs
-  share the pool, as they share the quota). A task waiting for a slot is a Pending Argo node with no
-  pod. This bounds how many predictor pods exist, not whether RunAI can schedule them.
+  `pipeline-stage-in`, each via `synchronization.semaphores[].configMapKeyRef`. At most 8 predictor
+  tasks (1.44 GPU, inside the 2-GPU quota) and 5 downloader tasks hold a slot across the whole
+  namespace (prod, staging and manual runs share the pool, as they share the quota). A task waiting
+  for a slot is a Pending Argo node with no pod.
 - **BREAKING (operators):** `runai_run_pipeline.sh` now also needs `kubectl` and a `KUBECONFIG` that
   can read and create ConfigMaps in `runai-busch-lab`. Before registering templates it creates the
   ConfigMap if absent, never updates an existing one, and aborts if it cannot read it or it lacks a

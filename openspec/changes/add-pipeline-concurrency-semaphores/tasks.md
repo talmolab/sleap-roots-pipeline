@@ -7,12 +7,12 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 ## 1. ConfigMap
 
 - [ ] 1.1 Add `sleap-roots-pipeline-semaphores.yaml` (ConfigMap `sleap-roots-pipeline-semaphores`,
-  namespace `runai-busch-lab`, label `project: busch-lab`, `pipeline-gpu: "5"`,
+  namespace `runai-busch-lab`, label `project: busch-lab`, `pipeline-gpu: "8"`,
   `pipeline-stage-in: "5"`), whose header is the canonical statement of the gate's semantics, deploy
   order and safe retune.
 - [ ] 1.2 `check_manifests.py`: ConfigMap kind/name/namespace/label; keys exactly the two; values
   quoted `^[1-9][0-9]*$`; `pipeline-gpu` ≤ 10. Validate: `check_all.sh` green; mutation harness
-  (tasks 3.3, 2.3) fails on `"11"`, `"0"`, unquoted `5`, an extra key, a deleted key and a wrong
+  (tasks 3.3, 2.3) fails on `"11"`, `"0"`, unquoted `8`, an extra key, a deleted key and a wrong
   namespace.
 
 ## 2. Launcher
@@ -54,8 +54,8 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 - [ ] 5.1 `README.md`: prerequisites (`kubectl` + `KUBECONFIG`), the folder tree, "This script
   will", and the manual Kubernetes-mode steps (create the ConfigMap first).
-- [ ] 5.2 `docs/cluster-identities.md`: what the gate bounds (pod count, not schedulability), the
-  validated retune one-liner and its lazy-raise timing; points to the ConfigMap file for values.
+- [ ] 5.2 `docs/cluster-identities.md`: what the gate bounds (the pipeline's non-preemptible GPU
+  use), and a pointer to the ConfigMap header for values and the validated retune.
 - [ ] 5.3 `.claude/commands/ci-debug.md` and `.claude/skills/runai/SKILL.md` §8: "Waiting for …
   lock" (expected; retune) and "Error: … not found in ConfigMap" (deploy order / deleted ConfigMap).
 - [ ] 5.4 A4 design §9: annotate what was built (tasks, not batches; two keys; write-back not gated;
@@ -95,7 +95,8 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   `kubectl get pods -l workflows.argoproj.io/workflow=<wf2>`). Phase B, `pipeline-stage-in: "1"`:
   the same for the downloader. Every run ends `Succeeded`, and a task that waited then acquired still
   retries and feeds its exit code to the gate. An inconclusive phase is a failure, not a pass.
-- [ ] 7.6 Restore both keys to `"5"` in the same session; `check_cluster_drift.sh` → exit 0.
+- [ ] 7.6 Restore `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` in the same session;
+  `check_cluster_drift.sh` → exit 0.
 
 ## 8. After merge
 

@@ -16,12 +16,11 @@ batch acquires `pipeline-gpu: K`"), in this repo.
 - **Scope:** two keys in one ConfigMap, `sleap-roots-pipeline-semaphores`: `pipeline-gpu` on
   `predictor` and `pipeline-stage-in` on `images-downloader`. One namespace-wide pool shared by prod,
   staging and manual runs.
-- **Limits:** `pipeline-gpu: 5`, `pipeline-stage-in: 5`. Five predictor slices = 0.9 GPU; the quota
-  holds 10. Retunable live by editing the ConfigMap.
+- **Limits:** `pipeline-gpu: 8`, `pipeline-stage-in: 5` (owner, 2026-09-30: the pipeline outranks
+  the lab's interactive sessions). Eight predictor slices = 1.44 GPU; the quota holds 10. Retunable live by editing the ConfigMap.
 - **Launcher:** creates the ConfigMap only if absent, never overwrites a live retune, and aborts if
   it can't read it or it's incomplete (BREAKING for operators: now needs `kubectl` + `KUBECONFIG`).
-- **Known limits (from Argo v3.6.7 source, reviewed 2026-09-30):** bounds pod count, not RunAI
-  schedulability; a missing/malformed ConfigMap Errors running tasks too; a controller restart can
+- **Known limits (from Argo v3.6.7 source, reviewed 2026-09-30):** a missing/malformed ConfigMap Errors running tasks too; a controller restart can
   transiently over-admit; a live raise reaches waiters only at the next release or ~20 min.
 - **Deploy:** after merge, from `main`.
 - **Checks:** `check_manifests.py` asserts the wiring and `pipeline-gpu ≤ 10`;

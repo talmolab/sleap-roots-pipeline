@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** At most 5 concurrent predictor tasks and 5 concurrent images-downloader tasks namespace-wide, via Argo ConfigMap-backed semaphores (#98).
+**Goal:** At most 8 concurrent predictor tasks and 5 concurrent images-downloader tasks namespace-wide, via Argo ConfigMap-backed semaphores (#98).
 
 **Architecture:** A new ConfigMap `sleap-roots-pipeline-semaphores` holds two limits. The `predictor` and `images-downloader` WorkflowTemplates acquire one key each through `synchronization.semaphores[].configMapKeyRef`. The launcher ensures the ConfigMap exists and is valid before registering templates. `check_manifests.py` asserts the wiring offline, and `check_cluster_drift.sh` compares the live ConfigMap.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- ConfigMap `sleap-roots-pipeline-semaphores`, file `sleap-roots-pipeline-semaphores.yaml`, namespace `runai-busch-lab`, label `project: busch-lab`, data exactly `pipeline-gpu: "5"` and `pipeline-stage-in: "5"` (quoted).
+- ConfigMap `sleap-roots-pipeline-semaphores`, file `sleap-roots-pipeline-semaphores.yaml`, namespace `runai-busch-lab`, label `project: busch-lab`, data exactly `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` (quoted).
 - Plural `synchronization.semaphores:` only; no singular `semaphore:`, no mutex.
 - `pipeline-gpu` ≤ 10, valid only at predictor `gpu-memory: "8192"`.
 - Commit order: ConfigMap → launcher → templates → drift → docs. No commit gates a template before something creates the ConfigMap. Every commit leaves `check_all.sh` and `lint_manifests.sh` green; never commit a red TDD step.
@@ -109,9 +109,10 @@ SEMAPHORE_VALUE_RE = re.compile(r"^[1-9][0-9]*$")
 # The `predictor` template acquires `pipeline-gpu`, and the `images-downloader` template acquires
 # `pipeline-stage-in`. The pool is shared by EVERY Workflow in runai-busch-lab that uses those
 # templates -- Bloom prod, Bloom staging and manual runs -- as they share the 2-GPU deserved quota.
-# pipeline-gpu 5 = 0.9 GPU (8192 MB = 0.18 GPU per predictor); ceiling 10, enforced by
-# scripts/check_manifests.py. It bounds how many predictor pods EXIST, not whether RunAI can
-# schedule them: when others hold the quota, admitted pods can still wait NonPreemptibleOverQuota.
+# pipeline-gpu 8 = 1.44 GPU of non-preemptible work (8192 MB = 0.18 GPU per predictor), inside the
+# quota RunAI enforces on NON-preemptible allocations; ceiling 10, enforced by
+# scripts/check_manifests.py. Preemptible sessions don't count toward that quota, and the predictor
+# (priorityClassName high) outranks them.
 #
 # Argo v3.6.7 behaviour (read from source 2026-09-30):
 #   - One slot = one TASK, held across all its retries AND the backoff between them.
@@ -141,7 +142,7 @@ metadata:
   labels:
     project: busch-lab
 data:
-  pipeline-gpu: "5"
+  pipeline-gpu: "8"
   pipeline-stage-in: "5"
 ```
 
@@ -156,9 +157,9 @@ CM, PRED, DL, L = ("sleap-roots-pipeline-semaphores.yaml", "sleap-roots-predicto
                    "sleap-roots-images-downloader-template.yaml", "runai_run_pipeline.sh")
 # (label, [(file, old, new), ...], substring of the FAIL line that must appear)
 M = [
-    ("M1 gpu over capacity", [(CM, 'pipeline-gpu: "5"', 'pipeline-gpu: "11"')], "fits the quota's slice capacity"),
+    ("M1 gpu over capacity", [(CM, 'pipeline-gpu: "8"', 'pipeline-gpu: "11"')], "fits the quota's slice capacity"),
     ("M2 zero", [(CM, 'pipeline-stage-in: "5"', 'pipeline-stage-in: "0"')], "pipeline-stage-in is a quoted decimal"),
-    ("M3 unquoted", [(CM, 'pipeline-gpu: "5"', "pipeline-gpu: 5")], "pipeline-gpu is a quoted decimal"),
+    ("M3 unquoted", [(CM, 'pipeline-gpu: "8"', "pipeline-gpu: 8")], "pipeline-gpu is a quoted decimal"),
     ("M7 extra key", [(CM, 'pipeline-stage-in: "5"', 'pipeline-stage-in: "5"\n  unused: "1"')], "defines exactly the keys"),
     ("M9 key deleted", [(CM, '\n  pipeline-stage-in: "5"', "")], "defines exactly the keys"),
     ("M10 wrong namespace", [(CM, "  namespace: runai-busch-lab", "  namespace: runai-talmo-lab")], "namespace equals the Workflow's"),
@@ -525,7 +526,7 @@ case "$*" in
   "get configmap"*)
     case "$DMODE" in
       sync) cat "$SRC/sleap-roots-pipeline-semaphores.yaml";;
-      retuned|garbage+retuned) sed 's/pipeline-gpu: "5"/pipeline-gpu: "2"/' "$SRC/sleap-roots-pipeline-semaphores.yaml";;
+      retuned|garbage+retuned) sed 's/pipeline-gpu: "8"/pipeline-gpu: "2"/' "$SRC/sleap-roots-pipeline-semaphores.yaml";;
       missing) :;;
       fail) echo "stub: unreachable" >&2; exit 1;;
     esac; exit 0;;
@@ -572,14 +573,14 @@ The stub path matters. The script prepends `$HOME/bin:/usr/local/bin` to PATH, a
 **The pipeline caps its own share of the quota (#98).** The `predictor` and `images-downloader`
 templates acquire slots from the ConfigMap `sleap-roots-pipeline-semaphores`. The pool is
 namespace-wide, shared by Bloom prod, Bloom staging and manual runs, and a task waiting for a slot
-is a Pending Argo node with no pod. So a large trigger puts at most `pipeline-gpu` predictor pods in
-front of the quota, rather than one per batch. It bounds pod count, not schedulability: admitted
-pods still wait as `NonPreemptibleOverQuota` when others hold the quota, so checking who holds it
-before a large run still applies. To free GPUs for colleagues, lower the limit with the validated
-patch in the header of `sleap-roots-pipeline-semaphores.yaml` — never `kubectl edit`, since a
-non-integer value makes every running gated task Error — and restore it afterwards;
-`scripts/check_cluster_drift.sh` reports the difference until you do. Never delete that ConfigMap
-while any gated Workflow exists.
+is a Pending Argo node with no pod. `pipeline-gpu` keeps the pipeline's non-preemptible GPU use
+inside the quota RunAI enforces on non-preemptible allocations, so a large trigger no longer puts a
+predictor pod per batch into `NonPreemptibleOverQuota`. Preemptible sessions don't count toward
+that quota and the predictor outranks them, so it can preempt them when GPUs are physically short;
+coordinating before a large run still applies. To change the limit, use the validated patch in the
+header of `sleap-roots-pipeline-semaphores.yaml` — never `kubectl edit`, since a non-integer value
+makes every running gated task Error — and `scripts/check_cluster_drift.sh` reports the difference
+until the repo matches. Never delete that ConfigMap while any gated Workflow exists.
 ```
 
 - [ ] **Step 3: ci-debug.md table.** Add two rows after the `NonPreemptibleOverQuota` row:

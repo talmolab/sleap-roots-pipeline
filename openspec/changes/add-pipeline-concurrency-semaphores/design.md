@@ -22,8 +22,8 @@ Failure consequences below are stated for both.
 ## Goals / Non-Goals
 
 - Goals: cap the pipeline's concurrent GPU (predictor) and stage-in (images-downloader) tasks
-  namespace-wide, so a large Bloom trigger puts at most K predictor pods in front of busch-lab's GPU
-  quota (not one per batch) and at most M downloader pods into the namespace; make both caps
+  namespace-wide, so a large Bloom trigger keeps the pipeline's non-preemptible GPU use within
+  busch-lab's quota (at most K predictor pods, not one per batch) and at most M downloader pods into the namespace; make both caps
   live-tunable and drift-checked.
 - Non-Goals: bounding whole runs (a Workflow-level gate, cross-repo); Bloom-side backpressure
   (bloom#964); stopping retries on a deterministic 404 (bloomctl); gating trait-extractor or
@@ -87,16 +87,24 @@ and has the same lookup-failure behaviour; workflow `parallelism` bounds fan-out
 Workflow, not across Workflows; a controller-wide namespace parallelism limit is controller
 configuration this repo cannot set.
 
-### Starting limits: K = 5, M = 5
+### Starting limits: K = 8, M = 5
 
-Chosen by the repo owner (alternatives offered: 4/4, 2/4, 10/10). Five predictors are 0.9 GPU
-(5 × 0.18), one GPU's worth of slices. The downloader limit matches, so stage-in keeps roughly one
-batch ahead of each GPU slot.
+Chosen by the repo owner, 2026-09-30: the pipeline takes priority over the lab's interactive
+sessions. Eight predictors are 1.44 GPU (8 × 0.18) of non-preemptible work, a margin below the
+2-GPU quota in case another non-preemptible job appears; 10 would be the ceiling. The downloader
+limit stays at 5.
 
-**The semaphore bounds pod count, not schedulability.** With colleagues holding 1.5 of the 2 GPUs
-(as on 2026-09-30), only ⌊0.5/0.18⌋ = 2 of the 5 slots can schedule, and the other 3 hold their
-slots while Pending as `NonPreemptibleOverQuota`, with no timeout. What the gate guarantees is that
-at most K such pods exist, not one per batch. Checking who holds the quota before a large run still
+**What K does and does not decide.** RunAI's admission check for non-preemptible work counts only
+*non-preemptible* allocations against the deserved quota — its message reads "busch-lab quota is 2
+GPUs, while 2 GPUs are already allocated for non-preemptible pods" (recorded in
+`.claude/skills/runai/SKILL.md` §7). Preemptible sessions (`interactive-preemptible`, 75) don't
+count toward it, and the predictor (`high`, 125) outranks them. So K predictors at K ≤ 10 are
+within quota whatever preemptible sessions are running, and when physical GPUs are short RunAI
+should preempt those sessions rather than hold the predictors. That preemption has not been
+observed on this cluster; task 7.5 would show it if GPUs are tight. Run 17's 27 waiting predictors
+are consistent with the pipeline's own non-preemptible pods exceeding the quota (61 batches against
+room for about 11), which K prevents. Because a predictor can preempt a preemptible session,
+`docs/cluster-identities.md`'s expectation to coordinate before large non-preemptible runs still
 applies.
 
 `check_manifests.py` enforces `pipeline-gpu ≤ 10`, derived as ⌊1/0.18⌋ × 2 at `gpu-memory: "8192"`,
@@ -166,10 +174,12 @@ change neither gates them nor asserts anything about them.
   or malformed ConfigMap; the ConfigMap is never deleted while any gated Workflow exists.
 - **Controller restart over-admits.** After a restart the pool forgets its holders (fact 6), so
   queued tasks can take slots while the old holders still run: up to 2K concurrent tasks until the
-  old holders finish. This is Argo behaviour this repo cannot fix; it is transient and bounded.
+  old holders finish. This is Argo behaviour this repo cannot fix; it is transient and bounded. At
+  K = 8, predictors beyond RunAI's 10-slice non-preemptible quota then wait as
+  `NonPreemptibleOverQuota` until the old holders finish.
 - **Deploy order.** Templates updated before the ConfigMap exists make every new gated node Error.
   The deploy procedure and the launcher both create the ConfigMap first.
-- **Throughput.** A 61-batch experiment runs at most 5 predictor tasks at a time. That is the point;
+- **Throughput.** A 61-batch experiment runs at most 8 predictor tasks at a time. That is the point;
   raise K when the quota is free.
 
 ## Migration Plan
