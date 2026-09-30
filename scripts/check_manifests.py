@@ -580,6 +580,56 @@ def main() -> int:
         True,
     )
 
+    # --- Scenario: Launcher creates the semaphore ConfigMap only when absent, before templates ---
+    launcher = (ROOT / "runai_run_pipeline.sh").read_text(encoding="utf-8")
+    code = "\n".join(l for l in launcher.splitlines() if not l.lstrip().startswith("#"))
+    check("launcher names the semaphore ConfigMap file", f'SEMAPHORES_FILE="{SEMAPHORES}"' in code, True)
+    check("launcher names the semaphore ConfigMap", f'SEMAPHORES_CM="{SEMAPHORE_CM}"' in code, True)
+    keys_m = re.search(r"^SEMAPHORE_KEYS=\(([^)]*)\)", code, re.M)
+    check(
+        "launcher validates exactly the ConfigMap's keys",
+        sorted(re.findall(r'"([^"]+)"', keys_m.group(1))) if keys_m else None,
+        sorted(sem_data),
+    )
+    create_line = 'kubectl create -f "$SEMAPHORES_FILE" -n "$NAMESPACE"'
+    check(
+        "launcher's only kubectl create is the ConfigMap file",
+        re.findall(r"kubectl\s+create\b[^\n]*", code),
+        [create_line],
+    )
+    get_i = code.find('kubectl get configmap "$SEMAPHORES_CM" -n "$NAMESPACE" --ignore-not-found -o name')
+    loop_i = code.find('for tmpl_file in "${TEMPLATES[@]}"')
+    check(
+        "launcher's ConfigMap get, then create, both precede the template loop",
+        0 <= get_i < code.find(create_line) < loop_i,
+        True,
+    )
+    check(
+        "launcher creates only on the empty-result branch",
+        bool(
+            re.search(
+                r'if \[ -z "\$existing" \]; then\n(?:(?!\n\s*(?:else|fi)\b).)*?' + re.escape(create_line),
+                code,
+                re.S,
+            )
+        ),
+        True,
+    )
+
+    def aborts(head: str) -> bool:
+        # The `if <head>; then` block reaches `exit 1` before its own `else`/`fi`.
+        return bool(re.search(re.escape(head) + r"[^\n]*; then\n(?:(?!\n\s*(?:else|fi)\b).)*?\bexit 1", code, re.S))
+
+    check("launcher aborts when kubectl is absent", aborts("if ! command -v kubectl"), True)
+    check("launcher aborts when the ConfigMap get fails", aborts("if ! existing=$(kubectl get configmap"), True)
+    check("launcher aborts when reading a key fails", aborts("if ! value=$(kubectl get configmap"), True)
+    check("launcher aborts on an invalid existing key", aborts('if ! [[ "$value" =~'), True)
+    check(
+        "launcher never applies, replaces, edits or patches",
+        re.findall(r"kubectl\s+(?:apply|replace|edit|patch)\b", code),
+        [],
+    )
+
     print()
     if _failures:
         print(f"=== {len(_failures)} FAILED, {_passes} passed ===")
