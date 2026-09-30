@@ -6,6 +6,7 @@
 # direct cause of #51, #52, #54 and #55, each of which was a stale pin found only by someone
 # noticing. `salk-bloom` has a byte-for-byte drift check for the vendored Workflow; the
 # WorkflowTemplates have none. This is the missing check, and it is READ-ONLY.
+# Also compares the #98 semaphore ConfigMap's data (the concurrency limits).
 #
 # Run it BEFORE any `argo template update` (it doubles as the rollback pre-image, task 7.1) and
 # AFTER, to confirm what you think you applied is what is live.
@@ -143,7 +144,7 @@ for f in sleap-roots-*-template.yaml; do
   name="$(python3 -c "import yaml,sys;print(yaml.safe_load(open(sys.argv[1],encoding='utf-8'))['metadata']['name'])" "$f")"
   if ! kubectl get workflowtemplate "$name" -n "$NS" -o yaml > "$tmp/live.yaml" 2>/dev/null; then
     echo "NOT REGISTERED  $name  ($f)"
-    drift=1
+    [ "$drift" -eq 0 ] && drift=1
     continue
   fi
   # `set -e` is deliberately NOT in effect for this script, so a normalise() failure would
@@ -165,9 +166,44 @@ for f in sleap-roots-*-template.yaml; do
   else
     echo "DRIFT           $name"
     diff "$tmp/repo.norm" "$tmp/live.norm" | sed 's/^/                  /'
-    drift=1
+    [ "$drift" -eq 0 ] && drift=1
   fi
 done
+
+# #98: the semaphore ConfigMap the gated templates acquire from. Only `data` (the limits) is
+# compared; metadata carries server-stamped fields. A deliberate live retune still reports DRIFT, so
+# nobody forgets to restore it. A missing ConfigMap is drift, and serious: gated nodes Error without
+# it. An unreadable one is CHECK FAILED, never "missing" and never "in sync".
+SEM_FILE="sleap-roots-pipeline-semaphores.yaml"
+sem_name="$(python3 -c "import yaml,sys;print(yaml.safe_load(open(sys.argv[1],encoding='utf-8'))['metadata']['name'])" "$SEM_FILE" 2>/dev/null)"
+if [ -z "$sem_name" ]; then
+  echo "CHECK FAILED    $SEM_FILE  (could not read its name; refusing to report sync)" >&2
+  drift=2
+elif ! kubectl get configmap "$sem_name" -n "$NS" --ignore-not-found -o yaml > "$tmp/sem-live.yaml" 2>/dev/null; then
+  echo "CHECK FAILED    $sem_name  (could not read the live ConfigMap; refusing to report sync)" >&2
+  drift=2
+elif ! [ -s "$tmp/sem-live.yaml" ]; then
+  echo "NOT CREATED     $sem_name  ($SEM_FILE) -- gated nodes Error without it"
+  [ "$drift" -eq 0 ] && drift=1
+else
+  python3 - "$tmp/sem-live.yaml" "$SEM_FILE" > "$tmp/sem.out" 2>&1 <<'PY'
+import sys, yaml
+live, repo = ((yaml.safe_load(open(p, encoding="utf-8")) or {}).get("data") or {} for p in sys.argv[1:3])
+for k in sorted(set(live) | set(repo)):
+    if live.get(k) != repo.get(k):
+        print(f"{k}: repo={repo.get(k)!r} live={live.get(k)!r}")
+sys.exit(0 if live == repo else 3)
+PY
+  case $? in
+    0) echo "IN SYNC         $sem_name" ;;
+    3) echo "DRIFT           $sem_name"
+       sed 's/^/                  /' "$tmp/sem.out"
+       [ "$drift" -eq 0 ] && drift=1 ;;
+    *) echo "CHECK FAILED    $sem_name  (could not compare data; refusing to report sync)" >&2
+       sed 's/^/                  /' "$tmp/sem.out" >&2
+       drift=2 ;;
+  esac
+fi
 
 echo
 echo "Live image pins in $NS:"
