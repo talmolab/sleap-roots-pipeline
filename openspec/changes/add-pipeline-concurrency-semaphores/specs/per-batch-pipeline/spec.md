@@ -79,8 +79,9 @@ first.
 #### Scenario: Launcher creates the semaphore ConfigMap only when absent, before templates
 
 - **WHEN** `runai_run_pipeline.sh` is inspected
-- **THEN** it creates `sleap-roots-pipeline-semaphores.yaml` only on the branch where getting the
-  `sleap-roots-pipeline-semaphores` ConfigMap fails
+- **THEN** it creates `sleap-roots-pipeline-semaphores.yaml` only on the branch where a
+  `kubectl get --ignore-not-found` of the `sleap-roots-pipeline-semaphores` ConfigMap returns nothing
+- **AND** it aborts, before registering any template, when that `kubectl get` itself fails
 - **AND** that step precedes the template-registration loop
 - **AND** the script contains no `kubectl apply`, `replace` or `edit` of that ConfigMap
 

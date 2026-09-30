@@ -18,7 +18,8 @@
 ## 2. Launcher
 
 - [ ] 2.1 In `runai_run_pipeline.sh`, before the template loop, create the ConfigMap only if
-  `kubectl get configmap sleap-roots-pipeline-semaphores -n "$NAMESPACE"` fails; never update it.
+  `kubectl get configmap sleap-roots-pipeline-semaphores -n "$NAMESPACE" --ignore-not-found -o name`
+  prints nothing; abort if that `get` fails; never update it.
   Update the header's manual-steps comment to list the create step first.
   Validate: `bash -n runai_run_pipeline.sh`; task 3.1's launcher assertions.
 

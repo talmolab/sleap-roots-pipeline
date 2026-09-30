@@ -73,8 +73,13 @@ attempts, is not what Argo implements at template level.
 ### Launcher creates the ConfigMap only if absent
 
 `runai_run_pipeline.sh` runs `kubectl create -f sleap-roots-pipeline-semaphores.yaml` only when
-`kubectl get configmap sleap-roots-pipeline-semaphores` fails. It never updates an existing one, so a
-manual run cannot silently undo an operator's live retune (for example, dropping `pipeline-gpu` to 2
+`kubectl get configmap sleap-roots-pipeline-semaphores --ignore-not-found -o name` succeeds and
+prints nothing. If that `get` itself fails (no kubeconfig, no VPN, no permission) the launcher
+aborts before registering any template, rather than updating templates whose gate may not exist.
+The launcher otherwise talks to the Argo Server (`gpu-master:8888`, `ARGO_TOKEN`), which has no
+ConfigMap API, so this step is its only `kubectl` use and needs a working `KUBECONFIG`.
+
+It never updates an existing ConfigMap, so a manual run cannot silently undo an operator's live retune (for example, dropping `pipeline-gpu` to 2
 while colleagues need the GPUs). Repo changes to the limits are applied by the deploy procedure,
 not by the launcher, and `check_cluster_drift.sh` reports any live value that differs from the repo.
 
@@ -90,7 +95,7 @@ exemption is explicit rather than accidental.
 - **Deploy order.** If the templates are updated before the ConfigMap exists, every new predictor
   and downloader node Errors. The DAG stops (the tasks' `continueOn` is `failed` only) and the run
   ends red, which is loud, not silent. Mitigation: the deploy procedure creates the ConfigMap first,
-  and the rollback (below) is one command.
+  and the rollback (below) is two template updates.
 - **Accidental deletion of the ConfigMap** has the same effect. `check_cluster_drift.sh` reports a
   missing ConfigMap as drift.
 - **Throughput.** A 61-batch experiment now runs at most 5 predictor tasks at a time. That is the
