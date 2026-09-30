@@ -394,8 +394,8 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 1 | **predict#34** — `ModelCard`→`Selector` migration; unblocks predict's a7→a9 bump | ✅ **merged** 2026-09-24 (talmolab/sleap-roots-predict#45); deploy gated on 3's 6.2 only (not bloom#895 — see the gate note below) |
 | 2 | **`sleap-roots` traits adopts a9** — a reader, unblocked, independent of 1 | ✅ **merged** 2026-09-24 (talmolab/sleap-roots#269); ✅ **deployed and confirmed** 2026-09-28 ([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), run `cdbnp`); both reader images are now deployed |
 | 2b | **predict adopts the a9 reader** — resolve per-run via `load_run_manifest(allow_legacy=True)`, fail loud with a known run id, forward under the name read (step 1 only *pinned* a9) | ✅ **merged** 2026-09-25 ([predict#47](https://github.com/talmolab/sleap-roots-predict/pull/47)); ✅ **deployed and confirmed** 2026-09-25 ([#91](https://github.com/talmolab/sleap-roots-pipeline/pull/91), runs `rmdg7` + `lg2hg`); not bloom#895-gated (envelopes unchanged) |
-| 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
-| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
+| 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24; 6.3 done 2026-09-29 (see 4); group 6 archived 2026-09-30 |
+| 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); ✅ **training 6.3 done** 2026-09-29: `production` unlinked from the 13 flat collections, none deleted; full `--verify` shows 0 orphans, 0 legacy ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68), merged 2026-09-30) — see the Status log for the rollback |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), which stays open until 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; ✅ **deployed** 2026-09-29 by row 6 |
 | 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
@@ -771,6 +771,36 @@ Adversarial 4-lens review. Resolutions:
     (filed: show queued / waiting-for-GPU instead of "running"). Drafts awaiting the owner: a
     bloomctl issue so a deterministic stage-in 404 isn't retried like a transient failure; a
     pending-pod timeout for the gated templates; removing the unmaintained `local-WSL2-*` manifests.
+- **2026-09-30** — **Row 4 done: training 6.3 retired the 13 flat collections (2026-09-29).
+  Rollback is no longer an image re-pin.**
+  - **Gate.** C2 was met: the selector-reading predictor was deployed on 2026-09-25. Pre-flight
+    confirmed that nothing else still reads the flat cards:
+    - the local-WSL2 predictor never reads W&B;
+    - Bloom reaches the predictor only through `templateRef`.
+  - **Run.** It ran at 15:02 UTC with `docs/migration/2026-09-29-retire-flat-collections.py
+    --execute` ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68),
+    merged 2026-09-30 as `e6bf35b`).
+    - For each of the 13 collections: fetch the registry link, assert `is_link`, then `unlink()`.
+    - It never called `save()` and deleted nothing. The collections still exist, now empty.
+  - **Acceptance** (15:03 UTC):
+    - a full `seed-registry --verify` shows 8 present, **0 orphans, 0 legacy**;
+    - predict `main` `list_cards()` shows 8 cards and **0 skipped** flat cards.
+  - **Rollback.** Restore `production` on the flat collections **first**, then re-pin the image.
+    - The old image (`sha-e025e309…`) now exits `3` silently against selector-only cards, and
+      the exit gate passes it.
+    - Restore by re-linking the recorded source `v0`:
+      `uv run python docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute`.
+    - Its caveats are in the archived `update-model-card-selectors` 6.3. **Never** run it without
+      `--rollback`. A tested `registry restore` will supersede it
+      ([sleap-roots-training#69](https://github.com/talmolab/sleap-roots-training/pull/69)).
+  - **Do not delete** the W&B projects `migrate-model-card-selectors` or
+    `sleap-roots-training-talmolab`.
+    - The first holds the sources of all 8 production links.
+    - The second holds the 13 rollback sources.
+    - Their names come from the directories the seeds ran in.
+      [sleap-roots-training#70](https://github.com/talmolab/sleap-roots-training/pull/70), still
+      open, pins future seeds to `sleap-roots-training` and adds this warning to the README.
+  - **Still open:** predict#34 C3, the parity re-run against the re-seeded registry.
 - **2026-09-30** — **Row 6 done: the a9 bloomctl is live and the Bloom-dispatched E2E passed.
   Every #71 consumer is now on a9; row 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) remains.**
   - **Pins.** [#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), merged as
