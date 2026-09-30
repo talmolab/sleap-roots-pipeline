@@ -19,7 +19,9 @@ quoted decimal integer string of at least 1.
 
 `pipeline-gpu` SHALL NOT exceed 10, the number of whole predictor GPU slices busch-lab's two
 deserved-quota GPUs hold at the predictor's `gpu-memory: "8192"` (5 per GPU; conservative, since
-RunAI's fractional quota accounting would admit about 11), and the predictor's `gpu-memory`
+RunAI's fractional quota accounting would admit about 11; an upper bound only while no other
+non-preemptible GPU work runs in the project and predictors land on the GPUs 0.18 was measured on),
+and the predictor's `gpu-memory`
 annotation SHALL be `"8192"` for as long as that bound stands.
 
 #### Scenario: Both stages acquire their own semaphore key

@@ -60,8 +60,11 @@ Failure consequences below are stated for both.
      `markNodeError` for an existing node).
   6. **Holders are not restored after a controller restart.** `Initialize` resolves each holder's
      lock level from `wf.Spec.Templates`, which never contains a `templateRef` target, so it fails
-     ("unable to determine level") and skips the holder. After a restart the pool is empty while
-     the old holders keep running.
+     ("unable to determine level") and skips the holder. After a restart the pool starts empty. By
+     fact 5 the old holders call `TryAcquire` again on their next reconcile and, queued by Workflow
+     creation time, usually win their slots back, so over-admission is a short race (2K at worst).
+     A holder that loses the race returns via `markNodeWaitingForLock` before `processNodeRetries`:
+     its pod keeps running, but the node cannot retry or complete until it re-acquires.
   7. **Deleting a Workflow releases its slots** within about a minute (`CheckWorkflowExistence`),
      which is how Bloom run 17 was cancelled; a completed Workflow releases via `ReleaseAll`.
   8. The ConfigMap is looked up in the **Workflow's** namespace. Bloom forces that to
@@ -98,14 +101,22 @@ limit stays at 5.
 *non-preemptible* allocations against the deserved quota — its message reads "busch-lab quota is 2
 GPUs, while 2 GPUs are already allocated for non-preemptible pods" (recorded in
 `.claude/skills/runai/SKILL.md` §7). Preemptible sessions (`interactive-preemptible`, 75) don't
-count toward it, and the predictor (`high`, 125) outranks them. So K predictors at K ≤ 10 are
-within quota whatever preemptible sessions are running, and when physical GPUs are short RunAI
+count toward it, and the predictor (`high`, 125) outranks them. So K predictors are within quota
+whatever preemptible sessions are running, provided other non-preemptible busch-lab GPU work holds
+≤ 2 − 0.18·K GPU (0.56 at K = 8, 0.2 at K = 10), and when physical GPUs are short RunAI
 should preempt those sessions rather than hold the predictors. That preemption has not been
 observed on this cluster; task 7.5 would show it if GPUs are tight. Run 17's 27 waiting predictors
 are consistent with the pipeline's own non-preemptible pods exceeding the quota (61 batches against
 room for about 11), which K prevents. Because a predictor can preempt a preemptible session,
 `docs/cluster-identities.md`'s expectation to coordinate before large non-preemptible runs still
 applies.
+
+Two limits on this reasoning. It is GPU-only: the namespace also runs other non-preemptible
+(`high`) workloads (cellranger and arabidopsis pipelines, 16 CPU / 64Gi per `count` pod, no GPU),
+and whether busch-lab has a CPU or memory deserved quota that eight predictors (about 16 CPU / 96Gi
+of non-preemptible requests) could exhaust has not been assessed. And 0.18 was measured on
+gpu-node7 and gpu-node12 only: RunAI converts `gpu-memory` to a fraction of the landing node's GPU,
+so on a smaller-memory GPU a predictor counts for more.
 
 `check_manifests.py` enforces `pipeline-gpu ≤ 10`, derived as ⌊1/0.18⌋ × 2 at `gpu-memory: "8192"`,
 and pins that `gpu-memory`, so changing it forces the bound to be re-derived. It is an upper bound
@@ -130,7 +141,11 @@ matches or the value is restored.
 A predictor task that is failing deterministically holds its slot through `limit: 3` retries with
 2m/4m/8m backoff — at least 14 minutes, plus each attempt's run and RunAI-Pending time — while
 running no pod for most of it. That wastes throughput but never over-commits the quota. Argo offers
-no template-level gate that releases between attempts.
+no template-level gate that releases between attempts. Since the bloomctl writer flip (2026-09-29)
+this is also the path a predictor takes when its run's images-downloader wrote no
+`run_manifest.<name>.json`: predict exits 1 deterministically on every attempt, so a trigger-wide
+stage-in failure (like staging run 17's) can hold every GPU slot for that long with no GPU work
+done (about 61 × 14 m / 8 ≈ 1.8 h for a 61-batch run).
 
 ### Launcher creates the ConfigMap only if absent
 
@@ -172,11 +187,18 @@ change neither gates them nor asserts anything about them.
   and the run ends red; in Bloom's 4-task DAG the failed task fails the Workflow. Either way the
   batch must be resubmitted. Mitigations: validated retunes only; the drift check reports a missing
   or malformed ConfigMap; the ConfigMap is never deleted while any gated Workflow exists.
-- **Controller restart over-admits.** After a restart the pool forgets its holders (fact 6), so
-  queued tasks can take slots while the old holders still run: up to 2K concurrent tasks until the
-  old holders finish. This is Argo behaviour this repo cannot fix; it is transient and bounded. At
-  K = 8, predictors beyond RunAI's 10-slice non-preemptible quota then wait as
-  `NonPreemptibleOverQuota` until the old holders finish.
+- **Controller restart over-admits briefly.** After a restart the pool forgets its holders (fact
+  6); they usually win their slots back on their next reconcile, so over-admission (2K at worst)
+  is a short race, and a holder that loses it cannot retry or finish until it re-acquires. This is
+  Argo behaviour this repo cannot fix. Predictors admitted beyond RunAI's non-preemptible quota
+  wait as `NonPreemptibleOverQuota`.
+- **Stuck Pending pods stall the whole namespace.** The slot is taken before the pod exists, and
+  a pod that never schedules (hostPath mount failure, ImagePullBackOff, `NonPreemptibleOverQuota`)
+  stays Pending with no retry, no `continueOn` and no timeout, holding its slot. Before this change
+  such a hang stalled only its own run; now `pipeline-stage-in` such downloaders, or `pipeline-gpu`
+  such predictors, stall every gated run in the namespace, Bloom prod included. Recovery: delete or
+  `argo stop` the stuck Workflows (slots free within about a minute, fact 7). A pod-Pending timeout
+  is a follow-up (task 8.6).
 - **Deploy order.** Templates updated before the ConfigMap exists make every new gated node Error.
   The deploy procedure and the launcher both create the ConfigMap first.
 - **Throughput.** A 61-batch experiment runs at most 8 predictor tasks at a time. That is the point;

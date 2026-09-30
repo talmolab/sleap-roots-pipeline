@@ -8,7 +8,9 @@
 # templates -- Bloom prod, Bloom staging and manual runs -- as they share the 2-GPU deserved quota.
 # pipeline-gpu 8 = 1.44 GPU of non-preemptible work (8192 MB = 0.18 GPU per predictor), inside the
 # quota RunAI enforces on NON-preemptible allocations -- provided other non-preemptible busch-lab
-# work holds <= 0.56 GPU, and except transiently after a controller restart (below). Ceiling 10
+# GPU work holds <= 0.56 GPU, and except transiently after a controller restart (below). 0.18 was
+# measured on gpu-node7 and gpu-node12; RunAI converts gpu-memory to a fraction of the landing
+# node's GPU, so a smaller-memory GPU counts for more. Ceiling 10
 # whole slices, enforced by scripts/check_manifests.py. Preemptible sessions don't count toward
 # that quota, and the predictor (priorityClassName high) outranks them.
 #
@@ -20,8 +22,14 @@
 #     -- including RUNNING ones. So: create this BEFORE `argo template update`-ing either gated
 #     template, and never delete it while any gated Workflow exists (running Workflows keep their
 #     stored gated template).
-#   - After a workflow-controller restart the pool forgets its holders and can over-admit, up to
-#     2x the limit, until the old holders finish.
+#   - After a workflow-controller restart the pool forgets its holders. They re-claim on their next
+#     reconcile and usually win (older Workflows queue first), so over-admission is a brief race,
+#     2x the limit at worst. A holder that loses the race keeps its pod running but cannot retry or
+#     finish until it gets a slot back.
+#   - A slot is taken BEFORE the pod exists, and a pod that never schedules (hostPath mount
+#     failure, ImagePullBackOff, NonPreemptibleOverQuota) stays Pending with no timeout, holding its
+#     slot. Enough of them stall EVERY gated run in the namespace, Bloom prod included. Recover by
+#     deleting (or `argo stop`-ping) the stuck Workflows; their slots free within about a minute.
 #
 # RETUNE LIVE with a validated patch, never `kubectl edit` (a typo Errors running tasks):
 #   n=2; [[ $n =~ ^[1-9][0-9]*$ ]] && kubectl patch configmap sleap-roots-pipeline-semaphores \

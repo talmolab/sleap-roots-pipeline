@@ -115,8 +115,8 @@ spec:
         # OpenSpec change). Predict now resolves its scope through contracts'
         # load_run_manifest(allow_legacy=True): run_manifest.<ARGO_WORKFLOW_NAME>.json first, then
         # the legacy run_manifest.json, and forwards the manifest under the name it read. The
-        # fleet's writer still publishes only the legacy file, so scoping and forwarding are
-        # unchanged, and exit codes are unchanged except as below. New warnings, notably one when
+        # fleet's writer still published only the legacy file at this bump (it no longer does -- see
+        # the 2026-09-30 correction below), so scoping and forwarding were unchanged, and exit codes are unchanged except as below. New warnings, notably one when
         # the legacy file names another run: either this run's images-downloader failed before
         # merging (continueOn carries the DAG on, and the file names the PREVIOUS run -- the #56
         # case) or another workflow merged into the shared directory afterwards.
@@ -127,7 +127,12 @@ spec:
         # catalog-load exit 1 above, it fires BEFORE the forward-copy: continueOn still runs
         # traits/write-back, scoped by whatever predictions/run_manifest.json an earlier run left,
         # and the exit gate then fails the run (the old image had the same downstream exposure).
-        # Unreachable while the legacy file accumulates in the input tree.
+        # Corrected 2026-09-30 (#98): this exit is now REACHABLE. Since the bloomctl writer flip
+        # (sha-1bc3056, 2026-09-29) the downloader writes only run_manifest.<ARGO_WORKFLOW_NAME>.json,
+        # and the legacy files were deleted the same day, so a run whose images-downloader wrote no
+        # manifest reaches this exit 1 and spends all 4 attempts here -- while holding a
+        # `pipeline-gpu` slot for >= ~14m (see the synchronization comment above). A trigger-wide
+        # stage-in failure can therefore occupy the GPU pool with no GPU work done.
         # Write-path change (predict#43): temp files are now per-writer (.<dst>.<uuid16>.tmp, was
         # <dst>.tmp). One orphaned by a SIGKILL is no longer overwritten by the next run, so such
         # orphans accumulate in the output trees; no consumer glob matches them.

@@ -119,5 +119,9 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
     `runai-busch-lab` (from 7.0 or 7.5) in `docs/cluster-identities.md`.
   - 8.5 Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
     (see #21), with the `project.md` and README references to them.
-- [ ] 8.6 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
+- [ ] 8.6 Draft (do not file) a follow-up: a pending-pod timeout for the gated templates, so a pod
+  that never schedules (hostPath mount failure, ImagePullBackOff, `NonPreemptibleOverQuota`) stops
+  holding a slot; first check whether Argo applies `activeDeadlineSeconds` to an unscheduled pod.
+  Acceptance: draft shown to the owner.
+- [ ] 8.7 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
   repointing links to `openspec/changes/add-pipeline-concurrency-semaphores/` at the archive path.

@@ -229,7 +229,8 @@ is a Pending Argo node with no pod. `pipeline-gpu` keeps the pipeline's non-pree
 inside the quota RunAI enforces on non-preemptible allocations, so a large trigger no longer puts a
 predictor pod per batch into `NonPreemptibleOverQuota` — provided other non-preemptible work in the
 project stays small, and except briefly after a workflow-controller restart (see the ConfigMap
-header). Preemptible sessions don't count toward
+header). The namespace also runs other non-preemptible (`high`) workloads, the cellranger and
+arabidopsis pipelines, which count toward that quota too. Preemptible sessions don't count toward
 that quota and the predictor outranks them, so it can preempt them when GPUs are physically short;
 coordinating before a large run still applies. To change the limit, use the validated patch in the
 header of `sleap-roots-pipeline-semaphores.yaml` — never `kubectl edit`, since a non-integer value
