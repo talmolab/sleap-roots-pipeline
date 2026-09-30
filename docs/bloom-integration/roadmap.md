@@ -396,15 +396,16 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 2b | **predict adopts the a9 reader** — resolve per-run via `load_run_manifest(allow_legacy=True)`, fail loud with a known run id, forward under the name read (step 1 only *pinned* a9) | ✅ **merged** 2026-09-25 ([predict#47](https://github.com/talmolab/sleap-roots-predict/pull/47)); ✅ **deployed and confirmed** 2026-09-25 ([#91](https://github.com/talmolab/sleap-roots-pipeline/pull/91), runs `rmdg7` + `lg2hg`); not bloom#895-gated (envelopes unchanged) |
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24, except 6.3 (see 4) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); **training 6.3 is unblocked but not run** (irreversible for rollback, needs explicit confirmation) |
-| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), which stays open until 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; **not deployed** — the templates still pin `sha-28034f6` until 6 |
-| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861 |
+| 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), which stays open until 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; ✅ **deployed** 2026-09-29 by row 6 |
+| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | after 6 |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
 written here. A writer publishing `run_manifest.<id>.json` stops maintaining
 `run_manifest.json`; an un-adopted reader in the `a4_poc` trees then keeps scoping to the
 now-frozen stale manifest (**verified 2026-09-22: 12 keys, run `hpdpf`, in all three
-directories**), so writer-first is not *worse* than the defect — it simply fixes nothing, drops
+directories**; *corrected 2026-09-30:* not frozen — the pre-a9 writer kept rewriting it, so by the
+2026-09-29 deletion it held 15 keys from run `rr4zj`), so writer-first is not *worse* than the defect — it simply fixes nothing, drops
 the per-run manifest at the first un-adopted hop so it never reaches write-back, and, because
 `ingest.py` and `download_for_predict.py` ship in one image, flips write-back's reader at the
 same moment so it succeeds only by falling back. The result is a rollout that produces no
@@ -421,7 +422,9 @@ traits' template was bumped to `sha-e373b0f` and applied via `argo template upda
 ([#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), run `cdbnp`) — see the Status log
 for the acceptance evidence. Only `bloomctl` (reader+writer, row 5) is still on the pre-a9 image.
 **Updated 2026-09-29:** row 5 is merged ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940)) and its image is built, but
-the templates still pin the pre-a9 `sha-28034f6` until row 6.)
+the templates still pin the pre-a9 `sha-28034f6` until row 6. **Updated 2026-09-30:** row 6 is
+done — all three bloomctl templates run `sha-1bc3056` on the cluster and the live E2E passed; every
+#71 consumer is now on a9.)
 
 **The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
 2026-09-24, and narrower than this roadmap previously implied.** The earlier sequencing argument
@@ -492,9 +495,13 @@ scripts.
 
 ⚠️ **Deleting the stale legacy manifests is MANDATORY at step 6, and it is what makes #71's
 guarantee real — not step 7** (corrected 2026-09-24, verified against the released a9 resolver).
+✅ **Done 2026-09-29**, after the a9 templates were live: the three files were `rr4zj`'s (15 keys,
+identical SHA-256), snapshotted to
+`/hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/_stale-manifests-2026-09-29/` with
+hashes verified, then deleted. Restore them from there on any rollback to `sha-28034f6`.
 While `allow_legacy=True`, a reader that cannot find its own `run_manifest.<id>.json` falls back to
-`run_manifest.json`. With the stale file present, that fallback silently scopes to `hpdpf`'s 12
-keys. With it **deleted**, the fallback finds nothing and the reader raises
+`run_manifest.json`. With the stale file present, that fallback silently scopes to whatever run
+last rewrote it (`hpdpf`'s 12 keys on 2026-09-22, `rr4zj`'s 15 by the deletion). With it **deleted**, the fallback finds nothing and the reader raises
 `RunManifestMissingError`, **exactly as `allow_legacy=False` would**. In the normal case (per-run
 manifest present) the two settings behave identically. So:
 
@@ -708,6 +715,52 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-09-30** — **Row 6 done: the a9 bloomctl is live and the Bloom-dispatched E2E passed.
+  Every #71 consumer is now on a9; row 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) remains.**
+  - **Pins.** [#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), merged as
+    `8526562` (2026-09-29). All three bloomctl templates pin
+    `bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802` —
+    the first bloomctl pin to carry a digest, which also closes the first risk in #72.
+    `check_manifests.py` now asserts the digest pin and a producer/bloomctl digest-collision guard.
+  - **Registered 2026-09-29**, drained first, in the order write-back → images-downloader →
+    exit-gate from a byte-exact export of `8526562`; each step's live `image:` was read back
+    before the next. `check_cluster_drift.sh` against `origin/main`: all 5 templates **IN SYNC**.
+  - **Stale manifests.** The three `run_manifest.json` were run `rr4zj`'s (15 keys), not `hpdpf`'s
+    12 as expected — the pre-a9 writer had kept rewriting them. Snapshotted (hashes verified), then
+    deleted; see step 6's MANDATORY note for the snapshot path.
+  - **E2E**, dispatched through Bloom (`scripts/dispatch_bloom_run.sh`) against
+    A4-PIPELINE-E2E-TEST on four **fresh** scans created with `cyl create-test-scan`
+    (12894761–64, TEST-E2E-015…018; frames copied from TEST-E2E-001):
+
+    | Bloom run | workflow | scans | outcome | done / failed | sources |
+    |---|---|---|---|---|---|
+    | 12 | `7skvz` | 12894761 | Succeeded, `Ingested 1/1` | 1 / 0 | 250 |
+    | 13 | `pjs8t` | 12894762–64 | Succeeded, `Ingested 3/3` | 3 / 0 | 251–253 |
+    | 14 | `zs4hj` | 12894760 (poison) | Failed; run status `failed` | 0 / 1 | — |
+
+    Every manifest was `run_manifest.<workflow>.json` with exactly the requested keys, and no
+    `run_manifest.json` reappeared in any of the three trees. Both bloomctl pods ran the pinned
+    digest. Runs 12–13 printed no `WARNING`/`FAILED` line, and every scan got a new source (all
+    first deliveries, so #880's fallback was not involved). Run 14 exercised the new reader's
+    no-manifest path: the downloader staged nothing and wrote no manifest; write-back ingested
+    nothing, reconciled the scan to `failed`, printed `<run-manifest>`, and exited 1.
+  - **Why fresh scans.** The first N=1 attempt (Bloom run 11, `mlq9k`, scan 12894756) left the
+    scan `failed` with `done_count 0` although writer and reader both behaved correctly. Its source
+    (228) was created by the hand-submitted `cdbnp`, so no `cyl_pipeline_run_scans` row carries it
+    and #880's fallback has nothing to resolve the scan from — bloom#900, live reproduction and a
+    fix direction posted there 2026-09-30. Every pre-existing A4-PIPELINE-E2E-TEST scan (and
+    289/577/1009) is in `cdbnp`'s 15 keys, so none of them can pass a Bloom-dispatched E2E until
+    bloom#900 is fixed.
+  - **Seen on the all-fail run, not fixed here:**
+    - the scan's recorded error blames a missing run manifest and says to re-dispatch, although
+      the cause was a download failure that no re-dispatch can fix;
+    - the downloader exits **3** (partial success) with nothing staged, so every stage retried a
+      deterministic failure and the batch took 21 minutes;
+    - `submitted_at` stays `null` on every run, and run 11 ended `complete` with all scans
+      failed — both for bloom's `fix-cyl-pipeline-run-scan-status` 8.2–8.4.
+  - **Correction:** the images-downloader pin comment added in #99 said the legacy files were
+    "12-key … (run hpdpf)"; corrected to `rr4zj`'s 15 keys in this change, as are the two
+    current-state `hpdpf` claims above.
 - **2026-09-29** — **Row 5 merged: bloomctl adopts a9 as reader and writer
   ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`). Not deployed; row 6 is next.**
   - **Writer** (`cyl batch-download-for-predict`): names the manifest
@@ -722,7 +775,8 @@ Adversarial 4-lens review. Resolutions:
   - **Stricter than the other readers at write-back, on purpose.** predict and traits still fall
     back to a stale legacy file with a warning, but write-back now treats a legacy file naming
     another run as no manifest: its own writer never writes that name when a run id is set, and
-    scoping to it would ingest `hpdpf`'s envelopes and mark every real scan failed with exit 0.
+    scoping to it would ingest the stale run's envelopes (by the deletion, `rr4zj`'s — not
+    `hpdpf`'s as first written here) and mark every real scan failed with exit 0.
   - **Image:** `ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802` — OCI revision label is the
     merge SHA; the build log installs `sleap-roots-contracts==0.1.0a9`.
   - **Correction:** the "unbounded pin adopts a9 automatically" claim above was wrong (`uv.lock` +
