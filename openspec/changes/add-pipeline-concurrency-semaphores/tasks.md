@@ -63,3 +63,9 @@
 - [ ] 6.2 Draft (do not file) a bloomctl follow-up issue: a deterministic 404 on stage-in should not
   be indistinguishable from a transient failure, so the downloader's retries stop spending attempts
   on it.
+- [ ] 6.3 Draft (do not file) a Bloom follow-up issue: a Workflow waiting on a semaphore is
+  `Running` in Argo (its step is `Pending`), so Bloom's run panel shows a queued batch as a slow
+  one; surface the lock wait.
+- [ ] 6.4 Draft (do not file) a follow-up to confirm the workflow-controller's service account can
+  read ConfigMaps in `runai-busch-lab` (cluster-scoped RBAC is Forbidden to `argo-user`, so only
+  task 5.4's live lock test evidences it), and record the result in `docs/cluster-identities.md`.
