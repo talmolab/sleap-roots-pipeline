@@ -15,11 +15,16 @@ Bloom's vendored Workflow references both stages by `templateRef`
 `images-downloader`), so a gate on the WorkflowTemplates applies to every Bloom-dispatched run as
 soon as the templates are updated in the cluster, with no Bloom change.
 
+Bloom's vendored Workflow (salk-bloom `origin/main`, 2026-09-30) is still the **4-task** DAG — no
+`continueOn`, no `exit-gate` — while this repo's `sleap-roots-pipeline.yaml` is the 5-task DAG.
+Failure consequences below are stated for both.
+
 ## Goals / Non-Goals
 
 - Goals: cap the pipeline's concurrent GPU (predictor) and stage-in (images-downloader) tasks
-  namespace-wide, so a large Bloom trigger cannot queue past busch-lab's GPU quota or flood the
-  namespace with retrying pods; make the caps live-tunable and drift-checked.
+  namespace-wide, so a large Bloom trigger puts at most K predictor pods in front of busch-lab's GPU
+  quota (not one per batch) and at most M downloader pods into the namespace; make both caps
+  live-tunable and drift-checked.
 - Non-Goals: bounding whole runs (a Workflow-level gate, cross-repo); Bloom-side backpressure
   (bloom#964); stopping retries on a deterministic 404 (bloomctl); gating trait-extractor or
   write-back; the unmaintained `local-WSL2-*` manifests.
@@ -27,26 +32,40 @@ soon as the templates are updated in the cluster, with no Bloom change.
 ## Verified facts this design rests on (2026-09-30)
 
 - **Controller version is v3.6.7.** Every pod in `runai-busch-lab` carries
-  `quay.io/argoproj/argoexec:v3.6.7`. The local CLI is v3.6.5, which is not what matters. The plural
-  `synchronization.semaphores:` list is therefore supported.
+  `quay.io/argoproj/argoexec:v3.6.7`. (The local CLI is v3.6.5, which is not what matters.) The
+  plural `synchronization.semaphores:` list is supported; the singular form is deprecated.
 - **`argo-user` may get, list, create, update and patch ConfigMaps** in `runai-busch-lab`
   (`kubectl auth can-i`).
-- **Slice size.** A live predictor pod's RunAI GPU ConfigMap records
+- **Slice size.** A live predictor pod's RunAI GPU ConfigMap recorded
   `gpu-memory-request=8192000000` and `RUNAI_NUM_OF_GPUS: 0.18`: ⌊1/0.18⌋ = 5 slices per GPU, 10
   across the 2-GPU deserved quota.
-- **Lock semantics, read from v3.6.7 source** (`workflow/controller/operator.go` `executeTemplate`,
-  `workflow/sync/sync_manager.go`, `workflow/controller/controller.go`):
-  - The lock is acquired under the node ID of the template's node, which for a template with a
-    `retryStrategy` is the **retry parent**. It is released when that retry node is fulfilled. So
-    one slot covers one task across all its attempts **and the backoff between them**, with at most
-    one pod live at a time.
-  - A node that cannot acquire is created `Pending` with the message
-    `Waiting for <ns>/ConfigMap/<name>/<key> lock. Lock status: <free>/<limit>`; no pod is created.
-  - Waiters are queued by Workflow `spec.priority`, then creation time, i.e. FIFO here.
-  - The limit is re-read from the ConfigMap on every acquire attempt and the semaphore resized, so K
-    can be changed live without restarting anything.
-  - A missing ConfigMap, or a missing key, is an error, not a wait: `getSyncLimit` returns it and
-    the node is marked Error.
+- **Lock semantics, read from v3.6.7 source** (`workflow/controller/operator.go` `executeTemplate`;
+  `workflow/sync/{sync_manager,semaphore,lock_name}.go`; `workflow/controller/controller.go`;
+  `pkg/apis/workflow/v1alpha1/workflow_types.go`). These are source readings; task 5.5's lock test
+  exercises 1 and 2, and the optional task 5.0 the rest.
+  1. **One slot per task, held across retries and backoff.** The lock is taken under the task's
+     node ID before the retry node is created, and released only when that node is fulfilled.
+  2. **A waiting task has no pod.** Its node is Pending with
+     `Waiting for <ns>/ConfigMap/<name>/<key> lock. Lock status: <free>/<limit>`.
+  3. **FIFO.** Waiters are ordered by Workflow `spec.priority`, then creation time.
+  4. **Resizing is lazy.** The limit is re-read from the API server on every acquire attempt, but a
+     live *raise* wakes no waiter: `resize()` notifies nobody, and the ConfigMap watcher's
+     `GetSemaphoreKeys` reads only `spec.templates` / `StoredWorkflowSpec`, which never contain a
+     `templateRef` target. Waiters see a raise at the next slot release, or at the 20-minute
+     workflow resync.
+  5. **A failed limit lookup is an Error, including for running tasks.** `getSyncLimit` returns an
+     error for a missing ConfigMap, a missing key, a non-integer value (`strconv.Atoi`) or a failed
+     API read, and `TryAcquire` runs on *every* reconcile of an unfulfilled gated node. The error
+     marks that node Error whether it is waiting or already running (`initializeNodeOrMarkError` →
+     `markNodeError` for an existing node).
+  6. **Holders are not restored after a controller restart.** `Initialize` resolves each holder's
+     lock level from `wf.Spec.Templates`, which never contains a `templateRef` target, so it fails
+     ("unable to determine level") and skips the holder. After a restart the pool is empty while
+     the old holders keep running.
+  7. **Deleting a Workflow releases its slots** within about a minute (`CheckWorkflowExistence`),
+     which is how Bloom run 17 was cancelled; a completed Workflow releases via `ReleaseAll`.
+  8. The ConfigMap is looked up in the **Workflow's** namespace. Bloom forces that to
+     `WORKFLOWS_K8S_NAMESPACE` (default `runai-busch-lab`).
 
 ## Decisions
 
@@ -63,72 +82,116 @@ No deadlock is possible: each task holds only its own stage's lock, and releases
 downstream task can start.
 
 Alternatives considered: predictor-only (one key, as A4 §9 wrote it) leaves the stage-in pod flood
-unbounded; a Workflow-level semaphore bounds whole runs but must live in Bloom's vendored Workflow;
-workflow `parallelism` bounds fan-out within one Workflow, not across Workflows; a controller-wide
-namespace parallelism limit is controller configuration this repo cannot set.
+unbounded; a Workflow-level semaphore bounds whole runs but must live in Bloom's vendored Workflow,
+and has the same lookup-failure behaviour; workflow `parallelism` bounds fan-out within one
+Workflow, not across Workflows; a controller-wide namespace parallelism limit is controller
+configuration this repo cannot set.
 
 ### Starting limits: K = 5, M = 5
 
-Chosen by the repo owner (alternatives offered: 4/4, 2/4, 10/10). Five predictors are 0.9 GPU (5 × 0.18), one GPU's worth of slices, leaving
-the other GPU for the lab's interactive sessions. The downloader limit matches, so stage-in keeps
-roughly one batch ahead of each GPU slot without flooding the namespace with pods.
+Chosen by the repo owner (alternatives offered: 4/4, 2/4, 10/10). Five predictors are 0.9 GPU
+(5 × 0.18), one GPU's worth of slices. The downloader limit matches, so stage-in keeps roughly one
+batch ahead of each GPU slot.
 
-`check_manifests.py` enforces `pipeline-gpu ≤ 10`, derived as ⌊1/0.18⌋ × 2 at `gpu-memory: "8192"`.
-It is an upper bound on what the quota can hold, not a recommendation. If the predictor's
-`gpu-memory` or the project's quota changes, this bound must be re-derived.
+**The semaphore bounds pod count, not schedulability.** With colleagues holding 1.5 of the 2 GPUs
+(as on 2026-09-30), only ⌊0.5/0.18⌋ = 2 of the 5 slots can schedule, and the other 3 hold their
+slots while Pending as `NonPreemptibleOverQuota`, with no timeout. What the gate guarantees is that
+at most K such pods exist, not one per batch. Checking who holds the quota before a large run still
+applies.
+
+`check_manifests.py` enforces `pipeline-gpu ≤ 10`, derived as ⌊1/0.18⌋ × 2 at `gpu-memory: "8192"`,
+and pins that `gpu-memory`, so changing it forces the bound to be re-derived. It is an upper bound
+on what the quota can hold, not a recommendation.
+
+### Retuning live
+
+Lower or raise a limit with a validated patch, never `kubectl edit` (a typo is a non-integer, which
+Errors every running gated task — fact 5):
+
+```bash
+n=3; [[ $n =~ ^[1-9][0-9]*$ ]] && kubectl patch configmap sleap-roots-pipeline-semaphores \
+  -n runai-busch-lab --type merge -p "{\"data\":{\"pipeline-gpu\":\"$n\"}}"
+```
+
+A lowered limit applies at the next acquire. A raised one reaches existing waiters at the next
+release or within 20 minutes (fact 4). `check_cluster_drift.sh` reports the live value until the repo
+matches or the value is restored.
 
 ### Held slot during retry backoff (accepted)
 
 A predictor task that is failing deterministically holds its slot through `limit: 3` retries with
-2m/4m/8m backoff, about 14 minutes, while running no pod for most of it. That wastes throughput but
-never over-commits the quota, so it is acceptable. The alternative, a gate that releases between
-attempts, is not what Argo implements at template level.
+2m/4m/8m backoff — at least 14 minutes, plus each attempt's run and RunAI-Pending time — while
+running no pod for most of it. That wastes throughput but never over-commits the quota. Argo offers
+no template-level gate that releases between attempts.
 
 ### Launcher creates the ConfigMap only if absent
 
-`runai_run_pipeline.sh` runs `kubectl create -f sleap-roots-pipeline-semaphores.yaml` only when
-`kubectl get configmap sleap-roots-pipeline-semaphores --ignore-not-found -o name` succeeds and
-prints nothing. If that `get` itself fails (no kubeconfig, no VPN, no permission) the launcher
-aborts before registering any template, rather than updating templates whose gate may not exist.
-The launcher otherwise talks to the Argo Server (`gpu-master:8888`, `ARGO_TOKEN`), which has no
-ConfigMap API, so this step is its only `kubectl` use and needs a working `KUBECONFIG`.
+`runai_run_pipeline.sh` otherwise talks to the Argo Server (`gpu-master:8888`, `ARGO_TOKEN`), which
+has no ConfigMap API, so this is its only `kubectl` use and needs a working `KUBECONFIG`
+(**BREAKING** for operators: the launcher previously needed only `ARGO_TOKEN`). Before registering
+any template it:
 
-It never updates an existing ConfigMap, so a manual run cannot silently undo an operator's live
-retune (for example, dropping `pipeline-gpu` to 2 while colleagues need the GPUs). Repo changes to the limits are applied by the deploy procedure,
-not by the launcher, and `check_cluster_drift.sh` reports any live value that differs from the repo.
+1. aborts if `kubectl` is absent, and prints the `kubectl` context it will use, so a kubeconfig
+   pointed at the wrong cluster is visible;
+2. runs `kubectl get configmap sleap-roots-pipeline-semaphores --ignore-not-found -o name`, and
+   aborts if that command fails (no VPN, no permission);
+3. creates the ConfigMap only if that printed nothing (a concurrent launcher's `AlreadyExists` then
+   aborts the second one, which is harmless);
+4. otherwise checks each key the templates acquire is present and a decimal integer ≥ 1, and aborts
+   if not — an incomplete ConfigMap would Error every gated node.
+
+It never updates an existing ConfigMap, so a manual run cannot undo an operator's live retune.
+Repo changes to the limits are deployed deliberately (below), and `check_cluster_drift.sh` reports
+any live difference.
+
+### Drift check covers the ConfigMap
+
+`check_cluster_drift.sh` compares the live ConfigMap's `data` with the repo's: equal → IN SYNC;
+different → DRIFT naming each key's repo and live values; absent → NOT CREATED (drift); a failed
+read or failed comparison → CHECK FAILED (exit 2), never "in sync" and never downgraded to 1. The
+existing template loop's `drift=1` assignments are fixed to stop overwriting an earlier 2.
 
 ### Local-WSL2 manifests are out of scope
 
 The `local-WSL2-*` manifests are unmaintained and slated for removal (owner, 2026-09-30), so this
 change neither gates them nor asserts anything about them.
 
-## Risks
+## Risks / Trade-offs
 
-- **Deploy order.** If the templates are updated before the ConfigMap exists, every new predictor
-  and downloader node Errors. The DAG stops (the tasks' `continueOn` is `failed` only) and the run
-  ends red, which is loud, not silent. Mitigation: the deploy procedure creates the ConfigMap first,
-  and the rollback (below) is two template updates.
-- **Accidental deletion of the ConfigMap** has the same effect. `check_cluster_drift.sh` reports a
-  missing ConfigMap as drift.
-- **Throughput.** A 61-batch experiment now runs at most 5 predictor tasks at a time. That is the
-  point of the change; raise K live if the quota is free.
+- **ConfigMap loss or corruption kills running work.** Deleting the ConfigMap, a non-integer
+  value, or a transient API-server error on the controller's live read marks gated nodes Error,
+  including running ones (fact 5). In this repo's 5-task DAG the DAG stops, `exit-gate` is Omitted
+  and the run ends red; in Bloom's 4-task DAG the failed task fails the Workflow. Either way the
+  batch must be resubmitted. Mitigations: validated retunes only; the drift check reports a missing
+  or malformed ConfigMap; the ConfigMap is never deleted while any gated Workflow exists.
+- **Controller restart over-admits.** After a restart the pool forgets its holders (fact 6), so
+  queued tasks can take slots while the old holders still run: up to 2K concurrent tasks until the
+  old holders finish. This is Argo behaviour this repo cannot fix; it is transient and bounded.
+- **Deploy order.** Templates updated before the ConfigMap exists make every new gated node Error.
+  The deploy procedure and the launcher both create the ConfigMap first.
+- **Throughput.** A 61-batch experiment runs at most 5 predictor tasks at a time. That is the point;
+  raise K when the quota is free.
+
+## Migration Plan
+
+Merge first; then deploy from `main` at the squash commit (the #89/#91/#92/#99 pattern — #53, applied
+from an open PR, is recorded in the roadmap as a problem). Each cluster step needs the owner's
+go-ahead:
+
+1. `bash scripts/check_cluster_drift.sh` (WSL) → record as the rollback pre-image.
+2. `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
+3. `kubectl create -f sleap-roots-pipeline-semaphores.yaml`.
+4. `argo template update` the images-downloader and predictor templates.
+5. `check_cluster_drift.sh` → exit 0.
+
+Rollback: `argo template update` both templates from the squash commit's parent, **and** open a
+revert PR on `main` (otherwise the next launcher run re-registers the gated templates). Keep the
+ConfigMap until every Workflow that stored a gated template has finished — a running Workflow keeps
+its stored template, and deleting the ConfigMap would Error it. Resubmit any batch that Errored.
 
 ## Open Questions
 
-- Can the workflow-controller's service account read ConfigMaps in `runai-busch-lab`? Standard in
-  Argo's install, but cluster-scoped RBAC is Forbidden to `argo-user`; task 5.4's lock test is the
-  evidence, and task 6.4 records it.
-- Deploy from the branch before merge, or from `main` after? The owner's call at task 5.2.
-
-## Deploy and rollback
-
-Deploy (each step needs the owner's go-ahead; first confirm no `sleap-roots-pipeline` Workflow is in
-flight with `argo list -n runai-busch-lab`):
-
-1. `kubectl create -f sleap-roots-pipeline-semaphores.yaml`
-2. `argo template update sleap-roots-images-downloader-template.yaml -n runai-busch-lab` and
-   the same for `sleap-roots-predictor-template.yaml`.
-3. `wsl -e bash scripts/check_cluster_drift.sh`.
-
-Rollback: re-apply the two templates from the previous `main` commit. The ConfigMap can stay; nothing
-reads it once no template references it.
+- Can the workflow-controller's service account `get` ConfigMaps in `runai-busch-lab`? Likely: the
+  controller already lists and watches ConfigMaps in its managed namespace, and a failed cache sync
+  at startup is fatal (`controller.go` `newConfigMapInformer`, `WaitForCacheSync`). That evidences
+  `list`/`watch`, not `get`, and cluster-scoped RBAC is Forbidden to `argo-user`. Task 5.0 or 5.5 evidences it; task 6.4 records it.
