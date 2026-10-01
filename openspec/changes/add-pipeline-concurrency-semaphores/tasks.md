@@ -107,7 +107,7 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   Smoke run `sleap-roots-pipeline-pr9pw` (scans 12894761,12894762, already processed) Succeeded
   5/5 in 2m51s, and its stored templates carry both semaphore refs, so the busch-lab controller
   reads the ConfigMap (task 8.4). Post-deploy drift: exit 0, all templates and the ConfigMap IN SYNC.
-- [ ] 7.5 Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
+- [x] 7.5 **Skipped (owner, 2026-10-01).** Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
   re-check the namespace is idle immediately before each retune (it throttles prod and staging too).
   Submit with `argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<ids> --labels
   purpose=srp98-lock-test -n runai-busch-lab` (manual runs carry no `environment` label: refer to
@@ -117,8 +117,15 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   `kubectl get pods -l workflows.argoproj.io/workflow=<wf2>`). Phase B, `pipeline-stage-in: "1"`:
   the same for the downloader. Every run ends `Succeeded`, and a task that waited then acquired still
   retries and feeds its exit code to the gate. An inconclusive phase is a failure, not a pass.
-- [ ] 7.6 Restore `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` in the same session;
+- [x] 7.6 **Skipped (owner, 2026-10-01).** Restore `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` in the same session;
   `check_cluster_drift.sh` → exit 0.
+  Why 7.5/7.6 were skipped: every behaviour 7.5 checks was confirmed live in 7.0, on the same Argo
+  v3.6.7 controller version with templates reached by `templateRef` (no pod while waiting, the lock
+  message, Retry node type, slot held across retries, FIFO, release on delete). The 7.3 smoke run
+  showed the production templates acquire through this ConfigMap in `runai-busch-lab`. Running 7.5
+  would have meant real GPU runs and throttling Bloom prod and staging to 1–2 slots. The first
+  large Bloom trigger will show a real `pipeline-gpu` wait in `argo get`, and in Bloom once bloom#986
+  lands.
 
 ## 8. After merge
 
