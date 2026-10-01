@@ -113,7 +113,7 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 - [ ] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
   - 8.2 bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
     the downloader's retries spend attempts on it.
-  - 8.3 Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
+  - 8.3 (Filed 2026-09-30 as [bloom#986](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/986), with the owner's go-ahead.) Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
     panel can't tell computing from queued behind the semaphore from waiting for a GPU (e.g.
     `NonPreemptibleOverQuota`). Split `'running'` into queued (node lock message, in the Workflow
     Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition;
