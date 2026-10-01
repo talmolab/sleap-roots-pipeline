@@ -869,6 +869,36 @@ Adversarial 4-lens review. Resolutions:
   - Filed: bloom#935 (recipe key and recipe-aware reads), bloom#936 (bloommcp bug), bloom#937
     (run and Argo stamping), and talmolab/sleap-roots-contracts#45, #46 and #47. Design comments on
     bloom#865, #481, #482 and #864.
+- **2026-09-29** — **predict#34 C3 passes. Parity against the re-seeded registry is unchanged
+  from 2026-08-04 for all 8 physical models.**
+  - **What C3 was.** C3 re-ran predict's `scripts/run_parity_harness.py` against the live
+    selector-shaped `production` cards, then compared the result with the 2026-08-04 baseline
+    for each physical model. Old ids were mapped to `source_model_id` through training's 6.0(a)
+    baseline, and new ids through the post-reseed state (sleap-roots-training@dc216c7). The
+    comparison and results are in
+    [predict#48](https://github.com/talmolab/sleap-roots-predict/pull/48), merged as `81e02c6`
+    at 17:28 UTC on 2026-09-29.
+  - **Result.**
+    - All 8 physical models were evaluated, with none missing or gapped, and all are within
+      the `prediction-parity` tolerance.
+    - Every weights checksum equals its 2026-08-04 value, and the classic-SLEAP reference is
+      bit-identical.
+    - Seven models are within 6.4e-3 of 2026-08-04 on every sleap-nn metric.
+    - `rice/older/crown`'s `distance_p95` moved +2.4% on GPU, to a gate delta of 0.150 against
+      the 0.25 limit. A CPU re-run of that card reproduces 2026-08-04 **bit-for-bit**. The
+      shift therefore comes from the device and/or torch build, not the re-seed.
+  - **The run overlapped training 6.3.** The main run listed the registry at 15:01 UTC, just
+    before training 6.3 unlinked the 13 flat collections from `production` (15:02:40–15:03:19
+    UTC, per training's `2026-09-29-retire-flat-collections-record.json`). That run skipped the
+    13 flat cards as non-conforming. The CPU cross-check at 15:27 UTC saw 0 skips. The same 8
+    selector cards were evaluated both times, so the result stands for the post-6.3 registry.
+    Rows 3 and 4 above still read "6.3 not run". Updating them is 6.3's own record to make, not
+    this entry's.
+  - **For future parity runs.** The 2026-08-04 baseline was almost certainly produced on CPU;
+    the bit-exact reproduction strongly indicates it, but the device was never recorded. A GPU
+    run is not bit-comparable to it, so a run meant to isolate registry or model changes
+    should use the `cpu` extra. predict's README now says so.
+  - C3 did not gate training 6.3. Refs: predict#34, predict#48.
 - **2026-09-28 (later)** — **The traits deploy is done and accepted. Both #71 readers are now
   deployed; only bloomctl (row 5, reader+writer) is left pre-a9.**
   - **Pin bump.** [#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), merged as
