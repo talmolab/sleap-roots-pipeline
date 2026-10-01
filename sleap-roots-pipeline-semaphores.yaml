@@ -19,7 +19,9 @@
 #   - A task waiting for a slot is a Pending node with NO pod ("Waiting for
 #     runai-busch-lab/ConfigMap/sleap-roots-pipeline-semaphores/<key> lock"), FIFO.
 #   - A missing ConfigMap or key, a non-integer value, or a failed API read makes gated nodes ERROR
-#     -- including RUNNING ones. So: create this BEFORE `argo template update`-ing either gated
+#     -- including RUNNING ones, at their next reconcile (live-tested 2026-10-01: ~30-60s). A running
+#     pod is NOT killed: it finishes, but its node and Workflow end Error and the DAG stops there.
+#     So: create this BEFORE `argo template update`-ing either gated
 #     template, and never delete it while any gated Workflow exists (running Workflows keep their
 #     stored gated template).
 #   - After a workflow-controller restart the pool forgets its holders. They re-claim on their next

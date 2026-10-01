@@ -75,7 +75,7 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 7. Deploy and live verification — after merge, each step needs the owner's go-ahead
 
-- [ ] 7.0 (Required before 7.3) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
+- [x] 7.0 (Required before 7.3) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
   1, a sleep template with retries and the semaphore, three `busybox` Workflows. Confirms: Pending
   with no pod and the message format; FIFO; lazy raise; release on `kubectl delete wf`; Error on a
   deleted ConfigMap; and that the controller can read ConfigMaps. Include one gated template with a
@@ -83,6 +83,16 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   for a slot first: assert its node type is `Retry`, a child `(1)` runs after the backoff, and the
   slot stays held meanwhile. First confirm its pods run `argoexec:v3.6.7` and
   `kubectl auth can-i create workflows,configmaps`.
+  **Done 2026-10-01** (three runs, all test objects cleaned up). Confirmed: Pending with no pod and
+  `Waiting for runai-talmo-lab/ConfigMap/srp98-semaphore-test/limit lock. Lock status: 0/1`; node
+  type `Retry` while waiting; slot held through a forced failure, `Backoff for 30 seconds` and
+  attempt `(1)`; a raise 1 → 2 woke no waiter until the holder released; release within ~75 s of
+  `kubectl delete wf`; FIFO (the earlier waiter acquired, the later kept waiting); the controller
+  reads the ConfigMap. ConfigMap delete: a running node Errored within ~30 s and its Workflow ended
+  Error while its pod ran on to Succeeded; a waiting node Errored within ~60 s (another run showed
+  no Error 40 s after the delete). Also observed: after a waiter acquires, its Retry node can still
+  read `phase=Pending` (message cleared) while its pod runs, so a consumer must not treat node
+  phase Pending as "queued" (bloom#986). Not tested: holder restore after a controller restart.
 - [ ] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
 - [ ] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
 - [ ] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
