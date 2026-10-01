@@ -771,36 +771,6 @@ Adversarial 4-lens review. Resolutions:
     (filed: show queued / waiting-for-GPU instead of "running"). Drafts awaiting the owner: a
     bloomctl issue so a deterministic stage-in 404 isn't retried like a transient failure; a
     pending-pod timeout for the gated templates; removing the unmaintained `local-WSL2-*` manifests.
-- **2026-09-30** — **Row 4 done: training 6.3 retired the 13 flat collections (2026-09-29).
-  Rollback is no longer an image re-pin.**
-  - **Gate.** C2 was met: the selector-reading predictor was deployed on 2026-09-25. Pre-flight
-    confirmed that nothing else still reads the flat cards:
-    - the local-WSL2 predictor never reads W&B;
-    - Bloom reaches the predictor only through `templateRef`.
-  - **Run.** It ran at 15:02 UTC with `docs/migration/2026-09-29-retire-flat-collections.py
-    --execute` ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68),
-    merged 2026-09-30 as `e6bf35b`).
-    - For each of the 13 collections: fetch the registry link, assert `is_link`, then `unlink()`.
-    - It never called `save()` and deleted nothing. The collections still exist, now empty.
-  - **Acceptance** (15:03 UTC):
-    - a full `seed-registry --verify` shows 8 present, **0 orphans, 0 legacy**;
-    - predict `main` `list_cards()` shows 8 cards and **0 skipped** flat cards.
-  - **Rollback.** Restore `production` on the flat collections **first**, then re-pin the image.
-    - The old image (`sha-e025e309…`) now exits `3` silently against selector-only cards, and
-      the exit gate passes it.
-    - Restore by re-linking the recorded source `v0`:
-      `uv run python docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute`.
-    - Its caveats are in the archived `update-model-card-selectors` 6.3. **Never** run it without
-      `--rollback`. A tested `registry restore` will supersede it
-      ([sleap-roots-training#69](https://github.com/talmolab/sleap-roots-training/pull/69)).
-  - **Do not delete** the W&B projects `migrate-model-card-selectors` or
-    `sleap-roots-training-talmolab`.
-    - The first holds the sources of all 8 production links.
-    - The second holds the 13 rollback sources.
-    - Their names come from the directories the seeds ran in.
-      [sleap-roots-training#70](https://github.com/talmolab/sleap-roots-training/pull/70), still
-      open, pins future seeds to `sleap-roots-training` and adds this warning to the README.
-  - **Still open:** predict#34 C3, the parity re-run against the re-seeded registry.
 - **2026-09-30** — **Row 6 done: the a9 bloomctl is live and the Bloom-dispatched E2E passed.
   Every #71 consumer is now on a9; row 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) remains.**
   - **Pins.** [#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), merged as
@@ -876,29 +846,6 @@ Adversarial 4-lens review. Resolutions:
 
     Rollback is the reverse order, **restoring** the snapshots if the deletion has happened.
     Traits' best-effort manifest forward is tracked in talmolab/sleap-roots#271.
-- **2026-09-29** — **The traits recompute's values hold across all 15 scans. 12 of them were never
-  requested, and none can be traced to a run. Recipe-consistent reads filed as bloom#935–937.**
-  - **Values, extending the `scan_1009` check below.** The same comparison ran across all 15 new
-    a9 sources (219–233), each joined to that scan's previous pipeline source: **15,525/15,525
-    trait values identical**, 0 differing. Read-only, staging.
-  - **3 requested, 15 written.** `cdbnp` requested `scan-ids=289,577,1009`. The other 12 sources
-    (synthetic experiment 12880747) came from the legacy `run_manifest.json` union. That is #71 at
-    work: unrequested writes, not wrong rows. All 15 have `pipeline_run_id = null` (bloom#864).
-    Being hand-submitted, they have no `cyl_pipeline_run_scans` rows either, so nothing links them
-    to `cdbnp`. bloom#937 proposes stamping the workflow name at write-back.
-  - **Recipe mix, measured before the recompute (sources 6–203, all a7):**
-    - 5 `predict_code_sha` values, 2 `traits_code_sha` values and 3 model sets;
-    - 1 `predict_output_params` value;
-    - `param_hash` takes 9 values, because it hashes each scan's `age`.
-
-    Diversity Screen's four pipeline-latest scans span 2 recipes. `e373b0f` adds a third
-    `traits_code_sha`.
-  - **bloommcp reads one scan.** An unpinned `core_load_experiment_data("12880747")` returns
-    `Samples: 1` for a 12-scan experiment (bloom#936). Diversity Screen can't be read at all:
-    source 5 is 13.9M rows, and PostgREST cancels the read at 8s (`57014`).
-  - Filed: bloom#935 (recipe key and recipe-aware reads), bloom#936 (bloommcp bug), bloom#937
-    (run and Argo stamping), and talmolab/sleap-roots-contracts#45, #46 and #47. Design comments on
-    bloom#865, #481, #482 and #864.
 - **2026-09-29** — **predict#34 C3 passes. Parity against the re-seeded registry is unchanged
   from 2026-08-04 for all 8 physical models.**
   - **What C3 was.** C3 re-ran predict's `scripts/run_parity_harness.py` against the live
@@ -922,13 +869,74 @@ Adversarial 4-lens review. Resolutions:
     UTC, per training's `2026-09-29-retire-flat-collections-record.json`). That run skipped the
     13 flat cards as non-conforming. The CPU cross-check at 15:27 UTC saw 0 skips. The same 8
     selector cards were evaluated both times, so the result stands for the post-6.3 registry.
-    Rows 3 and 4 above still read "6.3 not run". Updating them is 6.3's own record to make, not
-    this entry's.
+    Rows 3 and 4 record 6.3 as done (see the 6.3 entry below).
   - **For future parity runs.** The 2026-08-04 baseline was almost certainly produced on CPU;
     the bit-exact reproduction strongly indicates it, but the device was never recorded. A GPU
     run is not bit-comparable to it, so a run meant to isolate registry or model changes
     should use the `cpu` extra. predict's README now says so.
   - C3 did not gate training 6.3. Refs: predict#34, predict#48.
+- **2026-09-29** — **Row 4 done: training 6.3 retired the 13 flat collections. A predictor
+  rollback below the floor now also needs the registry restored first.**
+  - **Gate.** C2 was met: the selector-reading predictor was deployed on 2026-09-25. Pre-flight
+    confirmed that nothing else still reads the flat cards:
+    - the local-WSL2 predictor never reads W&B;
+    - Bloom reaches the predictor only through `templateRef`.
+  - **Run.** It ran at 15:02 UTC with `docs/migration/2026-09-29-retire-flat-collections.py
+    --execute` ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68),
+    merged 2026-09-30 as `e6bf35b`).
+    - For each of the 13 collections: fetch the registry link, assert `is_link`, then `unlink()`.
+    - It never called `save()` and deleted nothing. The collections still exist, now empty.
+  - **Acceptance** (15:03 UTC):
+    - a full `seed-registry --verify` shows 8 present, **0 orphans, 0 legacy**;
+    - predict `main` `list_cards()` shows 8 cards and **0 skipped** flat cards.
+  - **Rollback.** The predictor's rollback floor is `sha-9a6f20c` (the current pin; see the
+    2026-09-25 (later) entry): since the bloomctl writer flip, any older image reads only the
+    deleted `run_manifest.json`. `9a6f20c` reads selector cards, so a rollback to it needs no
+    registry change.
+    - Going below the floor is valid only as part of reversing row 6 as well (bloomctl back to
+      `sha-28034f6`, the stale manifests restored from the snapshot — see step 6's MANDATORY note).
+    - If that rollback goes as far as the pre-selector `sha-e025e309…`, restore `production` on
+      the flat collections **first**, then re-pin: that image exits `3` silently against
+      selector-only cards, and the exit gate passes it.
+    - Restore by re-linking the recorded source `v0`:
+      `uv run python docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute`.
+    - Its caveats are in the archived `update-model-card-selectors` 6.3. **Never** run it without
+      `--rollback`. A tested `registry restore` will supersede it
+      ([sleap-roots-training#69](https://github.com/talmolab/sleap-roots-training/pull/69)).
+  - **Do not delete** the W&B projects `migrate-model-card-selectors` or
+    `sleap-roots-training-talmolab`.
+    - The first holds the sources of all 8 production links.
+    - The second holds the 13 rollback sources.
+    - Their names come from the directories the seeds ran in.
+      [sleap-roots-training#70](https://github.com/talmolab/sleap-roots-training/pull/70)
+      (merged 2026-09-30) pins future seeds to `sleap-roots-training` and adds this warning to
+      the README. The change itself is archived in
+      [sleap-roots-training#71](https://github.com/talmolab/sleap-roots-training/pull/71).
+  - **C3** (predict#34's parity re-run against the re-seeded registry) passed later the same day;
+    see the C3 entry above. It did not gate 6.3.
+- **2026-09-29** — **The traits recompute's values hold across all 15 scans. 12 of them were never
+  requested, and none can be traced to a run. Recipe-consistent reads filed as bloom#935–937.**
+  - **Values, extending the `scan_1009` check below.** The same comparison ran across all 15 new
+    a9 sources (219–233), each joined to that scan's previous pipeline source: **15,525/15,525
+    trait values identical**, 0 differing. Read-only, staging.
+  - **3 requested, 15 written.** `cdbnp` requested `scan-ids=289,577,1009`. The other 12 sources
+    (synthetic experiment 12880747) came from the legacy `run_manifest.json` union. That is #71 at
+    work: unrequested writes, not wrong rows. All 15 have `pipeline_run_id = null` (bloom#864).
+    Being hand-submitted, they have no `cyl_pipeline_run_scans` rows either, so nothing links them
+    to `cdbnp`. bloom#937 proposes stamping the workflow name at write-back.
+  - **Recipe mix, measured before the recompute (sources 6–203, all a7):**
+    - 5 `predict_code_sha` values, 2 `traits_code_sha` values and 3 model sets;
+    - 1 `predict_output_params` value;
+    - `param_hash` takes 9 values, because it hashes each scan's `age`.
+
+    Diversity Screen's four pipeline-latest scans span 2 recipes. `e373b0f` adds a third
+    `traits_code_sha`.
+  - **bloommcp reads one scan.** An unpinned `core_load_experiment_data("12880747")` returns
+    `Samples: 1` for a 12-scan experiment (bloom#936). Diversity Screen can't be read at all:
+    source 5 is 13.9M rows, and PostgREST cancels the read at 8s (`57014`).
+  - Filed: bloom#935 (recipe key and recipe-aware reads), bloom#936 (bloommcp bug), bloom#937
+    (run and Argo stamping), and talmolab/sleap-roots-contracts#45, #46 and #47. Design comments on
+    bloom#865, #481, #482 and #864.
 - **2026-09-28 (later)** — **The traits deploy is done and accepted. Both #71 readers are now
   deployed; only bloomctl (row 5, reader+writer) is left pre-a9.**
   - **Pin bump.** [#92](https://github.com/talmolab/sleap-roots-pipeline/pull/92), merged as
