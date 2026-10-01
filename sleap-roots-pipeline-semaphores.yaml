@@ -1,7 +1,7 @@
 # Namespace-wide concurrency limits for the per-batch pipeline (#98; A4 design §9).
 # THIS HEADER IS THE CANONICAL STATEMENT of the gate's semantics, deploy order and safe retune;
 # templates, the launcher and the docs point here. Rationale and source citations:
-# openspec/changes/add-pipeline-concurrency-semaphores/design.md.
+# openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/design.md.
 #
 # The `predictor` template acquires `pipeline-gpu`, and the `images-downloader` template acquires
 # `pipeline-stage-in`. The pool is shared by EVERY Workflow in runai-busch-lab that uses those

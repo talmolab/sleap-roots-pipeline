@@ -253,7 +253,7 @@ or a truncated manifest is skipped as done.)
   `pipeline-gpu` and `images-downloader` acquires `pipeline-stage-in` from ConfigMap
   `sleap-roots-pipeline-semaphores`; trait-extractor and write-back are not gated, so it does not
   bound the write-back rate. The quota is **busch-lab's** (2 GPUs), not talmo-lab's. See
-  `openspec/changes/add-pipeline-concurrency-semaphores/design.md`.
+  `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/design.md`.
 - **Batching** inherently bounds pod count (experiment = ⌈N/BATCH_SIZE⌉ GPU pods, not N).
 - Optional: workflow `parallelism` (CPU fan-out per run), workflow **priorities** (manual > backfill).
 

@@ -133,21 +133,21 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   RunAI-quota/semaphore layer (§9)"), the workflow-template row (line ~303, "semaphore … remain
   unbuilt"), Sequencing, a dated status-log entry, and the close-the-loop checklist (#98 and epic
   #10). Acceptance: draft shown to the owner; nothing posted without approval.
-- [ ] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
-  - 8.2 bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
+- [x] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
+  - 8.2 (Filed 2026-10-01 as [bloom#998](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/998).) bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
     the downloader's retries spend attempts on it.
   - 8.3 (Filed 2026-09-30 as [bloom#986](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/986), with the owner's go-ahead.) Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
     panel can't tell computing from queued behind the semaphore from waiting for a GPU (e.g.
     `NonPreemptibleOverQuota`). Split `'running'` into queued (node lock message, in the Workflow
     Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition;
     `bloom-pipeline` already has `get`/`list`/`watch` on pods, re-checked 2026-09-30) and running.
-  - 8.4 Record whether the workflow-controller's service account can `get` ConfigMaps in
+  - 8.4 (Answered 2026-10-01: yes. The 7.3 smoke run acquired through the ConfigMap in `runai-busch-lab`; see 7.4's note.) Record whether the workflow-controller's service account can `get` ConfigMaps in
     `runai-busch-lab` (from 7.0 or 7.5) in `docs/cluster-identities.md`.
-  - 8.5 Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
+  - 8.5 (Recorded 2026-10-01 as a [comment on #61](https://github.com/talmolab/sleap-roots-pipeline/issues/61#issuecomment-5940722306), which already tracks the stale local manifests.) Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
     (see #21), with the `project.md` and README references to them.
-- [ ] 8.6 Draft (do not file) a follow-up: a pending-pod timeout for the gated templates, so a pod
+- [x] 8.6 (Filed 2026-10-01 as [#106](https://github.com/talmolab/sleap-roots-pipeline/issues/106).) Draft (do not file) a follow-up: a pending-pod timeout for the gated templates, so a pod
   that never schedules (hostPath mount failure, ImagePullBackOff, `NonPreemptibleOverQuota`) stops
   holding a slot; first check whether Argo applies `activeDeadlineSeconds` to an unscheduled pod.
   Acceptance: draft shown to the owner.
-- [ ] 8.7 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
-  repointing links to `openspec/changes/add-pipeline-concurrency-semaphores/` at the archive path.
+- [x] 8.7 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
+  repointing links to `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/` at the archive path.
