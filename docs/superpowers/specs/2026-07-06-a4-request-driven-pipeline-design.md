@@ -106,7 +106,7 @@ template. Add the per-scan **skip-if-done** check (mount + Bloom source) to the 
 |---|---|
 | `pipeline_run_id` uuid PK | batch key; rides into provenance via the write-back RPC |
 | `target_level` ('scan'\|'wave'\|'experiment'\|'scan_ids'), `target_id` bigint (null for `scan_ids`) | request target. **[⚠️ added 2026-07-24 — `wave` (`cyl_waves.id`, a real schema level: `cyl_experiments → cyl_waves → cyl_plants → cyl_scans`, joined in `cyl_scans_extended`) and `scan_ids` (an explicit list, for ad hoc multi-select or reprocessing a failed subset — doesn't fit any hierarchy) were missing from v1, which only had `scan`\|`experiment`. For `scan_ids`, `target_id` is null; the given list is inserted directly into `cyl_pipeline_run_scans` at enumerate time (no target_id needed since the list *is* the scan set). Neither `bloomctl` nor the Argo template need to know about any of this — enumeration always resolves to a flat scan_id list before chunking, so this is purely a `workflows`-route + data-model concern.]** |
-| `params` jsonb | resolved `{species, mode, age}` + which were overrides **[⚠️ 2026-10-01 — no user param overrides (bloom#971), so nothing here is ever an override; request `params` are recorded but inert.]** |
+| `params` jsonb | resolved `{species, mode, age}` + which were overrides **[⚠️ narrowed 2026-10-01 — no user param overrides (bloom#971), so nothing here is ever an override; request `params` are recorded but inert.]** |
 | `requested_by` uuid | **attribution only** (not a visibility filter) |
 | `status` | `queued → submitted → running → complete | partial | failed` |
 | `scan_count`, `done_count`, `reused_count`, `failed_count` | for "N/M" (trigger/view-maintained) |
@@ -164,7 +164,9 @@ is only *recorded* in provenance, not hashed, so baking it is optional.
   is still scheduled and loads models once, then skips every scan and exits (no inference).
 - **Bloom-side pre-check (optional optimization — avoids scheduling the pod at all):** at submit,
   compare the request's `params` + **current production model versions** against the recorded
-  Provenance (`models` + `params`) in the latest `cyl_trait_sources.metadata`. Params are computable
+  Provenance (`models` + `params`) in the latest `cyl_trait_sources.metadata`. **[⚠️ narrowed
+  2026-10-01 — request `params` are inert (bloom#971); compare the scan's metadata-resolved
+  params.]** Params are computable
   Bloom-side (import the contract's `compute_param_hash`); the recorded result's models are in
   `metadata`. **The catch:** Bloom must also know what models *would* run now — that's a wandb
   **registry lookup** (or a "current production models" manifest the pipeline publishes for Bloom to
@@ -263,7 +265,7 @@ or a truncated manifest is skipped as done.)
   explicit set of scans (table/gallery checkboxes — e.g. reprocessing a QC'd subset or a prior run's
   failed scans) **[⚠️ wave + multi-select added 2026-07-24, see §5]** + a params panel
   (species/mode/age prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
-  **[⚠️ narrowed 2026-10-01 — params are display only, never overridable. Scans older than their species' model window run by default with that species' highest-age window, with a warning in the dialog. Choosing models per root type is a later phase (bloom#897). See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**
+  **[⚠️ narrowed 2026-10-01 — params are display only, never overridable. Once phase 1 ships (decided, not yet built in predict, traits or the dialog), scans older than their species' model window will run by default with that species' highest-age window, with a warning in the dialog; until then they fail. Choosing models per root type is a later phase (bloom#897). See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**
 - **Pre-check preview:** "38/40 already have results for these params — 2 will run" (from §7).
 - **Live status:** a shared "Pipeline runs" panel (all members; `requested_by` shows who launched)
   reading `cyl_pipeline_runs` via **Realtime** (status + "N/M", no polling); per-scan drill-down from
@@ -271,11 +273,11 @@ or a truncated manifest is skipped as done.)
 - **Results:** no new results UI — results land in the **existing** trait tables/views; the run panel
   links to them (+ `.slp`/Box blob links).
 - **[⚠️ v1 as shipped, 2026-09-30 (bloom `add-cyl-pipeline-ui`):]**
-  - **Params:** shown read-only, not overridable. Request params never reach the cluster ([bloom#897](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/897)), and the rules for out-of-range choices come first ([bloom#971](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971)).
+  - **Params:** shown read-only and never overridable ([bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723)). Request params are inert and never reach the cluster. A later phase lets a run choose models per root type ([bloom#897](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/897)).
   - **The pre-check** reports how many scans already have pipeline results, not "N will run". Skipping is decided per stage on the cluster, and there's no dry run ([bloom#898](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/898)).
   - **The runs panel** shows "you" or "another member", not a name: `phenotypers` isn't visible to `bloom_user`.
   - **The results** link to the existing traits page at the run's wave and day. `.slp`/Box links are deferred ([bloom#899](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/899)).
-  - **Run actions** are switched off in prod until [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863).
+  - **Run actions** are switched off in the prod web app (`CYL_PIPELINE_TRIGGER_ENABLED=false`) until [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863). On bloom `main` the Workflows service itself is not gated yet ([bloom#983](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/983)); [bloom#988](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/988), on staging since 2026-10-01, makes it refuse too.
 
 ## 11. Cross-repo decomposition (one design → per-repo OpenSpec changes)
 

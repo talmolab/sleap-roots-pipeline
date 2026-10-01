@@ -181,7 +181,8 @@ environment label stamped on each submitted Workflow, and a production dispatch 
 in it — `bloom_v2_prod-cyl-pipeline-worker-1` and `bloom_v2_prod-cyl-status-poller-1`, last
 confirmed running on `bloom-dev.salk.edu` on 2026-09-15 alongside the staging pair. ("Live" means
 the dispatcher process is running, not that anything is driving it — no frontend targets prod
-yet.) An `argo template update` therefore affects both environments' future
+yet. *Updated 2026-10-01:* Bloom's UI is on bloom `main` with its prod trigger switched off, but
+the Workflows service can still start prod runs, bloom#983.) An `argo template update` therefore affects both environments' future
 dispatches, not just your next run. Don't update the `sleap-roots-*` templates unless you mean to.
 
 **You share the submitter identity.** Anything Bloom dispatches arrives as `bloom-pipeline`, so
