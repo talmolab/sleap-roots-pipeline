@@ -263,6 +263,12 @@ or a truncated manifest is skipped as done.)
   children.
 - **Results:** no new results UI — results land in the **existing** trait tables/views; the run panel
   links to them (+ `.slp`/Box blob links).
+- **[⚠️ v1 as shipped, 2026-09-30 (bloom `add-cyl-pipeline-ui`):]**
+  - **Params:** shown read-only, not overridable. Request params never reach the cluster ([bloom#897](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/897)), and the rules for out-of-range choices come first ([bloom#971](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971)).
+  - **The pre-check** reports how many scans already have pipeline results, not "N will run". Skipping is decided per stage on the cluster, and there's no dry run ([bloom#898](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/898)).
+  - **The runs panel** shows "you" or "another member", not a name: `phenotypers` isn't visible to `bloom_user`.
+  - **The results** link to the existing traits page at the run's wave and day. `.slp`/Box links are deferred ([bloom#899](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/899)).
+  - **Run actions** are switched off in prod until [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863).
 
 ## 11. Cross-repo decomposition (one design → per-repo OpenSpec changes)
 
