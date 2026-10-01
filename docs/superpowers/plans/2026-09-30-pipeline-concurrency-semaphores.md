@@ -8,7 +8,7 @@
 
 **Tech Stack:** Argo Workflows v3.6.7 controller (CLI v3.6.5, WSL), a Kubernetes ConfigMap, bash, Python 3 + PyYAML.
 
-**Spec:** `openspec/changes/add-pipeline-concurrency-semaphores/` (proposal.md, design.md, tasks.md, specs/per-batch-pipeline/spec.md). design.md's "Verified facts" and "Risks" are required reading.
+**Spec:** `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/` (proposal.md, design.md, tasks.md, specs/per-batch-pipeline/spec.md). design.md's "Verified facts" and "Risks" are required reading.
 
 ## Global Constraints
 
@@ -104,7 +104,7 @@ SEMAPHORE_VALUE_RE = re.compile(r"^[1-9][0-9]*$")
 # Namespace-wide concurrency limits for the per-batch pipeline (#98; A4 design §9).
 # THIS HEADER IS THE CANONICAL STATEMENT of the gate's semantics, deploy order and safe retune;
 # templates, the launcher and the docs point here. Rationale and source citations:
-# openspec/changes/add-pipeline-concurrency-semaphores/design.md.
+# openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/design.md.
 #
 # The `predictor` template acquires `pipeline-gpu`, and the `images-downloader` template acquires
 # `pipeline-stage-in`. The pool is shared by EVERY Workflow in runai-busch-lab that uses those
@@ -559,7 +559,7 @@ The stub path matters. The script prepends `$HOME/bin:/usr/local/bin` to PATH, a
 
 ### Task 5: Docs
 
-**Files:** `README.md`, `docs/cluster-identities.md`, `.claude/commands/ci-debug.md`, `.claude/skills/runai/SKILL.md`, `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`, `openspec/project.md`, and ticks in `openspec/changes/add-pipeline-concurrency-semaphores/tasks.md`.
+**Files:** `README.md`, `docs/cluster-identities.md`, `.claude/commands/ci-debug.md`, `.claude/skills/runai/SKILL.md`, `docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md`, `openspec/project.md`, and ticks in `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/tasks.md`.
 
 - [ ] **Step 1: README.md.**
   - One-Time Setup (~l.185): after "Ensure that `ARGO_TOKEN` is exported…", add: "The launcher also needs `kubectl` and a `KUBECONFIG` that can read and create ConfigMaps in `runai-busch-lab` (the #98 semaphore ConfigMap; in WSL, `export PATH=$HOME/bin:$PATH`)."
@@ -600,7 +600,7 @@ until the repo matches. Never delete that ConfigMap while any gated Workflow exi
   `pipeline-gpu` and `images-downloader` acquires `pipeline-stage-in` from ConfigMap
   `sleap-roots-pipeline-semaphores`; trait-extractor and write-back are not gated, so it does not
   bound the write-back rate. The quota is **busch-lab's** (2 GPUs), not talmo-lab's. See
-  `openspec/changes/add-pipeline-concurrency-semaphores/design.md`.
+  `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/design.md`.
 ```
 
 - [ ] **Step 6: `openspec/project.md`.**
@@ -611,7 +611,7 @@ until the repo matches. Never delete that ConfigMap while any gated Workflow exi
 
 - [ ] **Step 7: Verify.** `python scripts/check_docs.py` → all pass. `grep -n "semaphore" openspec/project.md` shows no open-work claim.
 
-- [ ] **Step 8: Tick tasks.md 1.x–5.x and commit.** `git add README.md docs/cluster-identities.md .claude/commands/ci-debug.md .claude/skills/runai/SKILL.md docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md openspec/project.md openspec/changes/add-pipeline-concurrency-semaphores/tasks.md`, then `git commit -m "docs: document the #98 concurrency semaphores and correct stale project.md claims" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
+- [ ] **Step 8: Tick tasks.md 1.x–5.x and commit.** `git add README.md docs/cluster-identities.md .claude/commands/ci-debug.md .claude/skills/runai/SKILL.md docs/superpowers/specs/2026-07-06-a4-request-driven-pipeline-design.md openspec/project.md openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/tasks.md`, then `git commit -m "docs: document the #98 concurrency semaphores and correct stale project.md claims" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`.
 
 ---
 

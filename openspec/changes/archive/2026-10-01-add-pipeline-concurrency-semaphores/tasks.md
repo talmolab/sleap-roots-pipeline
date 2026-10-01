@@ -75,7 +75,7 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 7. Deploy and live verification — after merge, each step needs the owner's go-ahead
 
-- [ ] 7.0 (Required before 7.3) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
+- [x] 7.0 (Required before 7.3) Semantics test in `runai-talmo-lab`, not busch-lab: a test ConfigMap at limit
   1, a sleep template with retries and the semaphore, three `busybox` Workflows. Confirms: Pending
   with no pod and the message format; FIFO; lazy raise; release on `kubectl delete wf`; Error on a
   deleted ConfigMap; and that the controller can read ConfigMaps. Include one gated template with a
@@ -83,15 +83,31 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   for a slot first: assert its node type is `Retry`, a child `(1)` runs after the backoff, and the
   slot stays held meanwhile. First confirm its pods run `argoexec:v3.6.7` and
   `kubectl auth can-i create workflows,configmaps`.
-- [ ] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
-- [ ] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
-- [ ] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
+  **Done 2026-10-01** (three runs, all test objects cleaned up). Confirmed: Pending with no pod and
+  `Waiting for runai-talmo-lab/ConfigMap/srp98-semaphore-test/limit lock. Lock status: 0/1`; node
+  type `Retry` while waiting; slot held through a forced failure, `Backoff for 30 seconds` and
+  attempt `(1)`; a raise 1 → 2 woke no waiter until the holder released; release within ~75 s of
+  `kubectl delete wf`; FIFO (the earlier waiter acquired, the later kept waiting); the controller
+  reads the ConfigMap. ConfigMap delete: a running node Errored within ~30 s and its Workflow ended
+  Error while its pod ran on to Succeeded; a waiting node Errored within ~60 s (another run showed
+  no Error 40 s after the delete). Also observed: after a waiter acquires, its Retry node can still
+  read `phase=Pending` (message cleared) while its pod runs, so a consumer must not treat node
+  phase Pending as "queued" (bloom#986). Not tested: holder restore after a controller restart.
+- [x] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
+- [x] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
+- [x] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
   images-downloader and predictor templates, from `main` at the squash commit. Immediately submit
   one small manual run and `argo get` it: if a gated node shows a ConfigMap error (the controller
   cannot read it), roll back at once per design.md's Migration Plan — Bloom batches dispatched in
   the meantime would Error the same way.
-- [ ] 7.4 `check_cluster_drift.sh` → exit 0, `IN SYNC sleap-roots-pipeline-semaphores`.
-- [ ] 7.5 Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
+- [x] 7.4 `check_cluster_drift.sh` → exit 0, `IN SYNC sleap-roots-pipeline-semaphores`.
+  **7.1–7.4 done 2026-10-01**, deployed from `main` at 367c771. Pre-image: only the two gated
+  templates drifted and the ConfigMap was NOT CREATED; the namespace was idle. The ConfigMap was
+  created first (`pipeline-gpu: "8"`, `pipeline-stage-in: "5"`), then both templates were updated.
+  Smoke run `sleap-roots-pipeline-pr9pw` (scans 12894761,12894762, already processed) Succeeded
+  5/5 in 2m51s, and its stored templates carry both semaphore refs, so the busch-lab controller
+  reads the ConfigMap (task 8.4). Post-deploy drift: exit 0, all templates and the ConfigMap IN SYNC.
+- [x] 7.5 **Skipped (owner, 2026-10-01).** Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
   re-check the namespace is idle immediately before each retune (it throttles prod and staging too).
   Submit with `argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<ids> --labels
   purpose=srp98-lock-test -n runai-busch-lab` (manual runs carry no `environment` label: refer to
@@ -101,30 +117,37 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   `kubectl get pods -l workflows.argoproj.io/workflow=<wf2>`). Phase B, `pipeline-stage-in: "1"`:
   the same for the downloader. Every run ends `Succeeded`, and a task that waited then acquired still
   retries and feeds its exit code to the gate. An inconclusive phase is a failure, not a pass.
-- [ ] 7.6 Restore `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` in the same session;
+- [x] 7.6 **Skipped (owner, 2026-10-01).** Restore `pipeline-gpu: "8"` and `pipeline-stage-in: "5"` in the same session;
   `check_cluster_drift.sh` → exit 0.
+  Why 7.5/7.6 were skipped: every behaviour 7.5 checks was confirmed live in 7.0, on the same Argo
+  v3.6.7 controller version with templates reached by `templateRef` (no pod while waiting, the lock
+  message, Retry node type, slot held across retries, FIFO, release on delete). The 7.3 smoke run
+  showed the production templates acquire through this ConfigMap in `runai-busch-lab`. Running 7.5
+  would have meant real GPU runs and throttling Bloom prod and staging to 1–2 slots. The first
+  large Bloom trigger will show a real `pipeline-gpu` wait in `argo get`, and in Bloom once bloom#986
+  lands.
 
 ## 8. After merge
 
-- [ ] 8.1 Draft the roadmap update for the owner's approval: A4 row (line ~138, "the
+- [x] 8.1 Draft the roadmap update for the owner's approval: A4 row (line ~138, "the
   RunAI-quota/semaphore layer (§9)"), the workflow-template row (line ~303, "semaphore … remain
   unbuilt"), Sequencing, a dated status-log entry, and the close-the-loop checklist (#98 and epic
   #10). Acceptance: draft shown to the owner; nothing posted without approval.
-- [ ] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
-  - 8.2 bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
+- [x] 8.2–8.5 Draft (do not file) follow-up issues; acceptance: each draft shown to the owner.
+  - 8.2 (Filed 2026-10-01 as [bloom#998](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/998).) bloomctl: a deterministic 404 on stage-in is indistinguishable from a transient failure, so
     the downloader's retries spend attempts on it.
   - 8.3 (Filed 2026-09-30 as [bloom#986](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/986), with the owner's go-ahead.) Bloom: the status poller maps any `Pending`/`Running` Workflow to `'running'`, so the run
     panel can't tell computing from queued behind the semaphore from waiting for a GPU (e.g.
     `NonPreemptibleOverQuota`). Split `'running'` into queued (node lock message, in the Workflow
     Bloom already reads; no new RBAC), waiting-for-GPU/stuck (pod `PodScheduled` condition;
     `bloom-pipeline` already has `get`/`list`/`watch` on pods, re-checked 2026-09-30) and running.
-  - 8.4 Record whether the workflow-controller's service account can `get` ConfigMaps in
+  - 8.4 (Answered 2026-10-01: yes. The 7.3 smoke run acquired through the ConfigMap in `runai-busch-lab`; see 7.4's note.) Record whether the workflow-controller's service account can `get` ConfigMaps in
     `runai-busch-lab` (from 7.0 or 7.5) in `docs/cluster-identities.md`.
-  - 8.5 Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
+  - 8.5 (Recorded 2026-10-01 as a [comment on #61](https://github.com/talmolab/sleap-roots-pipeline/issues/61#issuecomment-5940722306), which already tracks the stale local manifests.) Remove the unmaintained `local-WSL2-*` manifests and `local_run_pipeline_first_time.sh`
     (see #21), with the `project.md` and README references to them.
-- [ ] 8.6 Draft (do not file) a follow-up: a pending-pod timeout for the gated templates, so a pod
+- [x] 8.6 (Filed 2026-10-01 as [#106](https://github.com/talmolab/sleap-roots-pipeline/issues/106).) Draft (do not file) a follow-up: a pending-pod timeout for the gated templates, so a pod
   that never schedules (hostPath mount failure, ImagePullBackOff, `NonPreemptibleOverQuota`) stops
   holding a slot; first check whether Argo applies `activeDeadlineSeconds` to an unscheduled pod.
   Acceptance: draft shown to the owner.
-- [ ] 8.7 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
-  repointing links to `openspec/changes/add-pipeline-concurrency-semaphores/` at the archive path.
+- [x] 8.7 Archive the change (`/cleanup-merged`) in the same post-merge PR that ticks section 7,
+  repointing links to `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/` at the archive path.

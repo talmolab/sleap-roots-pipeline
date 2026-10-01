@@ -1,6 +1,6 @@
 # Pipeline concurrency semaphores — design (#98)
 
-**Date:** 2026-09-30 · **Change:** `openspec/changes/add-pipeline-concurrency-semaphores/`
+**Date:** 2026-09-30 · **Change:** `openspec/changes/archive/2026-10-01-add-pipeline-concurrency-semaphores/`
 
 ## Intent
 

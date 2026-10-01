@@ -41,8 +41,10 @@ Failure consequences below are stated for both.
   across the 2-GPU deserved quota.
 - **Lock semantics, read from v3.6.7 source** (`workflow/controller/operator.go` `executeTemplate`;
   `workflow/sync/{sync_manager,semaphore,lock_name}.go`; `workflow/controller/controller.go`;
-  `pkg/apis/workflow/v1alpha1/workflow_types.go`). These are source readings; task 5.5's lock test
-  exercises 1 and 2, and the optional task 5.0 the rest.
+  `pkg/apis/workflow/v1alpha1/workflow_types.go`). Facts 1–5 and 7 were also **live-tested on
+  2026-10-01** in `runai-talmo-lab` (task 7.0: three throwaway runs of a gated busybox template
+  reached by `templateRef`, on the same v3.6.7 controller version); fact 6 was not, since it needs
+  a controller restart. Fact 8 is a source reading only.
   1. **One slot per task, held across retries and backoff.** The lock is taken under the task's
      node ID before the retry node is created, and released only when that node is fulfilled.
   2. **A waiting task has no pod.** Its node is Pending with
@@ -57,7 +59,13 @@ Failure consequences below are stated for both.
      error for a missing ConfigMap, a missing key, a non-integer value (`strconv.Atoi`) or a failed
      API read, and `TryAcquire` runs on *every* reconcile of an unfulfilled gated node. The error
      marks that node Error whether it is waiting or already running (`initializeNodeOrMarkError` →
-     `markNodeError` for an existing node).
+     `markNodeError` for an existing node). **Live (7.0):** after the ConfigMap was deleted, a
+     running task's node went to Error within ~30 s and its Workflow ended Error, but its pod was
+     **not** killed: it ran on to Succeeded. A waiting task Errored within ~60 s. In another run,
+     neither had Errored 40 s after the delete, so the delay is "at the next reconcile", tens of
+     seconds or more, not immediate. For a predictor this means the GPU work finishes and its
+     outputs stay on the NFS, but the node ends Error and the DAG stops before traits/write-back;
+     a resubmission should skip already-complete scans through predict's idempotency-key skip.
   6. **Holders are not restored after a controller restart.** `Initialize` resolves each holder's
      lock level from `wf.Spec.Templates`, which never contains a `templateRef` target, so it fails
      ("unable to determine level") and skips the holder. After a restart the pool starts empty. By
