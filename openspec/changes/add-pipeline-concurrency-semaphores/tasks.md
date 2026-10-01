@@ -129,7 +129,7 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
 
 ## 8. After merge
 
-- [ ] 8.1 Draft the roadmap update for the owner's approval: A4 row (line ~138, "the
+- [x] 8.1 Draft the roadmap update for the owner's approval: A4 row (line ~138, "the
   RunAI-quota/semaphore layer (§9)"), the workflow-template row (line ~303, "semaphore … remain
   unbuilt"), Sequencing, a dated status-log entry, and the close-the-loop checklist (#98 and epic
   #10). Acceptance: draft shown to the owner; nothing posted without approval.
