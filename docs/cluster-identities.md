@@ -222,6 +222,21 @@ close to happening — the recorded expectation is to check who holds the quota
 (`kubectl get pods -n runai-busch-lab`) and coordinate with them before submitting
 non-preemptible work, not just to set the field and go.
 
+**The pipeline caps its own share of the quota (#98).** The `predictor` and `images-downloader`
+templates acquire slots from the ConfigMap `sleap-roots-pipeline-semaphores`. The pool is
+namespace-wide, shared by Bloom prod, Bloom staging and manual runs, and a task waiting for a slot
+is a Pending Argo node with no pod. `pipeline-gpu` keeps the pipeline's non-preemptible GPU use
+inside the quota RunAI enforces on non-preemptible allocations, so a large trigger no longer puts a
+predictor pod per batch into `NonPreemptibleOverQuota` — provided other non-preemptible work in the
+project stays small, and except briefly after a workflow-controller restart (see the ConfigMap
+header). The namespace also runs other non-preemptible (`high`) workloads, the cellranger and
+arabidopsis pipelines, which count toward that quota too. Preemptible sessions don't count toward
+that quota and the predictor outranks them, so it can preempt them when GPUs are physically short;
+coordinating before a large run still applies. To change the limit, use the validated patch in the
+header of `sleap-roots-pipeline-semaphores.yaml` — never `kubectl edit`, since a non-integer value
+makes every running gated task Error — and `scripts/check_cluster_drift.sh` reports the difference
+until the repo matches. Never delete that ConfigMap while any gated Workflow exists.
+
 **`argo submit -n <ns>` does not redirect a Workflow submission — the manifest's
 `metadata.namespace` wins.** This is non-obvious and worth knowing before you trust a `-n` flag.
 Verified 2026-09-15:

@@ -54,6 +54,14 @@ spec:
     - name: images-downloader
       # CPU-only, I/O-bound (HTTPS calls) — trait-extractor's retry pattern, not predictor's GPU one.
       priorityClassName: interactive-preemptible
+      # #98: at most `pipeline-stage-in` downloader tasks run at once across runai-busch-lab -- the
+      # stage where a large trigger's pod flood lands first. Same gate as the predictor's; see the
+      # header of sleap-roots-pipeline-semaphores.yaml.
+      synchronization:
+        semaphores:
+          - configMapKeyRef:
+              name: sleap-roots-pipeline-semaphores
+              key: pipeline-stage-in
       retryStrategy:
         # retryPolicy Always (not just the default OnFailure) matters here: this shares
         # trait-extractor's preemptible priority class, and RunAI eviction under CPU-pool

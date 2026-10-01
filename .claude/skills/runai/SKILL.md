@@ -212,7 +212,7 @@ set the priority class:
 | Symptom | Fix |
 |---|---|
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
-| Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7 |
+| Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7; an Argo node `Pending` with **no pod** and a `Waiting for … sleap-roots-pipeline-semaphores/<key> lock` message is the #98 concurrency limit, not RunAI (see `.claude/commands/ci-debug.md`) |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
 | `ImagePullBackOff` | confirm the `ghcr.io/...` reference resolves; test `docker pull` of the exact string in `image:`, digest included |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |

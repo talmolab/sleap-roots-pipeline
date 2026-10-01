@@ -66,6 +66,23 @@ BATCH_STAGES = {
     "trait-extractor": "sleap-roots-trait-extractor-template.yaml",
     "write-back": "sleap-roots-write-back-template.yaml",
 }
+# #98: namespace-wide concurrency limits. Each gated stage acquires ONE key of one ConfigMap.
+SEMAPHORES = "sleap-roots-pipeline-semaphores.yaml"
+SEMAPHORE_CM = "sleap-roots-pipeline-semaphores"
+SEMAPHORE_KEY_BY_STAGE = {
+    "predictor": "pipeline-gpu",
+    "images-downloader": "pipeline-stage-in",
+}
+# Upper bound on pipeline-gpu: WHOLE predictor slices busch-lab's 2-GPU deserved quota holds
+# (conservative -- RunAI's fractional accounting would admit ~11: 11 x 0.18 = 1.98). A live
+# predictor pod's RunAI GPU ConfigMap recorded gpu-memory 8192 MB as RUNAI_NUM_OF_GPUS 0.18
+# (2026-09-30, on gpu-node7 and gpu-node12; the fraction depends on the landing node's GPU): floor(1/0.18) = 5 per GPU, 10 across 2. Valid ONLY at that gpu-memory, which is why
+# the predictor's annotation is pinned below.
+GPU_SLICE_CAPACITY = 10
+GPU_SLICE_MEMORY = "8192"
+# Quoted decimal >= 1. The controller parses it with strconv.Atoi; anything else Errors every gated
+# node, running ones included.
+SEMAPHORE_VALUE_RE = re.compile(r"^[1-9][0-9]*$")
 ACCEPTED_GATE_CODES = {"0", "3"}
 
 # Values the gate must reject, in every producer position. Each is a real failure mode:
@@ -531,6 +548,107 @@ def main() -> int:
         "trait-extractor declares no SRP_PREDICT_CONTAINER_DIGEST",
         [e["name"] for e in te_env if e.get("name") == "SRP_PREDICT_CONTAINER_DIGEST"],
         [],
+    )
+
+    # --- Requirement: GPU and stage-in concurrency are bounded by namespace semaphores ---
+    sem = load(SEMAPHORES)
+    sem_meta = sem.get("metadata") or {}
+    sem_data = sem.get("data") or {}
+    check("semaphore manifest is a ConfigMap", sem.get("kind"), "ConfigMap")
+    check("semaphore ConfigMap name", sem_meta.get("name"), SEMAPHORE_CM)
+    check(
+        "semaphore ConfigMap namespace equals the Workflow's",
+        sem_meta.get("namespace"),
+        wf["metadata"]["namespace"],
+    )
+    check("semaphore ConfigMap carries the quota label", (sem_meta.get("labels") or {}).get("project"), "busch-lab")
+    check(
+        "semaphore ConfigMap defines exactly the keys the templates acquire",
+        sorted(sem_data),
+        sorted(SEMAPHORE_KEY_BY_STAGE.values()),
+    )
+    for key in sorted(SEMAPHORE_KEY_BY_STAGE.values()):
+        value = sem_data.get(key)
+        check(
+            f"ConfigMap {key} is a quoted decimal integer >= 1",
+            isinstance(value, str) and bool(SEMAPHORE_VALUE_RE.match(value)),
+            True,
+        )
+    gpu = sem_data.get("pipeline-gpu")
+    check(
+        f"pipeline-gpu fits the quota's slice capacity (<= {GPU_SLICE_CAPACITY})",
+        isinstance(gpu, str) and bool(SEMAPHORE_VALUE_RE.match(gpu)) and int(gpu) <= GPU_SLICE_CAPACITY,
+        True,
+    )
+
+    # --- Scenario: Launcher creates the semaphore ConfigMap only when absent, before templates ---
+    launcher = (ROOT / "runai_run_pipeline.sh").read_text(encoding="utf-8")
+    code = "\n".join(l for l in launcher.splitlines() if not l.lstrip().startswith("#"))
+    check("launcher names the semaphore ConfigMap file", f'SEMAPHORES_FILE="{SEMAPHORES}"' in code, True)
+    check("launcher names the semaphore ConfigMap", f'SEMAPHORES_CM="{SEMAPHORE_CM}"' in code, True)
+    keys_m = re.search(r"^SEMAPHORE_KEYS=\(([^)]*)\)", code, re.M)
+    check(
+        "launcher validates exactly the ConfigMap's keys",
+        sorted(re.findall(r'"([^"]+)"', keys_m.group(1))) if keys_m else None,
+        sorted(sem_data),
+    )
+    create_line = 'kubectl create -f "$SEMAPHORES_FILE" -n "$NAMESPACE"'
+    check(
+        "launcher's only kubectl create is the ConfigMap file",
+        re.findall(r"kubectl\s+create\b[^\n]*", code),
+        [create_line],
+    )
+    get_i = code.find('kubectl get configmap "$SEMAPHORES_CM" -n "$NAMESPACE" --ignore-not-found -o name')
+    loop_i = code.find('for tmpl_file in "${TEMPLATES[@]}"')
+    check(
+        "launcher's ConfigMap get, then create, both precede the template loop",
+        0 <= get_i < code.find(create_line) < loop_i,
+        True,
+    )
+    check(
+        "launcher creates only on the empty-result branch",
+        bool(
+            re.search(
+                r'if \[ -z "\$existing" \]; then\n(?:(?!\n\s*(?:else|fi)\b).)*?' + re.escape(create_line),
+                code,
+                re.S,
+            )
+        ),
+        True,
+    )
+
+    def aborts(head: str) -> bool:
+        # The `if <head>; then` block reaches `exit 1` before its own `else`/`fi`.
+        return bool(re.search(re.escape(head) + r"[^\n]*; then\n(?:(?!\n\s*(?:else|fi)\b).)*?\bexit 1", code, re.S))
+
+    check("launcher aborts when kubectl is absent", aborts("if ! command -v kubectl"), True)
+    check("launcher aborts when the ConfigMap get fails", aborts("if ! existing=$(kubectl get configmap"), True)
+    check("launcher aborts when reading a key fails", aborts("if ! value=$(kubectl get configmap"), True)
+    check("launcher aborts on an invalid existing key", aborts('if ! [[ "$value" =~'), True)
+    check(
+        "launcher never applies, replaces, edits or patches",
+        re.findall(r"kubectl\s+(?:apply|replace|edit|patch)\b", code),
+        [],
+    )
+
+    # --- Scenario: Both stages acquire their own semaphore key ---------------------------
+    for stage, key in SEMAPHORE_KEY_BY_STAGE.items():
+        sync = load(BATCH_STAGES[stage])["spec"]["templates"][0].get("synchronization") or {}
+        check(
+            f"{stage} acquires exactly its own semaphore key",
+            [r.get("configMapKeyRef") for r in (sync.get("semaphores") or [])],
+            [{"name": SEMAPHORE_CM, "key": key}],
+        )
+        check(
+            f"{stage} uses only the plural semaphores list (no singular semaphore, no mutex)",
+            sorted(k for k in sync if k != "semaphores"),
+            [],
+        )
+    pred_tmpl = load(BATCH_STAGES["predictor"])["spec"]["templates"][0]
+    check(
+        "predictor gpu-memory is the value GPU_SLICE_CAPACITY was derived at",
+        ((pred_tmpl.get("metadata") or {}).get("annotations") or {}).get("gpu-memory"),
+        GPU_SLICE_MEMORY,
     )
 
     print()

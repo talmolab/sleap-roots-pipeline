@@ -1,0 +1,52 @@
+# Namespace-wide concurrency limits for the per-batch pipeline (#98; A4 design §9).
+# THIS HEADER IS THE CANONICAL STATEMENT of the gate's semantics, deploy order and safe retune;
+# templates, the launcher and the docs point here. Rationale and source citations:
+# openspec/changes/add-pipeline-concurrency-semaphores/design.md.
+#
+# The `predictor` template acquires `pipeline-gpu`, and the `images-downloader` template acquires
+# `pipeline-stage-in`. The pool is shared by EVERY Workflow in runai-busch-lab that uses those
+# templates -- Bloom prod, Bloom staging and manual runs -- as they share the 2-GPU deserved quota.
+# pipeline-gpu 8 = 1.44 GPU of non-preemptible work (8192 MB = 0.18 GPU per predictor), inside the
+# quota RunAI enforces on NON-preemptible allocations -- provided other non-preemptible busch-lab
+# GPU work holds <= 0.56 GPU, and except transiently after a controller restart (below). 0.18 was
+# measured on gpu-node7 and gpu-node12; RunAI converts gpu-memory to a fraction of the landing
+# node's GPU, so a smaller-memory GPU counts for more. Ceiling 10
+# whole slices, enforced by scripts/check_manifests.py. Preemptible sessions don't count toward
+# that quota, and the predictor (priorityClassName high) outranks them.
+#
+# Argo v3.6.7 behaviour (read from source 2026-09-30):
+#   - One slot = one TASK, held across all its retries AND the backoff between them.
+#   - A task waiting for a slot is a Pending node with NO pod ("Waiting for
+#     runai-busch-lab/ConfigMap/sleap-roots-pipeline-semaphores/<key> lock"), FIFO.
+#   - A missing ConfigMap or key, a non-integer value, or a failed API read makes gated nodes ERROR
+#     -- including RUNNING ones. So: create this BEFORE `argo template update`-ing either gated
+#     template, and never delete it while any gated Workflow exists (running Workflows keep their
+#     stored gated template).
+#   - After a workflow-controller restart the pool forgets its holders. They re-claim on their next
+#     reconcile and usually win (older Workflows queue first), so over-admission is a brief race,
+#     2x the limit at worst. A holder that loses the race keeps its pod running but cannot retry or
+#     finish until it gets a slot back.
+#   - A slot is taken BEFORE the pod exists, and a pod that never schedules (hostPath mount
+#     failure, ImagePullBackOff, NonPreemptibleOverQuota) stays Pending with no timeout, holding its
+#     slot. Enough of them stall EVERY gated run in the namespace, Bloom prod included. Recover by
+#     deleting (or `argo stop`-ping) the stuck Workflows; their slots free within about a minute.
+#
+# RETUNE LIVE with a validated patch, never `kubectl edit` (a typo Errors running tasks):
+#   n=2; [[ $n =~ ^[1-9][0-9]*$ ]] && kubectl patch configmap sleap-roots-pipeline-semaphores \
+#     -n runai-busch-lab --type merge -p "{\"data\":{\"pipeline-gpu\":\"$n\"}}"
+# A lower limit applies at the next acquire. A raise reaches tasks already waiting only at the next
+# slot release or the 20-minute resync. scripts/check_cluster_drift.sh reports the live value until
+# it matches this file again. runai_run_pipeline.sh creates this ConfigMap if absent and never
+# overwrites it.
+#
+# Values MUST be quoted: ConfigMap data is string-only.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sleap-roots-pipeline-semaphores
+  namespace: runai-busch-lab
+  labels:
+    project: busch-lab
+data:
+  pipeline-gpu: "8"
+  pipeline-stage-in: "5"
