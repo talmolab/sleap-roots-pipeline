@@ -93,14 +93,20 @@ unreferenced ConfigMap is inert. Every commit leaves `bash scripts/check_all.sh`
   no Error 40 s after the delete). Also observed: after a waiter acquires, its Retry node can still
   read `phase=Pending` (message cleared) while its pod runs, so a consumer must not treat node
   phase Pending as "queued" (bloom#986). Not tested: holder restore after a controller restart.
-- [ ] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
-- [ ] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
-- [ ] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
+- [x] 7.1 `check_cluster_drift.sh` → record as the rollback pre-image.
+- [x] 7.2 `argo list -n runai-busch-lab` → no `sleap-roots-pipeline-*` Workflow Running or Pending.
+- [x] 7.3 `kubectl create -f sleap-roots-pipeline-semaphores.yaml`, then `argo template update` the
   images-downloader and predictor templates, from `main` at the squash commit. Immediately submit
   one small manual run and `argo get` it: if a gated node shows a ConfigMap error (the controller
   cannot read it), roll back at once per design.md's Migration Plan — Bloom batches dispatched in
   the meantime would Error the same way.
-- [ ] 7.4 `check_cluster_drift.sh` → exit 0, `IN SYNC sleap-roots-pipeline-semaphores`.
+- [x] 7.4 `check_cluster_drift.sh` → exit 0, `IN SYNC sleap-roots-pipeline-semaphores`.
+  **7.1–7.4 done 2026-10-01**, deployed from `main` at 367c771. Pre-image: only the two gated
+  templates drifted and the ConfigMap was NOT CREATED; the namespace was idle. The ConfigMap was
+  created first (`pipeline-gpu: "8"`, `pipeline-stage-in: "5"`), then both templates were updated.
+  Smoke run `sleap-roots-pipeline-pr9pw` (scans 12894761,12894762, already processed) Succeeded
+  5/5 in 2m51s, and its stored templates carry both semaphore refs, so the busch-lab controller
+  reads the ConfigMap (task 8.4). Post-deploy drift: exit 0, all templates and the ConfigMap IN SYNC.
 - [ ] 7.5 Lock test, two phases, using already-processed scan IDs so write-back is idempotent;
   re-check the namespace is idle immediately before each retune (it throttles prod and staging too).
   Submit with `argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<ids> --labels
