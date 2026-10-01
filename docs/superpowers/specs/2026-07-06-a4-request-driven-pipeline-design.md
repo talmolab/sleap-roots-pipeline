@@ -47,7 +47,7 @@ control-plane direction is the *only* thing Tailscale/firewall affects; the data
    params}` (or `{target_level: "scan_ids", scan_ids: [...], params}` for an explicit selection —
    **[⚠️ added 2026-07-24 — `wave` + `scan_ids` were missing from v1; see §5/§10]**).
 2. `workflows` service: authenticate (JWT) + rate-limit → resolve params (defaults from Bloom
-   metadata via A3-params, user overrides win) → **enumerate scans** (`scan` → itself; `wave` → every
+   metadata via A3-params, user overrides win **[⚠️ narrowed 2026-10-01 — there are no user param overrides: species, mode and age always come from Bloom metadata, and request `params` stay inert. A future user choice is of models per root type (bloom#897), not params. See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**) → **enumerate scans** (`scan` → itself; `wave` → every
    scan in that wave via `cyl_scans_extended.wave_id`; `experiment` → its full scan list via
    `cyl_scans_extended.experiment_id`; `scan_ids` → the given list, access-checked) →
    **dedup pre-check** (skip scans already computed for these models+params — §7) → write
@@ -106,7 +106,7 @@ template. Add the per-scan **skip-if-done** check (mount + Bloom source) to the 
 |---|---|
 | `pipeline_run_id` uuid PK | batch key; rides into provenance via the write-back RPC |
 | `target_level` ('scan'\|'wave'\|'experiment'\|'scan_ids'), `target_id` bigint (null for `scan_ids`) | request target. **[⚠️ added 2026-07-24 — `wave` (`cyl_waves.id`, a real schema level: `cyl_experiments → cyl_waves → cyl_plants → cyl_scans`, joined in `cyl_scans_extended`) and `scan_ids` (an explicit list, for ad hoc multi-select or reprocessing a failed subset — doesn't fit any hierarchy) were missing from v1, which only had `scan`\|`experiment`. For `scan_ids`, `target_id` is null; the given list is inserted directly into `cyl_pipeline_run_scans` at enumerate time (no target_id needed since the list *is* the scan set). Neither `bloomctl` nor the Argo template need to know about any of this — enumeration always resolves to a flat scan_id list before chunking, so this is purely a `workflows`-route + data-model concern.]** |
-| `params` jsonb | resolved `{species, mode, age}` + which were overrides |
+| `params` jsonb | resolved `{species, mode, age}` + which were overrides **[⚠️ 2026-10-01 — no user param overrides (bloom#971), so nothing here is ever an override; request `params` are recorded but inert.]** |
 | `requested_by` uuid | **attribution only** (not a visibility filter) |
 | `status` | `queued → submitted → running → complete | partial | failed` |
 | `scan_count`, `done_count`, `reused_count`, `failed_count` | for "N/M" (trigger/view-maintained) |
@@ -263,6 +263,7 @@ or a truncated manifest is skipped as done.)
   explicit set of scans (table/gallery checkboxes — e.g. reprocessing a QC'd subset or a prior run's
   failed scans) **[⚠️ wave + multi-select added 2026-07-24, see §5]** + a params panel
   (species/mode/age prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
+  **[⚠️ narrowed 2026-10-01 — params are display only, never overridable. Scans older than their species' model window run by default with that species' highest-age window, with a warning in the dialog. Choosing models per root type is a later phase (bloom#897). See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**
 - **Pre-check preview:** "38/40 already have results for these params — 2 will run" (from §7).
 - **Live status:** a shared "Pipeline runs" panel (all members; `requested_by` shows who launched)
   reading `cyl_pipeline_runs` via **Realtime** (status + "N/M", no polling); per-scan drill-down from
