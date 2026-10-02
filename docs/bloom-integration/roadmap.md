@@ -415,7 +415,7 @@ requested. It reaches persisted state in Bloom and will corrupt any per-run acco
 displays, so it goes before the UI.
 
 **Status as of 2026-09-22 — the contract half is DONE, the consumers are not.** (*Updated
-2026-09-30:* rows 1–6 are done and every consumer is on a9; only row 7 remains.)
+2026-09-30:* rows 1–6 are done and every consumer is on a9; only row 7 remains. #71 was closed 2026-10-01.)
 `sleap-roots-contracts` **0.1.0a9** is released and verified from PyPI: per-run naming
 (`run_manifest.<pipeline_run_id>.json`) plus the shared resolution policy, with `load_run_manifest`
 as the recommended entry point. See that day's status-log entry. #71 stays **open** — it needs the
