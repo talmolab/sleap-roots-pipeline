@@ -807,6 +807,16 @@ Adversarial 4-lens review. Resolutions:
     fix direction posted there 2026-09-30. Every pre-existing A4-PIPELINE-E2E-TEST scan (and
     289/577/1009) is in `cdbnp`'s 15 keys, so none of them can pass a Bloom-dispatched E2E until
     bloom#900 is fixed.
+    - **Update 2026-10-02: bloom#900 fixed on staging** (closed). Bloom PR
+      [#1001](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1001) (`413bd1eb`)
+      makes the write-back RPC resolve a no-op re-delivery's scan from the source row
+      (`cyl_trait_sources.scan_id`), so a source that no `cyl_pipeline_run_scans` row carries
+      (hand-submitted or manually ingested) is marked `written`. Verified with Bloom run 21 over
+      scan 12894756 (source 228): row `written`/228, `done_count 1`, `failed_count 0`, write-back
+      `Ingested 0/1 envelope (1 skipped)`, no new source; and run 22 over scan 12894762 (source
+      251, from Bloom run 13), with the same outcome. The pre-existing A4-PIPELINE-E2E-TEST scans
+      and 289/577/1009 can be used for Bloom-dispatched E2Es on staging again. Production gets the
+      fix only with the next bloom staging→main promotion.
   - **Seen on the all-fail run, not fixed here:**
     - the scan's recorded error blames a missing run manifest and says to re-dispatch, although
       the cause was a download failure that no re-dispatch can fix;
