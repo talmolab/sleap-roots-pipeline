@@ -350,32 +350,36 @@ read-path ✅ → `bloom cyl` CLI → D re-pin (a2→a3, #393) → backfill**. A
 acceptance test passed (2026-09-30, Bloom runs 12/13: `Ingested 1/1`, `3/3`); Bloom UI v1 is on
 bloom `main`, switched off in prod (2026-10-01); the concurrency gate is live
 ([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98), 2026-10-01). Remaining, in
-order *(order proposed by the 2026-10-01 roadmap review; owner to confirm)*:
+order:
 
-1. **Row 7 — [#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)**, flip
-   `allow_legacy=False` (hardening; unblocked since row 6).
-   [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) itself was **closed
-   2026-10-01** with the row-6 evidence, since rows 1–6 complete its stated remaining work.
-2. ✅ **[bloom#900](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/900) — fixed
-   on bloom staging 2026-10-02** (closed; Bloom PR
-   [#1001](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1001), `413bd1eb`). A
-   no-op re-delivery of a source written outside any run used to report the scan `failed`. The
-   pre-existing A4-PIPELINE-E2E-TEST scans and 289/577/1009 can be used for Bloom-dispatched E2Es
-   on staging again (Bloom runs 21 and 22; see the row-6 entry). Prod gets the fix with the next
-   bloom staging→main promotion.
-3. **#98 follow-ups:** [#106](https://github.com/talmolab/sleap-roots-pipeline/issues/106)
+1. **#98 follow-ups:** [#106](https://github.com/talmolab/sleap-roots-pipeline/issues/106)
    (pending-pod timeout), [bloom#986](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/986)
    (show queued), [bloom#998](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/998)
    (stage-in 404 retried as transient).
-4. **UI v1 residue:** the large-burst Realtime check
+2. **UI v1 residue:** the large-burst Realtime check
    ([bloom#985](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/985)).
-5. **Prod enablement** — [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863),
+3. **Prod enablement** — [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863),
    [bloom#983](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/983),
    [bloom#864](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/864); see
    "Production promotion" below.
 
-[predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) was **closed 2026-10-01**:
-C2, C3 and 6.3 were all done (2026-09-25 / 09-29 / 09-29).
+**Closed since the 2026-10-01 review** (owner's calls, 2026-10-01/02):
+
+- [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) **closed 2026-10-01** with the
+  row-6 evidence, since rows 1–6 complete its stated remaining work.
+- **Row 7 / [#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) closed as won't-fix
+  2026-10-01.** The fail-loud guarantee comes from step 6's deletion, and each way a legacy file
+  could reappear is covered or deliberate (see "Step 7 … is hardening" below). Flipping
+  `allow_legacy=False` remains a safe one-line change if a consumer is released for other reasons.
+- ✅ **[bloom#900](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/900) — fixed
+  on bloom staging 2026-10-02** (closed; Bloom PR
+  [#1001](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1001), `413bd1eb`). A
+  no-op re-delivery of a source written outside any run used to report the scan `failed`. The
+  pre-existing A4-PIPELINE-E2E-TEST scans and 289/577/1009 can be used for Bloom-dispatched E2Es
+  on staging again (Bloom runs 21 and 22; see the row-6 entry). Prod gets the fix with the next
+  bloom staging→main promotion.
+- [predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) **closed 2026-10-01**:
+  C2, C3 and 6.3 were all done (2026-09-25 / 09-29 / 09-29).
 
 **Superseded — the frontier as of 2026-09-21, kept for the record:**
 
@@ -418,7 +422,7 @@ requested. It reaches persisted state in Bloom and will corrupt any per-run acco
 displays, so it goes before the UI.
 
 **Status as of 2026-09-22 — the contract half is DONE, the consumers are not.** (*Updated
-2026-09-30:* rows 1–6 are done and every consumer is on a9; only row 7 remains. #71 was closed 2026-10-01.)
+2026-09-30:* rows 1–6 are done and every consumer is on a9. #71 was closed 2026-10-01, and row 7 (#82) closed as won't-fix.)
 `sleap-roots-contracts` **0.1.0a9** is released and verified from PyPI: per-run naming
 (`run_manifest.<pipeline_run_id>.json`) plus the shared resolution policy, with `load_run_manifest`
 as the recommended entry point. See that day's status-log entry. #71 stays **open** — it needs the
@@ -433,7 +437,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); ✅ **training 6.3 done** 2026-09-29: `production` unlinked from the 13 flat collections, none deleted; full `--verify` shows 0 orphans, 0 legacy ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68), merged 2026-09-30) — see the Status log for the rollback |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), closed 2026-10-01 after 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; ✅ **deployed** 2026-09-29 by row 6 |
 | 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
-| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | unblocked 2026-09-30 (row 6 done); **next** |
+| 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | ⛔ **closed as won't-fix 2026-10-01** — not needed for correctness after step 6's deletion; see below |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
 written here. A writer publishing `run_manifest.<id>.json` stops maintaining
@@ -555,7 +559,13 @@ manifest present) the two settings behave identically. So:
 the fix.** After the deletion it protects against one thing: a legacy `run_manifest.json`
 *reappearing*. The plausible cause is a pre-a9 `bloomctl` image, hand-submitted or rolled back,
 that writes the legacy name again. **The pipeline is usable without step 7** as long as step 6's
-deletion is done and nobody runs a pre-a9 image against the shared trees.
+deletion is done and nobody runs a pre-a9 image against the shared trees. **[⚠️ closed as
+won't-fix 2026-10-01 — each path back to a legacy file is covered or deliberate: a rollback
+below predict's `sha-9a6f20c` floor restores the legacy files on purpose (reversing row 6); the
+`local-WSL2-*` manifests are being removed (#61), and run-identity-less runs are unaffected by
+the flip by design (§2.9); digest pins plus `check_cluster_drift.sh` catch a re-registered old
+image. The cost (three consumer releases, four pin bumps, a full recompute) isn't worth the
+residual risk.]**
 
 **The acceptance test, unchanged:** dispatch an N-scan run via the Bloom route and assert the
 manifest holds exactly N keys and write-back reports `Ingested N/N`. Today any such run reports
@@ -860,7 +870,8 @@ Adversarial 4-lens review. Resolutions:
       2026-09-25 "re-pin `sha-9ac819fb`") are corrected in
       [#110](https://github.com/talmolab/sleap-roots-pipeline/pull/110). That PR changes
       comments only; the parsed YAML is identical.
-    - The frontier order is still open, pending whether row 7 is worth its cost.
+    - Row 7 ([#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)) closed as
+      won't-fix, which settles the frontier order (above).
 - **2026-10-01** — **Concurrency gate ([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98)) merged and deployed: at most 8 predictor and 5
   images-downloader tasks run at once across `runai-busch-lab`.**
   - **Why.** Bloom submits every 25-scan batch of a run at once
