@@ -110,6 +110,13 @@ spec:
         # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
         # 3, which the exit gate passes -- so restore `production` on the flat collections first,
         # from training's 6.0(a) snapshot (dc216c7 docs/migration/2026-09-22-pre-reseed-baseline.json).
+        # Corrected 2026-10-01: 6.3 ran 2026-09-29 (sleap-roots-training#68), and the bloomctl writer
+        # flip landed the same day, so NEITHER rollback above is available on its own any more.
+        # e025e309 (like 9ac819fb) is below the 9a6f20c floor -- see the 2026-09-25 entry's
+        # correction below -- and is valid only as part of reversing roadmap row 6 too. If you do
+        # go that far, restore `production` FIRST with sleap-roots-training
+        # docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute
+        # (never without --rollback; it re-links each recorded source v0), not from dc216c7.
         # Bumped 2026-09-25 (predict#47, #71's predict reader): sha-9ac819fb... -> sha-9a6f20c0...
         # (predict main; code-identical to the #47 squash 9f39691 -- 9a6f20c only archives the
         # OpenSpec change). Predict now resolves its scope through contracts'
@@ -147,6 +154,13 @@ spec:
         # only run_manifest.json, so until the stale legacy files are deleted (#71 design §4 step
         # 5) it silently scopes by another run's accumulated manifest, and after that it falls back
         # to unscoped discovery.
+        # Corrected 2026-10-01: the flip landed 2026-09-29 (bloomctl sha-1bc3056, #99) and the
+        # stale legacy files were deleted the same day, so THIS image (9a6f20c) is now the floor
+        # and the 9ac819fb re-pin above is unsafe on its own. 9a6f20c reads selector cards, so no
+        # registry restore is needed to stay on it. Going below it is valid only together with
+        # reversing row 6: bloomctl back to sha-28034f6 (revert order: images-downloader before
+        # write-back) and the three run_manifest.json restored from
+        # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note).
         image: ghcr.io/talmolab/sleap-roots-predict:sha-9a6f20c00762e327b9aea39c8e06a81443252d01@sha256:afc8da823838bff85d93013e85b8d0c18c2d4f01117a0914944df1a845c73adc
         imagePullPolicy: Always
         args:
