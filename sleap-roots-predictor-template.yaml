@@ -155,13 +155,41 @@ spec:
         # 5) it silently scopes by another run's accumulated manifest, and after that it falls back
         # to unscoped discovery.
         # Corrected 2026-10-01: the flip landed 2026-09-29 (bloomctl sha-1bc3056, #99) and the
-        # stale legacy files were deleted the same day, so THIS image (9a6f20c) is now the floor
+        # stale legacy files were deleted the same day, so 9a6f20c (the pin until the 2026-10-02
+        # bump below) is now the floor
         # and the 9ac819fb re-pin above is unsafe on its own. 9a6f20c reads selector cards, so no
         # registry restore is needed to stay on it. Going below it is valid only together with
         # reversing row 6: bloomctl back to sha-28034f6 (revert order: images-downloader before
         # write-back) and the three run_manifest.json restored from
         # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note).
-        image: ghcr.io/talmolab/sleap-roots-predict:sha-9a6f20c00762e327b9aea39c8e06a81443252d01@sha256:afc8da823838bff85d93013e85b8d0c18c2d4f01117a0914944df1a845c73adc
+        # Bumped 2026-10-02 (bloom#971 phase 1, sleap-roots-predict#50): sha-9a6f20c0... ->
+        # sha-79939eec... A cyl scan older than every model window for its species + mode now
+        # selects models at that species + mode's window maximum (no upper limit) instead of
+        # failing "no models resolved"; a root type whose cards don't reach that age is skipped
+        # (rice day 18 -> rice-older-crown only). One `past-window age:` warning per clamped scan,
+        # after it predicts. Params, param_hash and the idempotency key keep the real age.
+        # Only #50 changed image code vs. 9a6f20c (model_selection/batch/output_contract); #48
+        # touched docs and README.md, which the Dockerfile copies as package metadata only (no
+        # runtime change). Still contracts ==0.1.0a9, so no Bloom gate. Pinned the code commit
+        # 79939ee, not predict main's archive-only c25ef52 (openspec/ only, not in the image), so
+        # predict_code_sha names the real code commit. predict_code_sha changes, so every in-scope
+        # scan recomputes once on its first run after deploy -- re-baseline the A4 "0 GPU pods"
+        # oracle AFTER that run.
+        # Known gap, not new: arabidopsis multiplant cylinder past day 14 now gets predictions (a
+        # GPU pass), but traits' scan-grain guard still rejects multi-plant scans (sleap-roots#252).
+        # Predict's window maxima come from the live registry, traits' from its YAML; they agree
+        # for every live context today, but nothing checks that they stay in step.
+        # Deploy order: together with traits' past-window image (sha-426ad4d, #112) or after it,
+        # NEVER before it -- predict-first runs GPU inference on past-window scans that then fail in
+        # trait-extractor (exit 3, retried twice).
+        # Rollback: roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
+        # digest AND SRP_PREDICT_CONTAINER_DIGEST together; it is the floor -- nothing below it on
+        # its own, see above), then traits to sha-e373b0f...@sha256:2cbbe602.... Predict alone does
+        # not stop past-window results: clamped {scan_key}.predictions.json stay on disk and a
+        # clamping traits image still reads them. Predict goes first so traits is never non-clamping
+        # while predict clamps. Each rollback costs another recompute.
+        # Verified against GHCR: resolves to org.opencontainers.image.revision 79939ee...
+        image: ghcr.io/talmolab/sleap-roots-predict:sha-79939eec33e3d8331d6502545dcf94efbf487c3b@sha256:d45c971e64bc8c47294e6680baa3d4f8a1d5840ea99e0a7b4f603819530bc932
         imagePullPolicy: Always
         args:
           - "/workspace/images_input"
@@ -186,11 +214,11 @@ spec:
           # that and derives the expected value by parsing that line, so nothing is hardcoded.
           # At every future pin bump, re-verify against the registry before editing either line:
           #   TOK=$(curl -s "https://ghcr.io/token?scope=repository:talmolab/sleap-roots-predict:pull&service=ghcr.io" | python -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json" \
+          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
           #     https://ghcr.io/v2/talmolab/sleap-roots-predict/manifests/<tag> | grep -i docker-content-digest
           # Not an idempotency-key input, so changing it forces no recompute.
           - name: SRP_PREDICT_CONTAINER_DIGEST
-            value: "sha256:afc8da823838bff85d93013e85b8d0c18c2d4f01117a0914944df1a845c73adc"
+            value: "sha256:d45c971e64bc8c47294e6680baa3d4f8a1d5840ea99e0a7b4f603819530bc932"
           - name: WANDB_API_KEY
             valueFrom:
               secretKeyRef:
