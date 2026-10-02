@@ -57,6 +57,10 @@ spec:
         # select the same pipeline. The new traits_code_sha still forces a full recompute. Re-pin
         # with predict's past-window image (sleap-roots-predict#50) or before it, never after:
         # predict-first runs GPU inference on past-window scans that then fail here with exit 3.
+        # Rollback (added 2026-10-02, #113): roll predict back to sha-9a6f20c FIRST, then re-pin
+        # this to sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4
+        # (tag, digest and SRT_TRAITS_CONTAINER_DIGEST together). Rolling back predict alone is not
+        # enough: clamped predictions stay on disk and this image would still turn them into traits.
         # Verified against GHCR: resolves to org.opencontainers.image.revision 426ad4d…
         image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8
         imagePullPolicy: Always
@@ -81,7 +85,7 @@ spec:
           # check_manifests.py enforces that, parsing the expected value out of that line.
           # At every future pin bump, re-verify against the registry before editing either line:
           #   TOK=$(curl -s "https://ghcr.io/token?scope=repository:talmolab/sleap-roots-trait-extractor:pull&service=ghcr.io" | python -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json" \
+          #   curl -sI -H "Authorization: Bearer $TOK" -H "Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json" \
           #     https://ghcr.io/v2/talmolab/sleap-roots-trait-extractor/manifests/<tag> | grep -i docker-content-digest
           # Only the traits digest belongs here: predict_container_digest reaches this stage's
           # envelope threaded through predict's own manifest, so setting SRP_* here would fabricate
