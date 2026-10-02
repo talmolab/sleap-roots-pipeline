@@ -735,6 +735,32 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-10-02** — **bloom#971 phase 1, traits side: merged in sleap-roots; this repo's pin bump
+  is a PR, not yet merged or deployed.**
+  - **What changed.** [sleap-roots#272](https://github.com/talmolab/sleap-roots/pull/272), merged
+    as `426ad4d`. A cyl scan older than every `pipeline_selection.yaml` window for its species +
+    mode now runs with that window's pipeline, instead of failing `No pipeline matches`. Rice past
+    day 10 gets `OlderMonocotPipeline`, which computes crown traits only. Each such scan logs one
+    `past-window age:` warning on stderr. Params, provenance and the idempotency key keep the real
+    age, and no envelope field is added.
+  - **Pin.** `sha-e373b0f@sha256:2cbbe602…` → `sha-426ad4d@sha256:7d5bdaf9…`, with the tag, digest
+    and `SRT_TRAITS_CONTAINER_DIGEST` moved together. Verified two ways: GHCR resolves
+    `sha-426ad4d` to that digest, and the image's `org.opencontainers.image.revision` and baked
+    `SRT_TRAITS_CODE_SHA` are both `426ad4d` (sleap-roots run 36965318493).
+  - **No Bloom gate.** #272 is the only image-input change since `e373b0f`, and it bumps no
+    contracts version (still `0.1.0a9`). As with any traits bump, the new `traits_code_sha`
+    forces a full recompute on the first run after deploy.
+  - **Order with predict.** The predict half,
+    [sleap-roots-predict#50](https://github.com/talmolab/sleap-roots-predict/pull/50), is still
+    open. Until both images are live, a past-window scan fails as it does today, in predict (`no
+    models resolved`). Deploy traits with predict or before it, never after. With predict's clamp
+    live and traits' not, past-window scans run GPU inference, then fail here (exit 3, retried
+    twice by this template).
+  - **Next:** merge this PR, then `argo template update`, run by the author: drain first, and run
+    `check_cluster_drift.sh` before and after. Then confirm one live past-window scan. That needs
+    predict#50 deployed too; until then, traits alone changes nothing visible.
+  - Refs: [bloom#971](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971),
+    sleap-roots#272 and #275 (OpenSpec archive), and the follow-ups sleap-roots#273 and #274.
 - **2026-10-01** — **Concurrency gate ([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98)) merged and deployed: at most 8 predictor and 5
   images-downloader tasks run at once across `runai-busch-lab`.**
   - **Why.** Bloom submits every 25-scan batch of a run at once

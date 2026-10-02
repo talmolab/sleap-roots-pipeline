@@ -49,8 +49,16 @@ spec:
         # This image emits a9 envelopes. Only the contracts pin changed vs. sha-689cffb — the
         # `sleap_roots` trait library itself is unchanged — so recomputed values should be
         # identical to the a7 ones.
-        # Verified against GHCR: resolves to org.opencontainers.image.revision e373b0f…
-        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4
+        # Bumped 2026-10-02 (bloom#971 phase 1, sleap-roots#272): a scan older than every
+        # `pipeline_selection.yaml` window for its species + mode now runs with that window's
+        # pipeline instead of failing `No pipeline matches` (e.g. rice day 18 → OlderMonocot,
+        # crown traits only), and logs one `past-window age:` warning on stderr. Only #272
+        # changed vs. sha-e373b0f: still contracts a9, so no Bloom gate, and in-window scans
+        # select the same pipeline. The new traits_code_sha still forces a full recompute. Re-pin
+        # with predict's past-window image (sleap-roots-predict#50) or before it, never after:
+        # predict-first runs GPU inference on past-window scans that then fail here with exit 3.
+        # Verified against GHCR: resolves to org.opencontainers.image.revision 426ad4d…
+        image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8
         imagePullPolicy: Always
         args:
           - "/workspace/input"
@@ -78,7 +86,7 @@ spec:
           # envelope threaded through predict's own manifest, so setting SRP_* here would fabricate
           # rather than record. Not an idempotency-key input, so changing it forces no recompute.
           - name: SRT_TRAITS_CONTAINER_DIGEST
-            value: "sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4"
+            value: "sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8"
         volumeMounts:
           - name: predictions-output-dir
             mountPath: /workspace/input
