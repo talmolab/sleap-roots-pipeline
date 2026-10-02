@@ -43,6 +43,19 @@
 # deleted only after both templates were live. Done 2026-09-29: they were run rr4zj's (15 keys;
 # not hpdpf's 12 as first written here), snapshotted to a4_poc/_stale-manifests-2026-09-29/.
 # RESTORE them from there on any rollback to sha-28034f6.
+# Bumped 2026-10-02: sha-1bc3056 -> sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
+# (salk-bloom #1008, squash 88cbcbf3, bloomctl 0.1.0a7; part of bloom#900 / bloom#875). Digest
+# from the docker-build-bloomcli run for 88cbcbf3 and `imagetools inspect` (OCI index, the same
+# kind as the sha-1bc3056 digest). THIS stage's code is unchanged; the bump is here for the
+# lockstep rule. What changes is write-back's message for an unmatched no-op re-delivery; see
+# sleap-roots-write-back-template.yaml. Every bloomcli/ commit on bloom staging since 1bc3056c
+# rides along: #976 (57242f36, README only), #982 (a3a3c9d9, version 0.1.0a6 -> 0.1.0a7, PyPI
+# README and CHANGELOG), #996 (306ab03a, one test file) and #1008. None changes a CLI flag, the
+# sleap-roots-contracts pin (still 0.1.0a9), the run-manifest name or an exit code, so the run
+# manifest's writer and reader are the same as at sha-1bc3056 and registration order does not
+# matter for this bump. Write-back first anyway, as for the last one.
+# Rollback target: sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+# (all three templates; re-derive the live pin from the cluster first).
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -70,7 +83,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
         imagePullPolicy: Always
         args:
           - "cyl"
