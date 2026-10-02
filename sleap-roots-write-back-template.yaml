@@ -39,6 +39,18 @@
 # cross-workflow redelivery status fallback.
 # ORDERING: register THIS template before images-downloader's matching bump (the old writer stamps
 # its own workflow name, so new-reader/old-writer is safe; the reverse is not).
+# Bumped 2026-10-02: sha-1bc3056 -> sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
+# (salk-bloom #1008, squash 88cbcbf3, bloomctl 0.1.0a7; part of bloom#900 / bloom#875; see
+# sleap-roots-images-downloader-template.yaml for the ride-along commits). THIS stage's code
+# changes, in its message only: an already-ingested envelope whose re-delivery did not update this
+# workflow's cyl_pipeline_run_scans row (`was_noop: true`, `status_update_matched: false`) now
+# reports "already ingested as source_id=N: nothing was written, and this workflow's ... row for
+# that source's scan was not updated". It used to reuse the written-delivery text ("write-back
+# succeeded ... the written trait/blob data is correct"). The outcome is unchanged: `failed`,
+# non-retriable, and no change to the exit code. Most no-op re-deliveries now resolve
+# server-side and report `skipped` (bloom #1001's RPC, live on staging since 2026-10-01), so this
+# message appears only for the residual case.
+# Rollback target: sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -55,7 +67,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
         imagePullPolicy: Always
         args:
           - "cyl"

@@ -110,7 +110,10 @@ spec:
         # which closes #72's first risk: with IfNotPresent, a node-cached layer can no longer stand
         # in for an overwritten tag. #72's second risk (this relies on /bin/sh in an application
         # image) is unchanged.
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
+        # Bumped 2026-10-02: sha-1bc3056 -> sha-88cbcbf (salk-bloom #1008, squash 88cbcbf3; part of
+        # bloom#900), in lockstep with the other two. /bin/sh is checked present in the new image.
+        # Rollback target: sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802.
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
         # IfNotPresent, not the Always the other bloomctl templates use: those pull every run to
         # catch a silently-overwritten sha- tag, which matters for code that actually runs. This
         # task uses only /bin/sh, and it is the terminal single-point-of-failure — a registry
