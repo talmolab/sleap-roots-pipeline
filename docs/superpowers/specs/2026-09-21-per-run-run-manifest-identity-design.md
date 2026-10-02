@@ -282,6 +282,7 @@ release §8 previously assumed. During the rollout all four sites pass `allow_le
 §4 step 5 has deleted the stale files and the fleet is confirmed migrated, they flip to `False`
 and the fail-loud guarantee stops depending on the trees staying clean. (Operationally, step 5's
 deletion alone already delivers it; the flip guards against a legacy file reappearing — see §4.)
+**[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (runs outside Argo still write `run_manifest.json` by design, so never point one at the shared `a4_poc` trees) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]**
 
 A required parameter is deliberately less convenient than a defaulted one. The convenience is
 what made the hole invisible.
@@ -479,7 +480,7 @@ The registry migration (§2.8) interleaves with it, so the two are written as on
    would (verified against the released a9, 2026-09-24). **This is the step that makes §2.2
    real.**
 6. **Flip `allow_legacy` to `False`** at all four call sites and re-release the consumers
-   (§2.9). This is **hardening** (corrected 2026-09-24; an earlier revision called it the step
+   (§2.9). **[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (runs outside Argo still write `run_manifest.json` by design, so never point one at the shared `a4_poc` trees) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]** This is **hardening** (corrected 2026-09-24; an earlier revision called it the step
    that makes §2.2 real). After step 5 it guards against one thing: a legacy file *reappearing*,
    e.g. from a hand-submitted or rolled-back pre-a9 `bloomctl` image. It is cheap — one keyword per site, no contracts change. It is also safe for local runs:
    the flip is a no-op where no run identity exists, because there `RUN_MANIFEST_FILENAME` is
@@ -519,7 +520,7 @@ migration rather than compared across it.
 | risk | mitigation |
 |---|---|
 | Mid-rollout skew silently widens scope | reader-first ordering (§4) + fail-loud (§2.2) |
-| The legacy fallback makes fail-loud inert while a legacy file exists | §4 step 5 deletes the stale files; `allow_legacy` is required and greppable, and §4 step 6 flips it off against a file reappearing (§2.9) |
+| The legacy fallback makes fail-loud inert while a legacy file exists | §4 step 5 deletes the stale files; `allow_legacy` is required and greppable, and §4 step 6 flips it off against a file reappearing (§2.9) **[⚠️ superseded 2026-10-01 — step 6 not done; #82 closed won't-fix]** |
 | A `EACCES` on the manifest reads as "absent" and falls through to the stale file | `read_run_manifest` opens rather than probes; only `FileNotFoundError` advances (§3.1) |
 | Writer and reader disagree on the run id, so the cross-check fires on every stage | both derive it from `pipeline_run_id_from_env()`; bloomctl layers its `local-<uuid8>` on top rather than reading the env itself (§3.2) |
 | Stale legacy manifests reachable through the fallback | delete them at step 5 |
