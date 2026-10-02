@@ -353,9 +353,9 @@ bloom `main`, switched off in prod (2026-10-01); the concurrency gate is live
 order *(order proposed by the 2026-10-01 roadmap review; owner to confirm)*:
 
 1. **Row 7 — [#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82)**, flip
-   `allow_legacy=False` (hardening; unblocked since row 6). Rows 1–6 complete #71's stated
-   remaining work, so whether [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71)
-   closes now or with row 7 is the owner's call; post the row-6 evidence on it either way.
+   `allow_legacy=False` (hardening; unblocked since row 6).
+   [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) itself was **closed
+   2026-10-01** with the row-6 evidence, since rows 1–6 complete its stated remaining work.
 2. **[bloom#900](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/900)** — a
    no-op re-delivery of a source written outside any run reports the scan `failed`. Until it is
    fixed, no pre-existing A4-PIPELINE-E2E-TEST scan (nor 289/577/1009) can pass a Bloom-dispatched
@@ -371,8 +371,8 @@ order *(order proposed by the 2026-10-01 roadmap review; owner to confirm)*:
    [bloom#864](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/864); see
    "Production promotion" below.
 
-[predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) is still open with C2, C3
-and 6.3 all done (2026-09-25 / 09-29 / 09-29) — closeable, owner's call.
+[predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) was **closed 2026-10-01**:
+C2, C3 and 6.3 were all done (2026-09-25 / 09-29 / 09-29).
 
 **Superseded — the frontier as of 2026-09-21, kept for the record:**
 
@@ -845,14 +845,17 @@ Adversarial 4-lens review. Resolutions:
     exactly those four volumes is a `K8sConfigError`, so **any volume change in
     `sleap-roots-pipeline.yaml` now needs a matching Bloom change.** It also refuses dispatch
     unless `CYL_PIPELINE_TRIGGER_ENABLED` is exactly `true`.
-  - **Owner's calls, not decided here:**
-    - whether #71 closes now or with row 7;
-    - whether predict#34 closes (C2, C3 and 6.3 are all done);
-    - the frontier order;
-    - filing an issue for the `check_cluster_drift.sh` NotFound misclassification;
-    - the predictor template's own rollback comment (`sleap-roots-predictor-template.yaml`,
-      "Rollback BEFORE training 6.3…"), which still describes the state before 6.3 and the
-      `dc216c7` restore path. Correcting it is a YAML change, left for a follow-up.
+  - **Owner's calls (2026-10-01):**
+    - [#71](https://github.com/talmolab/sleap-roots-pipeline/issues/71) closed now, not with
+      row 7.
+    - [predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) closed.
+    - The `check_cluster_drift.sh` NotFound misclassification is filed as
+      [#109](https://github.com/talmolab/sleap-roots-pipeline/issues/109).
+    - The predictor template's stale rollback comments ("Rollback BEFORE training 6.3…" and the
+      2026-09-25 "re-pin `sha-9ac819fb`") are corrected in
+      [#110](https://github.com/talmolab/sleap-roots-pipeline/pull/110). That PR changes
+      comments only; the parsed YAML is identical.
+    - The frontier order is still open, pending whether row 7 is worth its cost.
 - **2026-10-01** — **Concurrency gate ([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98)) merged and deployed: at most 8 predictor and 5
   images-downloader tasks run at once across `runai-busch-lab`.**
   - **Why.** Bloom submits every 25-scan batch of a run at once
@@ -1386,7 +1389,8 @@ Adversarial 4-lens review. Resolutions:
     `scripts/check_cluster_drift.sh:36-39`) already exits 2 for VPN down, a bad KUBECONFIG or token,
     or a missing `kubectl`. Only a per-object RBAC denial or a transient API error inside the loop
     (now `:145-148`) fabricates drift. The ConfigMap check #102 added (`:182-184`, `CHECK FAILED`,
-    exit 2) already classifies correctly. Still unfixed and not yet tracked by an issue.]**
+    exit 2) already classifies correctly. Still unfixed; tracked as
+    [#109](https://github.com/talmolab/sleap-roots-pipeline/issues/109).]**
   - **#72 is still open and unmitigated.** bloom#879's body claimed #78's digests "also address the
     tag-mutability half" of #72; they do not — #72 is exclusively about `exit-gate`, and those digests
     went to `predictor` and `trait-extractor`. Bloom's comparator now prints an advisory naming #72
