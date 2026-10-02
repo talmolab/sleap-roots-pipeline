@@ -356,10 +356,12 @@ order:
    (pending-pod timeout), [bloom#986](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/986)
    (show queued), [bloom#998](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/998)
    (stage-in 404 retried as transient).
-2. **bloom#900's PR B** (OpenSpec `fix-cyl-noop-redelivery-scan-resolution`): the bloomctl
-   message for the rare no-op that still can't update its row, CHANGELOG and README, and removing
-   the run page's bloom#900 note. Its bloomctl half reaches the cluster only with a bloomctl image
-   and the three bloomctl template pins bumped here.
+2. ✅ **bloom#900's PR B — deployed 2026-10-02.** It is Bloom PR [#1008](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1008)
+   (`88cbcbf3`, OpenSpec `fix-cyl-noop-redelivery-scan-resolution`): the bloomctl message for the
+   rare no-op that still can't update its row, plus removing the run page's bloom#900 note. The
+   bloomctl half is pinned here by [#114](https://github.com/talmolab/sleap-roots-pipeline/pull/114)
+   (`sha-88cbcbf`) and live on all three bloomctl templates. The web half ships with Bloom's own
+   deploys.
 3. **[bloom#971](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971) phase 1** (decided 2026-10-01): the past-window rule. **Both
    halves are deployed** (2026-10-02, see the status log).
    - **Traits:** [sleap-roots#272](https://github.com/talmolab/sleap-roots/pull/272) (`426ad4d`),
@@ -407,7 +409,7 @@ order:
   bloom staging→main promotion. Rows already recorded `failed` stay failed, because migrations are
   forward-only. #1001 also changes one case: a no-op re-delivering an older source onto a row that
   already holds a newer one now reports unmatched, which bloomctl treats as a non-retriable
-  failure. PR B is still to come (frontier item 2).
+  failure. PR B (Bloom PR #1008) is deployed here via #114 (frontier item 2).
 - [predict#34](https://github.com/talmolab/sleap-roots-predict/issues/34) **closed 2026-10-01**:
   C2, C3 and 6.3 were all done (2026-09-25 / 09-29 / 09-29).
 
@@ -494,7 +496,8 @@ for the acceptance evidence. Only `bloomctl` (reader+writer, row 5) is still on 
 **Updated 2026-09-29:** row 5 is merged ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940)) and its image is built, but
 the templates still pin the pre-a9 `sha-28034f6` until row 6. **Updated 2026-09-30:** row 6 is
 done — all three bloomctl templates run `sha-1bc3056` on the cluster and the live E2E passed; every
-#71 consumer is now on a9.)
+#71 consumer is now on a9. *Updated 2026-10-02:* now `sha-88cbcbf` (#114), with the same reader
+and writer.)
 
 **The Bloom UI (bloom#15) can be built in parallel with the rest of this table — verified
 2026-09-24, and narrower than this roadmap previously implied.** (*Built: v1 shipped 2026-09-30.*) The earlier sequencing argument
@@ -846,6 +849,28 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-10-02 (bloomctl)** — **bloomctl `sha-88cbcbf` deployed: bloom#900's PR B (Bloom PR
+  [#1008](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1008)) on all three bloomctl templates.**
+  - **What changed.** [#114](https://github.com/talmolab/sleap-roots-pipeline/pull/114) moves
+    images-downloader, write-back and exit-gate from `sha-1bc3056@sha256:8e9eb22c…` to
+    `sha-88cbcbf@sha256:0259ec0a…`, together. GHCR resolves the tag to that digest.
+  - **#1008 is message-only.** A no-op re-delivery that could not update its run-scan row now
+    fails with an accurate message ("already ingested as source_id=N: nothing was written …"),
+    through a `status_update_matched_message()` helper. `retriable=False`, the `failed` outcome,
+    the `ClickException` and the exit codes are unchanged.
+  - **The other changes between the pins** (`git log 1bc3056c..88cbcbf3 -- bloomcli`) are #976
+    (README), #982 (version 0.1.0a6 → 0.1.0a7) and #996 (one test file). Contracts is still
+    `0.1.0a9` and the run-manifest name is unchanged, so there is no Bloom gate and no
+    writer/reader skew.
+  - **Deploy** (an `argo template update`, run by Claude Code at the owner's request):
+    - **Pre-check:** the namespace was idle, and DRIFT showed on exactly the three bloomctl
+      templates, each on its `image:` line only.
+    - **Applied** write-back, then images-downloader, then exit-gate. Before each one, a guard
+      confirmed nothing was Running or Pending, and each live `image:` was read back afterwards.
+    - **Post-check:** `check_cluster_drift.sh` reports all 5 templates and the ConfigMap
+      **IN SYNC** (exit 0).
+  - **Rollback:** all three templates to `sha-1bc3056@sha256:8e9eb22c…` (same reader and writer).
+    Re-derive the live pin from the cluster first.
 - **2026-10-02 (deploy)** — **bloom#971 phase 1 is live. Traits `sha-426ad4d` and predict `sha-79939ee`
   are deployed. The past-window path was verified locally on both images; a Bloom E2E is still
   pending.**
