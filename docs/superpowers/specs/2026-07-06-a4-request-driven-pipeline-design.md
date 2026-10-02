@@ -266,7 +266,7 @@ or a truncated manifest is skipped as done.)
   explicit set of scans (table/gallery checkboxes — e.g. reprocessing a QC'd subset or a prior run's
   failed scans) **[⚠️ wave + multi-select added 2026-07-24, see §5]** + a params panel
   (species/mode/age prefilled from metadata, overridable) → `POST /workflows/pipeline` with JWT.
-  **[⚠️ narrowed 2026-10-01 — params are display only, never overridable. Once phase 1 ships (decided, not yet built in predict, traits or the dialog), scans older than their species' model window will run by default with that species' highest-age window, with a warning in the dialog; until then they fail. Choosing models per root type is a later phase (bloom#897). See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**
+  **[⚠️ narrowed 2026-10-01 — params are display only, never overridable. Once phase 1 ships (decided; the traits half is merged, sleap-roots#272, but not deployed; predict#50 and the dialog are still to come), scans older than their species' model window will run by default with that species' highest-age window, with a warning in the dialog; until then they fail. Choosing models per root type is a later phase (bloom#897). See the [bloom#971 decisions](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/971#issuecomment-5937500723).]**
 - **Pre-check preview:** "38/40 already have results for these params — 2 will run" (from §7).
 - **Live status:** a shared "Pipeline runs" panel (all members; `requested_by` shows who launched)
   reading `cyl_pipeline_runs` via **Realtime** (status + "N/M", no polling); per-scan drill-down from
