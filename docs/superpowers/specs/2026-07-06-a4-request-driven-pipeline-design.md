@@ -165,8 +165,9 @@ is only *recorded* in provenance, not hashed, so baking it is optional.
 - **Bloom-side pre-check (optional optimization — avoids scheduling the pod at all):** at submit,
   compare the request's `params` + **current production model versions** against the recorded
   Provenance (`models` + `params`) in the latest `cyl_trait_sources.metadata`. **[⚠️ narrowed
-  2026-10-01 — request `params` are inert (bloom#971); compare the scan's metadata-resolved
-  params.]** Params are computable
+  2026-10-01 — request `params` are inert (bloom#971). Compare
+  `compute_param_hash(resolve_params(scan_row, overrides={"mode": "cylinder"}).values)`, as bloomctl
+  stamps it, against the recorded `param_hash`.]** Params are computable
   Bloom-side (import the contract's `compute_param_hash`); the recorded result's models are in
   `metadata`. **The catch:** Bloom must also know what models *would* run now — that's a wandb
   **registry lookup** (or a "current production models" manifest the pipeline publishes for Bloom to
