@@ -1,9 +1,8 @@
 # Tasks: fix-predictor-gpu-container-target
 
-**Status (2026-10-03).** Implementation (§1, §2, §2R, §4) and live verification (§3, results in
-§3R) are done. Remaining:
+**Status (2026-10-03).** Implementation (§1, §2, §2R, §4), live verification (§3, results in
+§3R) and the pre-merge sweep (§5) are done. Remaining:
 
-- 5.1–5.3: pre-merge sweep, including the rebase onto `origin/main`;
 - 6.1–6.5: deploy, first-run check, rollback if needed, then PR B;
 - 7.1–7.4: follow-ups (predict guard, admin note, post-upgrade issue, PowerShell checks issue).
 
@@ -513,17 +512,23 @@ go in one commit with it.
 
 ## 5. Pre-merge sweep
 
-- [ ] 5.1 Run Checks, then `openspec validate fix-predictor-gpu-container-target --strict`.
+- [x] 5.1 Run Checks, then `openspec validate fix-predictor-gpu-container-target --strict`.
   Validate: everything exits 0.
-- [ ] 5.2 Run `git fetch && git diff --stat origin/main...HEAD`.
+- [x] 5.2 Run `git fetch && git diff --stat origin/main...HEAD`.
   Validate, by manual comparison: the list holds only proposal.md Impact's files and the change
   folder. 3.6's equivalence check still holds for the head template: re-run it if the template's
   `metadata`, `container` or `podSpecPatch` changed after 3.6.
-- [ ] 5.3 Rebase onto `origin/main`, which has PR #121's `.claude/commands` standardization and
+- [x] 5.3 Rebase onto `origin/main`, which has PR #121's `.claude/commands` standardization and
   #122, then re-run Checks.
   Validate: the rebase is conflict-free (a trial `git merge-tree` showed none), and all Checks pass,
   including `check_docs.py`'s `podSpecPatch` and annotation assertions over the rebased command
   files.
+
+  Recorded 2026-10-03: rebased onto `origin/main` `7ba5b65`, with #121 and #122 included. All 7 doc
+  edits applied cleanly in a three-way merge. `check_all.sh` passes at each of the 4 commits;
+  `lint_manifests.sh` reports no errors; `openspec validate --strict` passes. The diff against
+  `origin/main` is 14 files: the change folder plus the Impact list. The rebuilt template and
+  check scripts are byte-identical to the pre-rewrite state, so 3.6 still holds.
 
 ## 6. Deploy (needs explicit user approval)
 
