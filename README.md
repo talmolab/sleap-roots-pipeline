@@ -209,11 +209,16 @@ You can test the pipeline locally using Docker Desktop and WSL2. This setup is u
 
 ### ▶️ Run Locally
 
+> ⚠️ **Broken for the current DAG** — tracked by
+> [#21](https://github.com/talmolab/sleap-roots-pipeline/issues/21). The script applies four
+> templates into namespace `argo` but submits the *cluster* manifest (`sleap-roots-pipeline.yaml`),
+> whose `metadata.namespace: runai-busch-lab` wins, so it fails before any stage runs; see the
+> script's header. Until #21 lands, validate with `scripts/check_all.sh` +
+> `scripts/lint_manifests.sh` and a real cluster submit.
+
 ```bash
 ./local_run_pipeline_first_time.sh
 ```
-
-This uses the `local-WSL2-*` templates and pipeline files.
 
 ---
 
