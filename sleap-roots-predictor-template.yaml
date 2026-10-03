@@ -6,8 +6,8 @@ metadata:
   # pod — this `preemptible` annotation is an INERT breadcrumb (effective behavior comes from
   # spec.templates[].priorityClassName below). The `gpu-fraction` annotation that used to live
   # here was equally inert and has moved to spec.templates[predictor].metadata.annotations below
-  # as `gpu-memory` (pod-level, where Argo actually copies it) — closes #25. See
-  # openspec/changes/archive/2026-08-12-enable-predictor-gpu-fractions/design.md for the full rationale.
+  # as `gpu-memory` (pod-level, where Argo actually copies it) — closes #25. Full rationale:
+  # openspec/changes/archive/2026-08-12-enable-predictor-gpu-fractions/design.md.
   annotations:
     preemptible: "true"
   labels:
@@ -22,15 +22,24 @@ spec:
         # openspec/changes/archive/2026-08-12-enable-predictor-gpu-fractions/design.md.
         annotations:
           gpu-memory: "8192"
-          # #117 -- THIS COMMENT IS THE CANONICAL STATEMENT; README, the runai skill and the
-          # commands point here. RunAI gives a pod's fractional GPU to spec.containers[0] unless
-          # this annotation names a container. In an Argo pod containers[0] is the `wait` sidecar,
-          # so without it `wait` got the GPU and `main` got NVIDIA_VISIBLE_DEVICES=void: predict
-          # ran on CPU while holding the slice and its `pipeline-gpu` semaphore slot (seen on
-          # 2026-10-02, run x68sv; likely every run since #25's fix, PR #41). The value must be an
-          # existing container name -- a name that matches none fails the pod at admission -- and
-          # Argo always names a `container:` template's container `main`.
+          # #117 (canonical, together with the podSpecPatch comment below; docs point here).
+          # Names the GPU container, but only on Run:ai >= 2.24 -- this cluster runs Run:ai
+          # 2.22.64, which ignores it (probe 2026-10-02); the podSpecPatch below does the job
+          # today. Kept so the fix holds by name after an upgrade. Must name an existing container
+          # (on >= 2.24 an unknown name fails the pod at admission); Argo names a `container:`
+          # template's container `main`.
           gpu-fraction-container-name: "main"
+      # #117: Run:ai 2.22 gives a pod's fractional GPU to spec.containers[0], and Argo builds the
+      # pod with its `wait` sidecar first -- so `wait` got the slice, `main` got
+      # NVIDIA_VISIBLE_DEVICES=void, and predict ran on CPU while holding the slice and its
+      # `pipeline-gpu` slot (run x68sv, 2026-10-02; likely every run since #25's fix, PR #41).
+      # Argo v3.6 applies podSpecPatch as a Kubernetes strategic merge, and $setElementOrder puts
+      # `main` first. Live-tested 2026-10-03 (change fix-predictor-gpu-container-target, tasks §3):
+      # CUDA in `main`, exit codes recorded (even an instant crash), retry after failure, real
+      # predict via templateRef, two pods on one GPU. DO NOT REMOVE as cosmetic: without it predict
+      # silently falls back to CPU. Asserted by check_manifests.py; re-probe after any Argo or
+      # Run:ai upgrade (Argo >= 4.1's init-less layout renames `wait`, which this list names).
+      podSpecPatch: '{"$setElementOrder/containers":[{"name":"main"},{"name":"wait"}]}'
       # Explicit per PR #41 review: annotation-only GPU requests have no nvidia.com/gpu fallback,
       # so scheduling depends entirely on RunAI's scheduler seeing this pod. Already automatic in
       # runai-talmo-lab/runai-busch-lab today (live-verified) — set explicitly anyway so a future
@@ -244,22 +253,22 @@ spec:
             mountPath: /workspace/output
         # securityContext removed (#25): privileged:true/runAsUser:0 confirmed unnecessary via a
         # live test run — the pod scheduled onto a GPU slice without privileged, and NFS writes
-        # succeeded as the default non-root user. (Corrected #117: this previously claimed the GPU was
-        # visible to the container; that was never checked inside the container, and `main`
-        # in fact got no GPU until gpu-fraction-container-name was added above.) NOTE (corrected #70): this comment previously
-        # claimed cluster admission "rejects `privileged` outright". That is overbroad — the
-        # source claim (2026-08-04-gpu-fraction-sizing-design.md) scopes it to
+        # succeeded as the default non-root user. (Corrected #117: this previously claimed the GPU
+        # was visible to the container; that was never checked inside it, and `main` in fact got
+        # no GPU until the podSpecPatch reorder above.) NOTE (corrected #70): this comment
+        # previously claimed cluster admission "rejects `privileged` outright". That is
+        # overbroad — the source claim (2026-08-04-gpu-fraction-sizing-design.md) scopes it to
         # `runai workspace submit`, the RunAI CLI path, NOT Argo-created pods. Falsified live:
         # the trait-extractor template still sets `privileged: true`/`runAsUser: 0` and its pods
         # run and Succeed in this namespace. Dropping it here was justified by the test run
-        # above, not by admission. See the Risks section of
-        # openspec/changes/archive/2026-08-12-enable-predictor-gpu-fractions/design.md for the one caveat (that test
-        # reused an already-writable path, not a fresh one — task 3.4 covers the fresh-path case).
+        # above, not by admission. See the Risks section of the archived #25 design (linked at the
+        # top of this file) for the one caveat (that test reused an already-writable path, not a
+        # fresh one — task 3.4 covers the fresh-path case).
         resources:
           # Initial estimates — tune from a real run (predict loads sleap-nn models into RAM).
           # A memory request/limit prevents an unaccounted OOM-kill under node pressure. No
-          # nvidia.com/gpu here (#25) — GPU comes from the gpu-memory + gpu-fraction-container-name
-        # annotations above (gpu-memory alone gave it to `wait`, #117); RunAI's
+          # nvidia.com/gpu here (#25) — the GPU comes from the gpu-memory annotation above and
+          # reaches `main` via the podSpecPatch reorder (#117); RunAI's
           # own docs example for annotation-driven GPU requests carries no nvidia.com/gpu resource
           # at all, and coexistence with it is what caused #25 in the first place.
           requests:

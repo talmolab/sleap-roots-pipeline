@@ -16,6 +16,7 @@ Exit:   0 = all assertions hold, 1 = at least one failed.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -661,6 +662,20 @@ def main() -> int:
         "predictor names main as its GPU-fraction container",
         pred_annotations.get("gpu-fraction-container-name"),
         "main",
+    )
+    # ...but that annotation only exists from Run:ai cluster v2.24, and this cluster runs 2.22
+    # (live-tested 2026-10-02: ignored). What actually works on 2.22 is making `main` the first
+    # container: Argo appends `wait` first, then applies podSpecPatch as a Kubernetes strategic
+    # merge, whose $setElementOrder directive reorders the list. Removing this line silently sends
+    # the GPU back to `wait` -- nothing else in the pod would look different.
+    try:
+        pred_patch = json.loads(pred_tmpl.get("podSpecPatch") or "null")
+    except json.JSONDecodeError as e:
+        pred_patch = f"unparseable: {e}"
+    check(
+        "predictor podSpecPatch orders main before wait",
+        pred_patch,
+        {"$setElementOrder/containers": [{"name": "main"}, {"name": "wait"}]},
     )
     # The annotation must name a container that exists, or RunAI fails the pod at admission. Argo
     # names a `container:` template's container `main`; a script/containerSet, or an explicit
