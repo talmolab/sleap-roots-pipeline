@@ -4,9 +4,9 @@ description: Adversarial multi-lens PR review — subagent team posts a structur
 
 # PR Code Review — Subagent Team
 
-You are a senior engineer reviewing a pull request for `talmolab/sleap-roots-pipeline`. You
-value orchestration correctness, reproducibility, cluster safety, and maintainable declarative
-YAML above all else.
+You are a senior engineer reviewing a pull request for this repo (`$REPO`, resolved in Step 1).
+You value orchestration correctness, test discipline, reproducibility, cluster safety, and
+maintainable declarative YAML above all else.
 
 This command launches **5 specialized subagents in parallel** to critically review the PR.
 Each subagent has a distinct review lens and is instructed to be adversarial — finding gaps,
@@ -22,7 +22,7 @@ application code, no test suite — see `openspec/project.md`). Use these 5 doma
 
 1. **Argo Workflow & Template Correctness** — DAG `dependencies` order; `templateRef`
    name/template wiring; `entrypoint`; `retryStrategy` on preemption-prone steps; manifest
-   validity (`argo lint`). NB: this pipeline passes data **via shared volume mounts, not
+   validity (`wsl -e bash scripts/lint_manifests.sh`). NB: this pipeline passes data **via shared volume mounts, not
    Argo parameters/artifacts** — verify output-mount(stage N) == input-mount(stage N+1)
    rather than hunting for param wiring.
 2. **RunAI / Kubernetes Scheduling & Resources** — `gpu-fraction`, `nvidia.com/gpu` on the
@@ -37,9 +37,12 @@ application code, no test suite — see `openspec/project.md`). Use these 5 doma
 4. **Reproducibility & Provenance** — image tags/digests pinned (never `:latest`); model
    versions; per-scan parameter defaults vs. overrides; idempotency / re-delivery behavior
    (ties to roadmap A4 in `docs/bloom-integration/roadmap.md`).
-5. **Docs Accuracy & Shell-Script Safety** — README/`openspec/project.md` still accurate;
-   run scripts use `set -euo pipefail`; **no `ARGO_TOKEN` / secret leakage** into logs or
-   committed files; safe failure handling.
+5. **Tests, Docs Accuracy & Shell-Script Safety** — every behavior the PR changes has a
+   `check(...)` in `scripts/check_manifests.py` / `scripts/check_docs.py` that fails without
+   the fix (revert the fix mentally, or actually, and confirm), and `check_all.sh` passes;
+   live-only claims cite a recorded baseline + re-run; README/`openspec/project.md` still
+   accurate; run scripts use `set -euo pipefail`; **no `ARGO_TOKEN` / secret leakage** into
+   logs or committed files; safe failure handling.
 
 ## Step 1: Determine Mode
 
@@ -53,8 +56,8 @@ application code, no test suite — see `openspec/project.md`). Use these 5 doma
 Resolve the repo for GitHub calls:
 
 ```bash
-gh repo view --json nameWithOwner -q .nameWithOwner
-# → use as talmolab/sleap-roots-pipeline in all gh commands
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+# → use "$REPO" in all gh commands; never hardcode the owner/name
 ```
 
 ## Step 2: Gather Context
@@ -118,7 +121,7 @@ For each subagent, construct a prompt that includes:
 Subagent 1: Argo Workflow & Template Correctness
   - DAG dependencies / ordering; templateRef wiring; entrypoint; inter-stage data via
     shared volume mounts (NOT Argo params/artifacts) — output-mount(N)==input-mount(N+1);
-    retryStrategy; would `argo lint` pass on every changed manifest?
+    retryStrategy; does `wsl -e bash scripts/lint_manifests.sh` pass?
 
 Subagent 2: RunAI / Kubernetes Scheduling & Resources
   - gpu-fraction; nvidia.com/gpu limits on the right step; namespace (runai-busch-lab) /
@@ -133,8 +136,10 @@ Subagent 4: Reproducibility & Provenance
   - image tags/digests pinned (no :latest); model versions; per-scan param defaults vs
     overrides; idempotency / re-delivery; alignment with roadmap A4.
 
-Subagent 5: Docs Accuracy & Shell-Script Safety
-  - README / openspec/project.md accuracy; set -euo pipefail; ARGO_TOKEN/secret leakage;
+Subagent 5: Tests, Docs Accuracy & Shell-Script Safety
+  - each changed behavior has an assertion in check_manifests.py / check_docs.py that would
+    fail without the fix; run `uv run --no-project --with pyyaml bash scripts/check_all.sh`;
+    live-only claims cite a recorded baseline; README / openspec/project.md accuracy; set -euo pipefail; ARGO_TOKEN/secret leakage;
     failure handling; does the implementation match the PR description / linked spec?
 ```
 
@@ -145,7 +150,8 @@ After ALL subagents return:
 1. **Deduplicate** overlapping findings.
 2. **Prioritize**:
    - **BLOCKING** — must fix before merge (broken DAG/templateRef, secret leakage, GPU on
-     wrong step, manifest that fails `argo lint`, spec mismatch)
+     wrong step, manifest that fails `lint_manifests.sh`, failing `check_all.sh`, changed
+     behavior with no assertion, spec mismatch)
    - **IMPORTANT** — should fix before merge (cluster/local drift, unpinned image, missing
      retryStrategy)
    - **SUGGESTION** — optional improvements
@@ -180,7 +186,7 @@ BODY="$(cat <<'EOF'
 [Optional improvements — or "None"]
 
 ---
-*Review by Claude Code subagent team (Argo Correctness | RunAI Scheduling | Storage Integrity | Reproducibility | Docs & Script Safety)*
+*Review by Claude Code subagent team (Argo Correctness | RunAI Scheduling | Storage Integrity | Reproducibility | Tests, Docs & Script Safety)*
 EOF
 )"
 
@@ -204,6 +210,8 @@ Print the synthesized review. Do not call `gh pr review`.
 
 ## Related commands
 
+- `/test`, `/lint` — run the suites and manifest lint locally before reviewing
+- `/pre-merge` — full pre-merge gate
 - `/review-openspec` — review the spec before reviewing the implementation PR
 - `/copilot-review` — fetch and triage GitHub Copilot inline comments
 - `/pr-description` — generate the PR body

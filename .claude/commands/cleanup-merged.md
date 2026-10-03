@@ -119,4 +119,4 @@ Flag the commit/PR as **"manual OpenSpec archive — needs review"**.
 ## Related commands
 
 - `/openspec:archive` — the underlying archive step this wraps
-- `/pr-description`, `/review-pr`
+- `/pr-description`, `/review-pr`, `/pre-merge`

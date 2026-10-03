@@ -21,6 +21,9 @@ git tag -l | sort -V | tail -1
 
 # View commits since last tag
 git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
+
+# owner/repo for the compare links below (never hardcode it)
+gh repo view --json nameWithOwner -q .nameWithOwner
 ```
 
 ## Changelog Format
@@ -66,8 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bug fix description
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-pipeline/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/talmolab/sleap-roots-pipeline/releases/tag/v0.1.0
+[Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/<owner>/<repo>/releases/tag/v0.1.0
 ```
 
 ## Workflow: Adding Changes
@@ -115,8 +118,8 @@ Move `[Unreleased]` to a versioned section and update the link footer:
 ```
 
 ```markdown
-[Unreleased]: https://github.com/talmolab/sleap-roots-pipeline/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/talmolab/sleap-roots-pipeline/releases/tag/v0.1.0
+[Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/<owner>/<repo>/releases/tag/v0.1.0
 ```
 
 ## Writing Good Changelog Entries

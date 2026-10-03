@@ -4,9 +4,11 @@ description: Generate a comprehensive PR description from the current diff, with
 
 Use this command when opening a pull request to document what changed and what was verified.
 
-> **This repo** has no test/build toolchain — it is declarative Argo/RunAI YAML + shell
-> launchers (see `openspec/project.md`). "Verification" means manifest linting, a local
-> WSL2 dry-run, OpenSpec validation, and (where relevant) a real cluster submit.
+> **This repo** is declarative Argo/RunAI YAML + shell launchers with no build step (see
+> `openspec/project.md`). "Verification" means the assertion suites (`/test` →
+> `scripts/check_all.sh`), manifest lint (`/lint` → `scripts/lint_manifests.sh`), OpenSpec
+> validation, and — for behavior only the cluster shows — a real cluster submit compared
+> against a recorded red baseline.
 
 ## Quick Commands
 
@@ -34,10 +36,11 @@ Use a three-state convention for verification checkboxes — don't tick `[x]` ou
 
 Example:
 ```
-- [x] `argo lint sleap-roots-pipeline.yaml` passes
+- [x] `check_all.sh` passes — new assertion `predictor directs its GPU slice at the main container` seen red first (got None)
+- [x] `lint_manifests.sh` passes
 - [x] `openspec validate <change-id> --strict` passes
-- [!] Local WSL2 dry-run blocked by pre-existing hostPath issue (#NN), not introduced here
-- [ ] Cluster submit (not run — manifest-only change)
+- [!] Local WSL2 dry-run not possible — `local_run_pipeline_first_time.sh` is broken for the current DAG (#21), not introduced here
+- [ ] Cluster submit (not run yet — templates not registered until after merge)
 ```
 
 ## PR Description Template
@@ -64,10 +67,12 @@ Example:
 
 ## Verification
 
-- [ ] `argo lint` passes on every changed manifest
+- [ ] `uv run --no-project --with pyyaml bash scripts/check_all.sh` passes
+- [ ] New/changed behavior has an assertion that was seen red before the fix (name it), or N/A
+- [ ] `wsl -e bash scripts/lint_manifests.sh` passes (or N/A — no manifest changed)
 - [ ] `openspec validate <change-id> --strict` passes
 - [ ] Cluster (`*.yaml`) and local (`local-WSL2-*.yaml`) variants kept in sync (or N/A)
-- [ ] Local WSL2 dry-run / cluster submit exercised (or stated why not)
+- [ ] Live acceptance: cluster submit re-run green against the recorded baseline (or stated why not / when)
 - [ ] No `ARGO_TOKEN` / secrets committed or echoed
 
 ## Breaking Changes
@@ -108,6 +113,7 @@ gh pr edit --body "Updated description"
 
 ## Related Commands
 
+- `/pre-merge` — run the full local gate before opening a PR
 - `/review-pr` — adversarial multi-lens review of this PR
 - `/copilot-review` — fetch and triage GitHub Copilot inline comments
 - `/cleanup-merged` — post-merge cleanup workflow

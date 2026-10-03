@@ -70,7 +70,7 @@ Organize all Copilot feedback into priority tiers:
 
 **Branch**: <branch-name>
 **PR Title**: <title>
-**Repo**: talmolab/sleap-roots-pipeline
+**Repo**: <$REPO from Step 3>
 
 ## Overview
 
@@ -134,4 +134,5 @@ Would you like me to:
 
 - `/review-pr` — adversarial multi-lens PR review (includes a Copilot check pass)
 - `/ci-debug` — debug CI failures that Copilot may have flagged
+- `/pre-merge` — full pre-merge gate (includes this command)
 - `/pr-description` — generate the PR body
