@@ -189,7 +189,9 @@ do not rely on summaries.
 > 1. **Manifest validity**: would `wsl -e bash scripts/lint_manifests.sh` pass after the change?
 > 2. **Template wiring**: `templateRef` name/template, `entrypoint`, DAG `dependencies`,
 >    inter-stage data via shared volume mounts (not Argo params/artifacts).
-> 3. **Scheduling & resources**: `gpu-fraction`; `nvidia.com/gpu` on the predictor step only;
+> 3. **Scheduling & resources**: predictor GPU via pod-level `gpu-memory` +
+>    the `podSpecPatch` ordering `main` first + `gpu-fraction-container-name: "main"`, no
+>    `nvidia.com/gpu`; GPU on the predictor step only;
 >    `namespace` (`runai-busch-lab`) / `project` (`busch-lab`) quota; preemptibility via
 >    `priorityClassName` (`interactive-preemptible`), not the `preemptible` annotation.
 > 4. **Storage**: `hostPath type: Directory` pre-existence (cluster `/hpi/hpi_dev/...`);

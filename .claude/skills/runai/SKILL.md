@@ -116,7 +116,9 @@ Only the **predictor** stage needs a GPU; every other stage — `images-download
 inert *object-level* `gpu-fraction: "0.5"` annotation alongside a hard `nvidia.com/gpu: 1`, which
 silently claimed a whole GPU regardless of the annotation). Annotation placement matters: only
 `spec.templates[].metadata.annotations` (pod-level) is copied onto the pod by Argo — the
-WorkflowTemplate object's own `metadata.annotations` (top of the file) never is.
+WorkflowTemplate object's own `metadata.annotations` (top of the file) never is. The predictor
+sets a `podSpecPatch` (plus `gpu-fraction-container-name`, used from Run:ai ≥ 2.24) so the slice
+reaches `main`, not Argo's `wait` sidecar (#117); see the comments in the template.
 
 ## 5. Stage images
 
@@ -217,6 +219,7 @@ set the priority class:
 |---|---|
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
 | Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7; an Argo node `Pending` with **no pod** and a `Waiting for … sleap-roots-pipeline-semaphores/<key> lock` message is the #98 concurrency limit, not RunAI (see `.claude/commands/ci-debug.md`) |
+| Predictor slow / suspected CPU inference | `kubectl logs <pod> -n runai-busch-lab -c main 2>&1 \| grep device=` under the `bloom-pipeline` kubeconfig. `device=cpu` on a GPU pod means `main` got no GPU: check its `NVIDIA_VISIBLE_DEVICES` in `kubectl get pod -o yaml` (`void` = the slice went to another container: check the template's `podSpecPatch` reorder, #117) |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
 | `ImagePullBackOff` | confirm the `ghcr.io/...` reference resolves; test `docker pull` of the exact string in `image:`, digest included |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |

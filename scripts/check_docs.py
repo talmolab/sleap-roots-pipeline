@@ -16,7 +16,7 @@ Deliberately offline: no cluster, no VPN, no credentials, no `argo` binary. Anyt
 the live namespace belongs in `scripts/check_cluster_drift.sh`, not here — a claim about the
 cluster is not a claim this repo can keep true.
 
-Usage:  python scripts/check_docs.py      # from the repo root
+Usage:  uv run python scripts/check_docs.py   # from the repo root (stdlib only)
 Exit:   0 = all assertions hold, 1 = at least one failed.
 """
 
@@ -269,6 +269,54 @@ def main() -> int:
             "SUPERSEDED" in hits[0] or re.search(r"Corrected 20\d\d-\d\d-\d\d", hits[0])
         )
         check(f"drift plan: {name!r} bullet carries a correction marker", bool(marked), True)
+
+    # --- Predictor GPU container target (#117) -------------------------------------------
+    # Not part of the cluster-access-docs spec: these guard the per-batch-pipeline predictor
+    # requirement's documentation. gpu-memory alone sent the GPU to Argo's `wait` sidecar while
+    # every doc said the annotation was the whole story, so assert each place that describes the
+    # predictor's GPU request names the container too. The canonical explanation is the comment
+    # beside the annotation in sleap-roots-predictor-template.yaml; these docs point there.
+    check(
+        "README no longer says gpu-memory alone grants GPU access",
+        "GPU access comes entirely from the" in norm(read(README)),
+        False,
+    )
+    gpu_docs = [
+        README,
+        SKILL,
+        "openspec/project.md",
+        ".claude/commands/ci-debug.md",
+        ".claude/commands/review-pr.md",
+        ".claude/commands/review-openspec.md",
+        ".claude/commands/docs-review.md",
+    ]
+    for name in gpu_docs:
+        check(
+            f"{name} names gpu-fraction-container-name",
+            "gpu-fraction-container-name" in read(name),
+            True,
+        )
+        # The annotation is ignored below Run:ai 2.24 (this cluster: 2.22). What works today is
+        # the podSpecPatch reorder, so every doc that describes the GPU request must name it --
+        # a doc naming only the annotation teaches a fix that does nothing on this cluster.
+        check(f"{name} names the podSpecPatch reorder", "podSpecPatch" in read(name), True)
+    check(
+        "README does not claim the annotation alone directs the GPU to main",
+        "to direct it to the predict container" in norm(read(README)),
+        False,
+    )
+    # The pre-#25 review checklists ("`gpu-fraction`; `nvidia.com/gpu` on the predictor") are
+    # worded three ways across two files, so match the pairing, not one sentence.
+    stale_checklist = re.compile(r"`?gpu-fraction`?\s*[,;]\s*`?nvidia\.com/gpu")
+    check(
+        "no command checklist still pairs gpu-fraction with nvidia.com/gpu",
+        [
+            p.name
+            for p in sorted((ROOT / ".claude/commands").glob("*.md"))
+            if stale_checklist.search(norm(p.read_text(encoding="utf-8")))
+        ],
+        [],
+    )
 
     if _failures:
         print(f"\n=== {len(_failures)} FAILED, {_passes} passed ===")

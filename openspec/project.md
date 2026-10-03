@@ -32,12 +32,15 @@ built (#98). Still open: Bloom's UI trigger (bloom PR #965, in review) and per-r
   `*-template.yaml` `WorkflowTemplate`s referenced via `templateRef`)
 - **Argo Events** — (planned, A4) scan-ingest → workflow trigger
 - **RunAI** — GPU scheduling on the `runai-busch-lab` namespace (fractional GPU via a pod-level
-  `gpu-memory` annotation — absolute MiB, not the relative `gpu-fraction` annotation, which must
+  `gpu-memory` annotation, routed to `main` by a `podSpecPatch` reorder plus
+  `gpu-fraction-container-name` for Run:ai ≥ 2.24 (#117; see the template comments) — absolute
+  MiB, not the relative `gpu-fraction` annotation, which must
   also live at `spec.templates[].metadata.annotations`, not the WorkflowTemplate object's own
   metadata, or Argo never copies it to the pod — see issue #25; `preemptible`, `project` labels
   for quota)
 - **Kubernetes** — execution substrate; `hostPath` volumes (cluster: NFS-backed
-  `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits
+  `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits (local WSL2
+  predictor only)
 - **Bash** — launchers (`runai_run_pipeline.sh` for the cluster,
   `local_run_pipeline_first_time.sh` for local Docker Desktop + WSL2 testing — currently broken
   for the A4 DAG, #21; see Testing Strategy)

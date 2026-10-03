@@ -29,8 +29,10 @@ and say so in the review footer.
    validity (`wsl -e bash scripts/lint_manifests.sh`). NB: this pipeline passes data **via shared volume mounts, not
    Argo parameters/artifacts** — verify output-mount(stage N) == input-mount(stage N+1)
    rather than hunting for param wiring.
-2. **RunAI / Kubernetes Scheduling & Resources** — `gpu-fraction`, `nvidia.com/gpu` on the
-   predictor only; `namespace` (`runai-busch-lab`) / `project` (`busch-lab`) quota. NB:
+2. **RunAI / Kubernetes Scheduling & Resources** — the predictor's pod-level `gpu-memory` +
+   the `podSpecPatch` ordering `main` first + `gpu-fraction-container-name: "main"` (#117; no
+   `nvidia.com/gpu`; GPU on the predictor only); `namespace` (`runai-busch-lab`) / `project`
+   (`busch-lab`) quota. NB:
    preemptibility is governed by `priorityClassName` (`interactive-preemptible` < 100 =
    preemptible), **not** the `preemptible: "true"` annotation the templates carry.
 3. **Storage & Volume Integrity** — `hostPath type: Directory` paths that must pre-exist
@@ -130,7 +132,9 @@ Subagent 1: Argo Workflow & Template Correctness
     retryStrategy; does `wsl -e bash scripts/lint_manifests.sh` pass?
 
 Subagent 2: RunAI / Kubernetes Scheduling & Resources
-  - gpu-fraction; nvidia.com/gpu limits on the right step; namespace (runai-busch-lab) /
+  - predictor GPU via pod-level gpu-memory + podSpecPatch ordering main first +
+    gpu-fraction-container-name: main, no
+    nvidia.com/gpu; GPU requested on the predictor step only; namespace (runai-busch-lab) /
     project (busch-lab) quota; preemptibility via priorityClassName (interactive-preemptible),
     NOT the preemptible annotation; nothing requesting GPU that shouldn't.
 
