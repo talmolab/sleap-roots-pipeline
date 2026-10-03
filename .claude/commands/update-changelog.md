@@ -21,6 +21,9 @@ git tag -l | sort -V | tail -1
 
 # View commits since last tag
 git log $(git describe --tags --abbrev=0 2>/dev/null || echo "")..HEAD --oneline
+
+# owner/repo for the compare links below (never hardcode it)
+gh repo view --json nameWithOwner -q .nameWithOwner
 ```
 
 ## Changelog Format
@@ -66,8 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Bug fix description
 
-[Unreleased]: https://github.com/talmolab/sleap-roots-pipeline/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/talmolab/sleap-roots-pipeline/releases/tag/v0.1.0
+[Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/<owner>/<repo>/releases/tag/v0.1.0
 ```
 
 ## Workflow: Adding Changes
@@ -115,8 +118,8 @@ Move `[Unreleased]` to a versioned section and update the link footer:
 ```
 
 ```markdown
-[Unreleased]: https://github.com/talmolab/sleap-roots-pipeline/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/talmolab/sleap-roots-pipeline/releases/tag/v0.1.0
+[Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/<owner>/<repo>/releases/tag/v0.1.0
 ```
 
 ## Writing Good Changelog Entries
@@ -161,6 +164,21 @@ Mark breaking changes clearly so operators can plan migrations:
 3. **Write for operators** — "Added per-scan trigger" not "Implemented sensor YAML"
 4. **Note breaking changes** — mark with `**BREAKING:**` and include a migration path
 5. **Skip internal-only changes** — CI config, doc churn
+6. **Group related changes** — if a change spanned multiple commits, summarize as one entry
+7. **Keep dates accurate** — use today's date (`YYYY-MM-DD`) when releasing
+
+## Release Checklist
+
+Before cutting a release (tagging):
+
+- [ ] All `[Unreleased]` entries moved to the new versioned section
+- [ ] Version number follows SemVer (`MAJOR.MINOR.PATCH`)
+- [ ] Date is today's date in `YYYY-MM-DD` format
+- [ ] Comparison links at the bottom updated
+- [ ] Breaking changes clearly marked with `**BREAKING:**` and migration notes
+- [ ] Entries are operator-focused and descriptive (not implementation jargon)
+- [ ] No duplicate section headers (e.g. two `### Added` in the same release)
+- [ ] No placeholder dates (`YYYY-XX-XX`)
 
 ## Semantic Versioning Quick Reference
 
@@ -174,3 +192,5 @@ Given `MAJOR.MINOR.PATCH`:
 
 - `/review-pr` — PR review includes a docs/changelog check
 - `/docs-review` — broader documentation accuracy sweep
+- `/pre-merge` — full pre-merge gate before merging
+- `/openspec:archive` — archive the OpenSpec change after the PR merges

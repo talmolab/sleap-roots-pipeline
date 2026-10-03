@@ -39,7 +39,8 @@ built (#98). Still open: Bloom's UI trigger (bloom PR #965, in review) and per-r
 - **Kubernetes** — execution substrate; `hostPath` volumes (cluster: NFS-backed
   `/hpi/hpi_dev/...`) for model/image/output mounts; `nvidia.com/gpu` resource limits
 - **Bash** — launchers (`runai_run_pipeline.sh` for the cluster,
-  `local_run_pipeline_first_time.sh` for local Docker Desktop + WSL2 testing)
+  `local_run_pipeline_first_time.sh` for local Docker Desktop + WSL2 testing — currently broken
+  for the A4 DAG, #21; see Testing Strategy)
 - **Docker** — stage images are built in their own repos and *consumed* here. Every cluster
   template pulls from **GHCR**: `ghcr.io/talmolab/{sleap-roots-predict, sleap-roots-trait-extractor}`
   for the two producers, and `ghcr.io/salk-harnessing-plants-initiative/bloomctl` for the
@@ -103,41 +104,72 @@ are YAML manifests and shell scripts.
 
 ### Testing Strategy
 
-There is no unit-test harness (no application code). Validation is **operational**:
+There is no application code, but there **is** an executable test harness:
+`scripts/check_manifests.py` and `scripts/check_docs.py`, run together by
+`uv run --no-project --with pyyaml bash scripts/check_all.sh` (`/test`). Run it from **Git
+Bash**: in PowerShell `bash` is the WSL launcher, and `check_manifests.py`'s exit-gate assertion
+then fails for the wrong reason (see `/test`). **TDD applies to these suites:** write the failing
+`check(...)` first, run it, see it fail for the right reason, then edit the manifests/docs to
+green (`/tdd`).
 
-- `bash scripts/lint_manifests.sh` (from WSL, where `argo` lives) — lints the Workflow **together
-  with every template it references**, in one invocation. Use the script, **not** the bare command:
-  `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml` **fails on this tree**
-  even though the tree is valid. Offline lint does resolve `templateRef` from the files you pass,
-  but it matches on **(namespace, name)**, and `sleap-roots-pipeline.yaml` declares
-  `metadata.namespace` while the templates declare none — so the lookup always misses. The script
-  lints a temp copy with that one line stripped and never touches the tracked files. Never strip it
-  from the real file. What this catches is a `templateRef` with **no matching file in this repo**;
-  it says nothing about what is *registered in the cluster* — that is
-  `scripts/check_cluster_drift.sh`'s job (it reports `NOT REGISTERED`), and it matters because a
-  template must be `argo template create`d before any Workflow referencing it can be submitted.
-- `python scripts/check_manifests.py` — executable assertions for this repo's own conventions,
-  which `argo lint` knows nothing about (priority classes, quota labels, credential isolation,
-  retry shape, pin hygiene, mount agreement). Includes the exit-gate's allowlist, asserted by
-  **executing** the shipped script over a vector table rather than inspecting its text.
-- field assertions on the manifests (`yq`) for anything `argo lint` does not check — it validates
-  Argo schema, not whether a pod carries a `priorityClassName`, a quota label, or a `retryStrategy`
-- local dry-runs via `local_run_pipeline_first_time.sh` (Docker Desktop + WSL2, CPU). ⚠️ Currently
-  broken for the A4 DAG, and for two reasons in this order: it applies its four templates into
-  namespace `argo` but submits the *cluster* manifest, whose `metadata.namespace`
-  (`runai-busch-lab`) wins over `--namespace` — so it fails on the missing namespace first; and if
-  it got past that, **all** of its `templateRef`s would be unresolvable (the templates are in
-  `argo`), not only the new `exit-gate`. Tracked by #21.
-- a real submission on the cluster (`argo submit … --watch`) against a reference scan set —
-  including the **failure** paths, not just the happy one: a partial batch should end `Succeeded`
-  with the good scans written back, and a crash-class exit should end `Failed`
+The checks:
+
+- **`/test` — `scripts/check_manifests.py`**: executable assertions for this repo's own
+  conventions, which `argo lint` knows nothing about (priority classes, quota labels, credential
+  isolation, retry shape, pin hygiene, mount agreement). Includes the exit-gate's allowlist,
+  asserted by **executing** the shipped script over a vector table rather than inspecting its text.
+- **`/test` — `scripts/check_docs.py`**: asserts that specific claims in the README, the
+  cluster-identities doc and the runai skill stay true.
+- **`/lint` — `wsl -e bash scripts/lint_manifests.sh`** (`argo` lives only in WSL): lints the
+  Workflow **together with every template it references**, in one invocation. Use the script,
+  **not** the bare command: `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml`
+  **fails on this tree** even though the tree is valid. Offline lint does resolve `templateRef`
+  from the files you pass, but it matches on **(namespace, name)**, and `sleap-roots-pipeline.yaml`
+  declares `metadata.namespace` while the templates declare none — so the lookup always misses.
+  The script lints a temp copy with that one line stripped and never touches the tracked files.
+  Never strip it from the real file: it alone decides where a bare `argo submit` lands (`-n`
+  cannot override it), and `runai_run_pipeline.sh` keeps its `NAMESPACE` equal to it. (Bloom's
+  dispatch forces its own namespace on its vendored copy, so it does not depend on this line.)
+  What lint catches is a `templateRef` with **no matching file in this repo**; it says nothing
+  about what is *registered in the cluster* — that is `scripts/check_cluster_drift.sh`'s job (it
+  reports `NOT REGISTERED`), and it matters because a template must be `argo template create`d
+  before any Workflow referencing it can be submitted.
+- **Live acceptance** — for behavior only the cluster shows (GPU allocation, scheduling, quota),
+  and for the batch's **failure** paths, not just the happy one (a partial batch should end
+  `Succeeded` with the good scans written back; a crash-class exit should end `Failed`). Record
+  the red baseline (live pod spec, events, or log) before the fix. `runai-busch-lab` is shared by
+  Bloom staging and production, so **never register a template from an unmerged branch**:
+  pre-merge, probe with a throwaway Workflow that inlines the edited template; after merge,
+  register from `main` (drift check before/after) and re-run the same observation. `/tdd` has
+  the steps.
 - (A4, later) end-to-end on a reference scan: idempotent re-delivery + notification on
-  success **and** failure
+  success **and** failure.
 
-Because the standard Python/test/build dev-commands don't apply, this repo's
-`.claude/commands` suite deliberately **omits** `dev`/`lint`/`test`/`coverage`/`tdd`/
-`build`/`pre-merge`/`validate-env`/`run-ci-locally` and keeps the repo-agnostic
-git/GitHub/OpenSpec/docs commands.
+Not available: local dry-runs via `local_run_pipeline_first_time.sh` (Docker Desktop + WSL2,
+CPU) are broken for the A4 DAG, for two reasons in this order: it applies its four templates
+into namespace `argo` but submits the *cluster* manifest, whose `metadata.namespace`
+(`runai-busch-lab`) wins over `--namespace` — so it fails on the missing namespace first; and if
+it got past that, **all** of its `templateRef`s would be unresolvable (the templates are in
+`argo`), not only the new `exit-gate`. Tracked by #21.
+
+#### `tasks.md` conventions
+
+`openspec/AGENTS.md`'s example `tasks.md` ends with "Write tests"; **that order does not apply
+here.** In this repo `tasks.md` is red-first:
+
+- each behavior's assertion task comes **before** the task that edits the manifest/doc it
+  asserts on, and quotes the FAIL line it expects; one task never does both;
+- live-only behavior starts with a task that records the red baseline (or says why none is
+  observable yet and names the observation that will go red → green), and ends with the
+  post-merge acceptance task;
+- each task has a concrete validation step (a named `check(...)`, `/lint`, a live observation,
+  `openspec validate --strict`), and the last section runs `/test`, `/lint` (if a manifest
+  changed) and `openspec validate <id> --strict`.
+
+The `.claude/commands` suite is rendered from the lab's canonical templates against this
+toolchain: `/test`, `/lint`, `/tdd`, `/pre-merge` and `/validate-env` wrap the checks above. It
+has no `dev`, `build`, `coverage`, `fix-formatting` or `run-ci-locally` — there is no app to
+run, no build, no coverage tool, no formatter config, and no CI.
 
 ### Git Workflow
 

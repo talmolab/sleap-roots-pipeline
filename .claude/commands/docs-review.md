@@ -7,10 +7,13 @@ description: Review and update project documentation for accuracy, completeness,
 Systematic workflow for reviewing and updating this repo's documentation to ensure it stays
 accurate against the actual Argo/RunAI manifests and run scripts.
 
-> This repo has no install/build/test commands (declarative YAML + shell). Documentation
-> accuracy is checked against the **manifests, run scripts, and cluster commands** themselves
-> (`argo lint`, `argo submit`, `kubectl`), not a build/test run. On Windows, prefer the
-> Claude Code Grep/Glob tools over the POSIX `find`/`grep` snippets below.
+> This repo has no install/build step (declarative YAML + shell). Documentation accuracy is
+> checked against the **manifests, run scripts, and cluster commands** themselves
+> (`scripts/lint_manifests.sh`, `argo submit`, `kubectl`). Some doc claims are also asserted
+> by `scripts/check_docs.py` (README, `docs/cluster-identities.md`, the runai skill) — run it,
+> and when you correct a claim that has regressed before, add an assertion for it red-first
+> (`/tdd`). On Windows, prefer the Claude Code Grep/Glob tools over the POSIX `find`/`grep`
+> snippets below.
 
 ## Quick Commands
 
@@ -63,8 +66,9 @@ grep -r "sleap-roots-predictor-template\|hostPath\|runai-busch-lab" --include="*
 # live instruction still naming the old one is stale (historical log entries are fine).
 # Match bare `talmo-lab` too, NOT just `runai-talmo-lab` — the project-label form
 # (`project: talmo-lab`) is the one that hid in openspec/specs/ through a whole sweep.
-# `talmolab` is the GitHub org and is always correct, hence the -w style exclusion.
-grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" . | grep -v talmolab
+# (`talmolab`, the GitHub org, can't match this pattern — don't filter it out, or lines that
+# contain both a GitHub URL and a stale namespace get hidden.)
+grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" .
 ```
 
 ### Step 2: Update Affected Documentation
@@ -80,7 +84,8 @@ For each change, update the relevant docs:
 Verify documentation matches the current manifests and scripts:
 
 - [ ] Documented `argo` / `kubectl` / `runai` commands still match the real flow
-- [ ] `argo lint` passes on every manifest the docs reference
+- [ ] `uv run --no-project python scripts/check_docs.py` passes (the doc claims it asserts)
+- [ ] `wsl -e bash scripts/lint_manifests.sh` passes on the manifests the docs reference
 - [ ] WorkflowTemplate names in the README match the actual `*.yaml` `metadata.name`
 - [ ] Mount paths / volume names in the docs match the manifests
 - [ ] Image references are current and pinned
@@ -166,6 +171,7 @@ workarounds (fix the manifest instead), self-evident YAML.
 
 ## Related Commands
 
+- `/test` — runs `check_docs.py` with the manifest suite
 - `/review-pr` — PR review includes a docs-accuracy lens
 - `/update-changelog` — maintain the changelog
 - `/openspec:proposal` — create formal specs for new capabilities

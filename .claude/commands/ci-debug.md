@@ -4,7 +4,12 @@ description: Debug a failing GitHub Actions run, or a failing Argo workflow run,
 
 # CI / Run Debug
 
-Diagnose and fix a failing run in `talmolab/sleap-roots-pipeline`.
+Diagnose and fix a failing run in this repo. For the `gh` commands below, resolve the repo
+first — never hardcode it:
+
+```bash
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+```
 
 > **Note:** this repo has **no `.github/workflows/` yet** — there is no GitHub Actions CI to
 > debug until one is added (likely alongside roadmap tier A4). Until then, the real failure
@@ -13,27 +18,40 @@ Diagnose and fix a failing run in `talmolab/sleap-roots-pipeline`.
 
 ## A. Debug an Argo workflow run (the current failure surface)
 
+`argo` exists only in WSL, and the Windows `kubectl` (Docker Desktop's) points at the
+`docker-desktop` cluster — so run every command below **inside WSL** with an explicit
+kubeconfig (`.claude/skills/runai/SKILL.md` §1a). Which identity can do what is in
+`docs/cluster-identities.md`: the operator `argo-user` kubeconfig can list/get/describe but
+**cannot read pod logs** — use the `bloom-pipeline` kubeconfig for `logs`.
+
 ### Step 1: Find the failing workflow and node
 
 ```bash
-argo list -n runai-busch-lab
-argo get <workflow-name> -n runai-busch-lab          # node tree + which step failed
-argo logs <workflow-name> -n runai-busch-lab --tail 100   # or --follow to stream
+wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; \
+  argo list -n runai-busch-lab; \
+  argo get <workflow-name> -n runai-busch-lab'          # node tree + which step failed
 ```
 
 ### Step 2: Drop to pod/Kubernetes level if needed
 
 ```bash
-kubectl get pods -n runai-busch-lab
-kubectl logs <pod-name> -n runai-busch-lab
-kubectl describe pod <pod-name> -n runai-busch-lab   # scheduling / volume / GPU events
+# describe: scheduling / volume / GPU events (argo-user can do this)
+wsl -e bash -c 'export PATH=$HOME/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; \
+  kubectl get pods -n runai-busch-lab; kubectl describe pod <pod-name> -n runai-busch-lab'
+
+# logs: needs the bloom-pipeline identity (argo-user is Forbidden; `argo logs` can exit 0 on denial)
+wsl -e bash -c 'export PATH=$HOME/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml; \
+  kubectl logs <pod-name> -c main -n runai-busch-lab --tail 100 2>&1'
 ```
 
 ### Step 3: Reproduce / fix by failure class
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Manifest rejected on submit | invalid Argo YAML | `argo lint <file>.yaml` locally and fix |
+| Manifest rejected on submit | invalid Argo YAML | `wsl -e bash scripts/lint_manifests.sh` locally and fix (`/lint` — bare `argo lint --offline` fails on this tree) |
 | Pod stuck `Pending` (any stage) | cluster at capacity, or a CPU stage waiting — not necessarily GPU-related. (The inert `preemptible: "true"` annotation is on **two** of the five workflow templates, predictor and trait-extractor; it is a breadcrumb, not the scheduling mechanism.) A pod that cannot be scheduled, or cannot pull its image, or cannot mount a `hostPath`, stays `Pending` **forever** — not `Failed`, not `Error` — so neither `retryStrategy` nor `continueOn` applies. Since `exit-gate` is the DAG's only leaf, a `Pending` gate leaves an otherwise-complete batch `Running` indefinitely. | check `argo get`/`kubectl describe pod` events + cluster capacity; add `retryStrategy` |
 | GPU pod blocked: `NonPreemptibleOverQuota` | the job is non-preemptible and the project is at its GPU quota — the `preemptible: "true"` annotation is **not** the scheduling mechanism; `priorityClassName` is | `interactive-preemptible` (75) lets a workload go over quota (Run:ai treats < 100 as preemptible). **But do not "fix" the predictor this way** — it is deliberately `high` (125, non-preemptible) per cluster-admin guidance 2026-08-06, because trait-extractor has no skip-if-done yet (#37), so eviction would recompute a whole batch. Check `kubectl get pods -n runai-busch-lab` for who holds the 2-GPU quota and coordinate instead. |
 | Predictor or downloader node `Pending`, **no pod**, message `Waiting for runai-busch-lab/ConfigMap/sleap-roots-pipeline-semaphores/<key> lock` | expected (#98): the namespace-wide concurrency limit is full | nothing, or retune live — see the header of `sleap-roots-pipeline-semaphores.yaml`. A raise reaches waiting tasks only at the next release or within 20 minutes |
@@ -49,40 +67,42 @@ kubectl describe pod <pod-name> -n runai-busch-lab   # scheduling / volume / GPU
 ### Step 1: Identify the failing run and job
 
 ```bash
-gh run list --repo talmolab/sleap-roots-pipeline --branch $(git branch --show-current) --limit 5
-gh run view <run-id> --repo talmolab/sleap-roots-pipeline
-gh run view <run-id> --repo talmolab/sleap-roots-pipeline --log-failed
+gh run list --repo "$REPO" --branch $(git branch --show-current) --limit 5
+gh run view <run-id> --repo "$REPO"
+gh run view <run-id> --repo "$REPO" --log-failed
 ```
 
 ### Step 2: Reproduce locally
 
-Run the failing job's equivalent locally. For a manifest-lint job that is `argo lint`; for a
-schema/spec job that is `openspec validate --all --strict`.
+Run the failing job's equivalent locally: for an assertion job, `/test` (from Git Bash);
+for a manifest-lint job, `/lint`; for a schema/spec job,
+`openspec validate --all --strict`. `/pre-merge` runs all three.
 
 ### Advanced: download logs
 
 ```bash
-gh run download <run-id> --repo talmolab/sleap-roots-pipeline --dir ./ci-logs-<run-id>
+gh run download <run-id> --repo "$REPO" --dir ./ci-logs-<run-id>
 ls ./ci-logs-<run-id>/
 ```
 
 ### Re-run a failed job
 
 ```bash
-gh run rerun <run-id> --repo talmolab/sleap-roots-pipeline --failed
-gh run watch --repo talmolab/sleap-roots-pipeline
+gh run rerun <run-id> --repo "$REPO" --failed
+gh run watch --repo "$REPO"
 ```
 
 ### Is main green?
 
 ```bash
-gh run list --repo talmolab/sleap-roots-pipeline --branch main --limit 3
+gh run list --repo "$REPO" --branch main --limit 3
 ```
 
 If CI fails in a way unrelated to your change, check https://www.githubstatus.com/.
 
 ## Related commands
 
+- `/test`, `/lint`, `/pre-merge` — the local checks that stand in for CI
 - `/review-pr` — adversarial multi-lens review (Argo/RunAI/storage lenses)
 - `/copilot-review` — triage Copilot inline comments
 - `/pr-description` — capture verification state in the PR body

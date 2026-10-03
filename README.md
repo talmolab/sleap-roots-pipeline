@@ -88,8 +88,9 @@ argo lint sleap-roots-pipeline.yaml    # expect: no linting errors found!
 > bash scripts/lint_manifests.sh      # from WSL, where argo is installed → no linting errors found!
 > ```
 >
-> **Never strip that line from the real file** — Bloom's dispatch reads the manifest and the
-> launcher keeps its namespace equal to it. Non-offline lint against `runai-busch-lab` needs VPN
+> **Never strip that line from the real file** — it alone decides where a bare `argo submit`
+> lands (`-n` cannot override it), and the launcher keeps its namespace equal to it. (Bloom's
+> dispatch forces its own namespace on its vendored copy.) Non-offline lint against `runai-busch-lab` needs VPN
 > **and** every referenced template to be registered there already, so it will fail until
 > `sleap-roots-exit-gate-template` is `argo template create`d; prefer the script for a gate that
 > works anywhere. Note what offline lint can and cannot see: it catches a `templateRef` with no
@@ -205,15 +206,22 @@ This script will:
 
 ## 🧪 Local Testing (Docker Desktop + WSL2)
 
-You can test the pipeline locally using Docker Desktop and WSL2. This setup is useful for rapid iteration on template logic and file handling.
+This path is meant for testing the pipeline locally with Docker Desktop and WSL2 — but see the warning below: it does not currently work.
 
 ### ▶️ Run Locally
+
+> ⚠️ **Broken for the current DAG** — tracked by
+> [#21](https://github.com/talmolab/sleap-roots-pipeline/issues/21). The script applies four
+> templates into namespace `argo` but submits the *cluster* manifest (`sleap-roots-pipeline.yaml`),
+> whose `metadata.namespace: runai-busch-lab` wins, so it fails before any stage runs; see the
+> script's header. Until #21 lands, validate offline with
+> `uv run --no-project --with pyyaml bash scripts/check_all.sh` (from Git Bash) and
+> `wsl -e bash scripts/lint_manifests.sh`, and on the cluster as described in
+> `openspec/project.md` (Testing Strategy).
 
 ```bash
 ./local_run_pipeline_first_time.sh
 ```
-
-This uses the `local-WSL2-*` templates and pipeline files.
 
 ---
 

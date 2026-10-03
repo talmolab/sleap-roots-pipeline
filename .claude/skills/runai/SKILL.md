@@ -41,9 +41,9 @@ wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.y
 ### 1a. Where the three CLIs actually live
 
 Verified on this workstation **2026-09-15** — re-check before trusting, these are
-operator-specific. Several of this repo's slash commands (`/ci-debug`, `/docs-review`,
-`/new-feature`, `/pr-description`, `/review-openspec`, `/review-pr`) invoke `argo lint` without
-saying where `argo` is; this table is the answer.
+operator-specific. This repo's slash commands lint through `wsl -e bash
+scripts/lint_manifests.sh` (`/lint`, `/pre-merge`, and the review commands); this table is
+where that `argo` comes from, and what to fix when the script exits `127`.
 
 | Tool | Location | On PATH? |
 |---|---|---|
@@ -56,7 +56,11 @@ translates to `/mnt/c/repos/sleap-roots-pipeline`:
 
 ```bash
 wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; \
-  cd /mnt/c/repos/sleap-roots-pipeline && argo lint --offline sleap-roots-pipeline.yaml'
+  cd /mnt/c/repos/sleap-roots-pipeline && argo list -n runai-busch-lab'
+
+# Lint: use the wrapper — bare `argo lint --offline sleap-roots-pipeline.yaml` fails on this
+# tree (see the troubleshooting row below)
+wsl -e bash scripts/lint_manifests.sh
 ```
 
 > A non-login WSL shell (`wsl -e bash -c`) does **not** source `.profile`, so `$HOME/bin` is
@@ -218,7 +222,7 @@ set the priority class:
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
 | Git Bash mangles `/hpi/...` | prefix with `MSYS_NO_PATHCONV=1` (or run in WSL) |
 | `argo: command not found` | `argo` is WSL-only here — see §1a. Not installed on Windows. |
-| `argo lint --offline` "fails" on `sleap-roots-pipeline.yaml` | **The manifest is fine, and there IS a cluster-free way to lint it.** Offline lint *does* index sibling files passed on the same command line — it matches `templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while the five templates declare none, so the lookup searches a namespace no template is indexed under and reports `couldn't find workflow template … in namespace "runai-busch-lab"` (exit **1**). Strip `metadata.namespace` from a **temp copy** and all six manifests resolve clean with no cluster (`scripts/lint_manifests.sh` does exactly this): `T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml` → `✔ no linting errors found!` (verified 2026-09-15). Non-offline lint against `runai-busch-lab` with the `argo-user` kubeconfig also passes clean, but needs VPN — prefer the offline recipe for a gate that works anywhere. **Never delete that namespace line from the real file**: Bloom's dispatch depends on the manifest, and `runai_run_pipeline.sh` keeps its default equal to it. Credit: mechanism identified by the `#56`/PR #60 session; an earlier note here claimed offline lint ignored sibling files, which was wrong. |
+| `argo lint --offline` "fails" on `sleap-roots-pipeline.yaml` | **The manifest is fine, and there IS a cluster-free way to lint it.** Offline lint *does* index sibling files passed on the same command line — it matches `templateRef` on **(namespace, name)**. The Workflow declares `namespace: runai-busch-lab` while the five templates declare none, so the lookup searches a namespace no template is indexed under and reports `couldn't find workflow template … in namespace "runai-busch-lab"` (exit **1**). Strip `metadata.namespace` from a **temp copy** and all six manifests resolve clean with no cluster (`scripts/lint_manifests.sh` does exactly this): `T=$(mktemp -d); cp sleap-roots-*.yaml "$T/"; sed -i '/^  namespace: runai-busch-lab$/d' "$T/sleap-roots-pipeline.yaml"; argo lint --offline "$T"/sleap-roots-*.yaml` → `✔ no linting errors found!` (verified 2026-09-15). Non-offline lint against `runai-busch-lab` with the `argo-user` kubeconfig also passes clean, but needs VPN — prefer the offline recipe for a gate that works anywhere. **Never delete that namespace line from the real file**: it alone decides where a bare `argo submit` lands (`-n` cannot override it), and `runai_run_pipeline.sh` keeps its `NAMESPACE` equal to it. (Bloom's dispatch forces its own namespace on its vendored copy — `salk-bloom` `services/workflows/k8s_client.py` — so it does not depend on this line.) Credit: mechanism identified by the `#56`/PR #60 session; an earlier note here claimed offline lint ignored sibling files, which was wrong. |
 | `kubectl auth can-i` returns a deprecation warning instead of `yes`/`no` | `kubectl` writes `Warning: Use tokens from the TokenRequest API...` to stderr, which interleaves with the verdict — a bare `\| head -1` captures the warning. Always filter: `kubectl auth can-i <verb> <resource> -n runai-busch-lab 2>/dev/null \| grep -E '^(yes\|no)'` |
 | Need to know what an identity can do | `kubectl auth can-i` under that identity's kubeconfig. Note `argo-user` returns **no** for `get serviceaccounts`/`get secrets`, so you cannot read another ServiceAccount's Role from it — `bloom-workflow`'s RBAC is not verifiable this way (verified 2026-09-15). |
 

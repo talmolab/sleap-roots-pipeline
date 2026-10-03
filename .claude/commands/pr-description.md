@@ -4,9 +4,11 @@ description: Generate a comprehensive PR description from the current diff, with
 
 Use this command when opening a pull request to document what changed and what was verified.
 
-> **This repo** has no test/build toolchain — it is declarative Argo/RunAI YAML + shell
-> launchers (see `openspec/project.md`). "Verification" means manifest linting, a local
-> WSL2 dry-run, OpenSpec validation, and (where relevant) a real cluster submit.
+> **This repo** is declarative Argo/RunAI YAML + shell launchers with no build step (see
+> `openspec/project.md`). "Verification" means the assertion suites (`/test` →
+> `scripts/check_all.sh`), manifest lint (`/lint` → `scripts/lint_manifests.sh`), OpenSpec
+> validation, and — for behavior only the cluster shows — a real cluster submit compared
+> against a recorded red baseline.
 
 ## Quick Commands
 
@@ -32,12 +34,15 @@ Use a three-state convention for verification checkboxes — don't tick `[x]` ou
 - `[!]` — Pre-existing issue on `main`. This PR introduces no new failure. Link the issue tracking the baseline problem.
 - `[ ]` — Not yet verified, or doesn't apply.
 
+The `[!]` state exists because docs/config PRs often inherit failures that already exist on `main`. Ticking `[x]` on those would be a false claim. Use `[!]` to be honest.
+
 Example:
 ```
-- [x] `argo lint sleap-roots-pipeline.yaml` passes
+- [x] `/test` (`check_all.sh`, Git Bash) passes — new assertion `<label>` seen red first (got None; FAIL line in the commit body)
+- [x] `lint_manifests.sh` passes
 - [x] `openspec validate <change-id> --strict` passes
-- [!] Local WSL2 dry-run blocked by pre-existing hostPath issue (#NN), not introduced here
-- [ ] Cluster submit (not run — manifest-only change)
+- [!] Local WSL2 dry-run not possible — `local_run_pipeline_first_time.sh` is broken for the current DAG (#21), not introduced here
+- [ ] Post-merge: register from `main` and re-run the baseline observation green (templates are never registered from a branch)
 ```
 
 ## PR Description Template
@@ -64,10 +69,12 @@ Example:
 
 ## Verification
 
-- [ ] `argo lint` passes on every changed manifest
+- [ ] `/test` passes — `uv run --no-project --with pyyaml bash scripts/check_all.sh`, from Git Bash
+- [ ] New/changed behavior has an assertion that was seen red before the fix (name it), or N/A
+- [ ] `wsl -e bash scripts/lint_manifests.sh` passes (or N/A — no manifest changed)
 - [ ] `openspec validate <change-id> --strict` passes
 - [ ] Cluster (`*.yaml`) and local (`local-WSL2-*.yaml`) variants kept in sync (or N/A)
-- [ ] Local WSL2 dry-run / cluster submit exercised (or stated why not)
+- [ ] Live acceptance: red baseline recorded; inlined pre-merge probe green (or N/A); post-merge registration + re-run listed (or stated why not)
 - [ ] No `ARGO_TOKEN` / secrets committed or echoed
 
 ## Breaking Changes
@@ -108,6 +115,7 @@ gh pr edit --body "Updated description"
 
 ## Related Commands
 
+- `/pre-merge` — run the full local gate before opening a PR
 - `/review-pr` — adversarial multi-lens review of this PR
 - `/copilot-review` — fetch and triage GitHub Copilot inline comments
 - `/cleanup-merged` — post-merge cleanup workflow
