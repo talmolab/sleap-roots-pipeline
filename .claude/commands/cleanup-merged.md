@@ -77,7 +77,7 @@ openspec archive <id> --yes
 ## Step 6: Verify the archive and promoted specs
 
 ```bash
-openspec spec list --long          # the promoted / updated specs
+openspec list --specs              # the promoted / updated specs
 openspec validate --all --strict   # everything still valid
 git status openspec/               # the archive rename + new specs/ files
 ```

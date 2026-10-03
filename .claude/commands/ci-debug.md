@@ -18,20 +18,33 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 
 ## A. Debug an Argo workflow run (the current failure surface)
 
+`argo` exists only in WSL, and the Windows `kubectl` (Docker Desktop's) points at the
+`docker-desktop` cluster — so run every command below **inside WSL** with an explicit
+kubeconfig (`.claude/skills/runai/SKILL.md` §1a). Which identity can do what is in
+`docs/cluster-identities.md`: the operator `argo-user` kubeconfig can list/get/describe but
+**cannot read pod logs** — use the `bloom-pipeline` kubeconfig for `logs`.
+
 ### Step 1: Find the failing workflow and node
 
 ```bash
-argo list -n runai-busch-lab
-argo get <workflow-name> -n runai-busch-lab          # node tree + which step failed
-argo logs <workflow-name> -n runai-busch-lab --tail 100   # or --follow to stream
+wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; \
+  argo list -n runai-busch-lab; \
+  argo get <workflow-name> -n runai-busch-lab'          # node tree + which step failed
 ```
 
 ### Step 2: Drop to pod/Kubernetes level if needed
 
 ```bash
-kubectl get pods -n runai-busch-lab
-kubectl logs <pod-name> -n runai-busch-lab
-kubectl describe pod <pod-name> -n runai-busch-lab   # scheduling / volume / GPU events
+# describe: scheduling / volume / GPU events (argo-user can do this)
+wsl -e bash -c 'export PATH=$HOME/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; \
+  kubectl get pods -n runai-busch-lab; kubectl describe pod <pod-name> -n runai-busch-lab'
+
+# logs: needs the bloom-pipeline identity (argo-user is Forbidden; `argo logs` can exit 0 on denial)
+wsl -e bash -c 'export PATH=$HOME/bin:$PATH; \
+  export KUBECONFIG=$HOME/.kube/kubeconfig-bloom-pipeline-busch-lab.yaml; \
+  kubectl logs <pod-name> -c main -n runai-busch-lab --tail 100 2>&1'
 ```
 
 ### Step 3: Reproduce / fix by failure class
@@ -61,9 +74,8 @@ gh run view <run-id> --repo "$REPO" --log-failed
 
 ### Step 2: Reproduce locally
 
-Run the failing job's equivalent locally: for an assertion job, `/test`
-(`uv run --no-project --with pyyaml bash scripts/check_all.sh`); for a manifest-lint job,
-`/lint` (`wsl -e bash scripts/lint_manifests.sh`); for a schema/spec job,
+Run the failing job's equivalent locally: for an assertion job, `/test` (from Git Bash);
+for a manifest-lint job, `/lint`; for a schema/spec job,
 `openspec validate --all --strict`. `/pre-merge` runs all three.
 
 ### Advanced: download logs

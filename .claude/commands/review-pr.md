@@ -18,7 +18,11 @@ and act based on the mode determined in Step 1.
 ## Step 0: Review Lenses (this repo)
 
 This is a declarative **Argo Workflows / Argo Events / RunAI** orchestration repo (no
-application code, no test suite — see `openspec/project.md`). Use these 5 domain lenses:
+application code; the test harness is `scripts/check_manifests.py` + `scripts/check_docs.py`,
+run by `/test` — see `openspec/project.md`). Use these 5 domain lenses. For a PR that touches no
+manifests (commands/docs only), keep five subagents but point lenses 1–3 at what that PR can
+actually break (e.g. template fidelity, whether documented commands run, cross-doc consistency)
+and say so in the review footer.
 
 1. **Argo Workflow & Template Correctness** — DAG `dependencies` order; `templateRef`
    name/template wiring; `entrypoint`; `retryStrategy` on preemption-prone steps; manifest
@@ -34,15 +38,17 @@ application code, no test suite — see `openspec/project.md`). Use these 5 doma
    ↔ local (`local-WSL2-*.yaml`) *path* parity**. The locals are CPU-only counterparts with
    deliberately different template names/retry/no-GPU — reconcile mounts/paths, not template
    names (PV/PVC is local-test-only).
-4. **Reproducibility & Provenance** — image tags/digests pinned (never `:latest`); model
-   versions; per-scan parameter defaults vs. overrides; idempotency / re-delivery behavior
-   (ties to roadmap A4 in `docs/bloom-integration/roadmap.md`).
-5. **Tests, Docs Accuracy & Shell-Script Safety** — every behavior the PR changes has a
-   `check(...)` in `scripts/check_manifests.py` / `scripts/check_docs.py` that fails without
-   the fix (revert the fix mentally, or actually, and confirm), and `check_all.sh` passes;
-   live-only claims cite a recorded baseline + re-run; README/`openspec/project.md` still
-   accurate; run scripts use `set -euo pipefail`; **no `ARGO_TOKEN` / secret leakage** into
-   logs or committed files; safe failure handling.
+4. **Tests & TDD Discipline** — every behavior the PR changes has a `check(...)` in
+   `scripts/check_manifests.py` / `scripts/check_docs.py` that fails without the fix (revert the
+   fix and confirm — the commit body should quote the red FAIL line); `/test` passes from Git
+   Bash; negative cases asserted, not only the happy value; live-only claims cite a recorded
+   baseline, and no template was registered from the unmerged branch (`/tdd`); OpenSpec
+   `tasks.md` was red-first.
+5. **Reproducibility, Docs Accuracy & Shell-Script Safety** — image tags/digests pinned (never
+   `:latest`); model versions; idempotency / re-delivery (roadmap A4 in
+   `docs/bloom-integration/roadmap.md`); README/`openspec/project.md` still accurate (grep for
+   each changed claim repo-wide); run scripts use `set -euo pipefail`; **no `ARGO_TOKEN` /
+   secret leakage** into logs or committed files; safe failure handling.
 
 ## Step 1: Determine Mode
 
@@ -77,7 +83,7 @@ gh pr checks $PR_NUMBER
 # Mode A only — existing automated review comments
 gh api graphql -f query='
 query {
-  repository(owner: "OWNER", name: "REPO") {
+  repository(owner: "'"${REPO%%/*}"'", name: "'"${REPO##*/}"'") {
     pullRequest(number: '$PR_NUMBER') {
       reviews(first: 10) {
         nodes {
@@ -132,15 +138,16 @@ Subagent 3: Storage & Volume Integrity
   - hostPath type:Directory pre-existence (cluster /hpi/hpi_dev/...); inter-stage mount-path agreement;
     cluster vs local-WSL2 manifest parity.
 
-Subagent 4: Reproducibility & Provenance
-  - image tags/digests pinned (no :latest); model versions; per-scan param defaults vs
-    overrides; idempotency / re-delivery; alignment with roadmap A4.
+Subagent 4: Tests & TDD Discipline
+  - each changed behavior has an assertion in check_manifests.py / check_docs.py that fails
+    without the fix (revert and confirm); run /test from Git Bash; negative cases; live-only
+    claims cite a recorded baseline and nothing was registered from the branch; tasks.md red-first.
 
-Subagent 5: Tests, Docs Accuracy & Shell-Script Safety
-  - each changed behavior has an assertion in check_manifests.py / check_docs.py that would
-    fail without the fix; run `uv run --no-project --with pyyaml bash scripts/check_all.sh`;
-    live-only claims cite a recorded baseline; README / openspec/project.md accuracy; set -euo pipefail; ARGO_TOKEN/secret leakage;
-    failure handling; does the implementation match the PR description / linked spec?
+Subagent 5: Reproducibility, Docs Accuracy & Shell-Script Safety
+  - image tags/digests pinned (no :latest); model versions; idempotency / re-delivery;
+    README / openspec/project.md accuracy (grep each changed claim repo-wide); set -euo
+    pipefail; ARGO_TOKEN/secret leakage; failure handling; does the implementation match the
+    PR description / linked spec?
 ```
 
 ## Step 4: Synthesize and Act
@@ -186,7 +193,7 @@ BODY="$(cat <<'EOF'
 [Optional improvements — or "None"]
 
 ---
-*Review by Claude Code subagent team (Argo Correctness | RunAI Scheduling | Storage Integrity | Reproducibility | Tests, Docs & Script Safety)*
+*Review by Claude Code subagent team (Argo Correctness | RunAI Scheduling | Storage Integrity | Tests & TDD | Reproducibility, Docs & Script Safety)*
 EOF
 )"
 

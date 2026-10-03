@@ -16,12 +16,15 @@ unified review verdict.
 
 > **This repo** is declarative Argo/RunAI orchestration YAML + shell launchers — no
 > application code, no build step (see `openspec/project.md`). The **test harness** is
-> `scripts/check_manifests.py` + `scripts/check_docs.py` (run together by
-> `uv run --no-project --with pyyaml bash scripts/check_all.sh`), and TDD applies to them:
-> the failing assertion comes before the manifest/doc edit. Manifest lint is
-> `wsl -e bash scripts/lint_manifests.sh` (bare `argo lint --offline` fails on this tree).
-> Behavior only the cluster shows (GPU, scheduling, quota) is an acceptance test on a real
-> `argo submit`, with a recorded red baseline. The local WSL2 dry-run
+> `scripts/check_manifests.py` + `scripts/check_docs.py` (`/test`, run from Git Bash), and TDD
+> applies to them: the failing assertion comes before the manifest/doc edit, per the `tasks.md`
+> conventions in `openspec/project.md`. Manifest lint is `/lint`
+> (`wsl -e bash scripts/lint_manifests.sh`; bare `argo lint --offline` fails on this tree).
+> Behavior only the cluster shows (GPU, scheduling, quota) is an acceptance test with a recorded
+> red baseline: an optional pre-merge probe with the template **inlined**, then registration
+> from `main` and the same observation after merge (`/tdd`). A plan that registers templates from
+> an unmerged branch is BLOCKING — `runai-busch-lab` is shared by Bloom staging and production.
+> The local WSL2 dry-run
 > (`local_run_pipeline_first_time.sh`) is broken for the current DAG (#21) — don't accept it as
 > a validation step.
 
@@ -104,12 +107,14 @@ do not rely on summaries.
 > - Each task must have a concrete validation step (a named assertion, `lint_manifests.sh`,
 >   a live observation, `openspec validate`)
 > - Tasks must be small, verifiable work items (suitable for atomic commits)
+> - Task groups should map to logical commit boundaries
 > - Each task must have a checkbox `- [ ]`
 >
 > **Check for:** vague/untestable scenarios; WHEN/THEN specificity; MODIFIED requirements that
 > drop original text; requirements without scenarios; missing edge cases (failure paths,
-> preemption, missing volume); whether Impact lists ALL affected manifests; appropriate
-> change ID. Report `openspec validate {CHANGE_ID} --strict` output.
+> preemption, missing volume); whether Impact lists ALL affected manifests; requirements that
+> could be split into smaller, more focused ones; appropriate change ID. Report
+> `openspec validate {CHANGE_ID} --strict` output.
 >
 > **Proposal to review:** {PROPOSAL_MD}
 > **Tasks:** {TASKS_MD}
@@ -136,8 +141,11 @@ do not rely on summaries.
 >
 > 1. **TDD ordering**: does each behavior's failing assertion come BEFORE the manifest/doc edit,
 >    with the expected red named (e.g. "got None, expected 'main'")? NOT: edit → add assertion
->    after. For live-cluster behavior, is the red baseline (pod spec / `kubectl describe` events /
->    pod log) recorded BEFORE the fix?
+>    after. A task that both writes an assertion and makes the edit it asserts on is a
+>    violation — no red is ever observed. For live-cluster behavior, is the red baseline (pod
+>    spec / `kubectl describe` events / pod log) recorded BEFORE the fix — or, if none is
+>    observable yet, does the task say why and name the observation that will go red → green?
+>    "Not observed" or "already seen" is not a baseline.
 > 2. **Test specificity**: is each assertion concrete enough to write — which file, which field,
 >    which value — not "verify it works"?
 > 3. **Right tool per claim**: a `check(...)` in `check_manifests.py` for manifest conventions;
@@ -147,12 +155,15 @@ do not rely on summaries.
 > 4. **Missing tests**: failure paths (preemption, missing `hostPath`, `ImagePullBackOff`,
 >    `Pending` forever), the negative case (the bad field is *absent*), cluster↔local parity,
 >    idempotency / re-delivery (if A4-adjacent).
-> 5. **Feasibility**: do the suites stay offline (no network, cluster, or secrets)? Is every
->    step that needs the live cluster marked as such and sequenced after merge/registration?
+> 5. **Feasibility & cluster safety**: do the suites stay offline (no network, cluster, or
+>    secrets)? Is every live step marked as such? Pre-merge live probes must inline the edited
+>    template (no `argo template create/update`); registration and the green re-run must come
+>    after merge, from `main`, with the drift check before/after. Registering from an unmerged
+>    branch is BLOCKING.
 > 6. **Scenario-to-test mapping**: does each delta-spec scenario map 1:1 to an assertion or an
 >    acceptance task? Flag every scenario without one.
-> 7. **Verification section**: does tasks.md end with `check_all.sh` green,
->    `lint_manifests.sh` (if a manifest changed), and `openspec validate <id> --strict`?
+> 7. **Verification section**: does tasks.md end with `/test` green, `/lint` (if a manifest
+>    changed), and `openspec validate <id> --strict`?
 >
 > **Tasks to review:** {TASKS_MD}
 > **Delta specs (scenarios to match against tests):** {DELTA_SPECS}
@@ -263,7 +274,8 @@ After ALL subagents return:
 1. **Deduplicate** overlapping findings.
 2. **Prioritize**:
    - **BLOCKING** — must fix before approval (spec errors, test-after task order, scenario
-     with no test, manifest that fails `lint_manifests.sh`, secret exposure, broken templateRef)
+     with no test, manifest that fails `lint_manifests.sh`, secret exposure, broken templateRef,
+     registering templates from an unmerged branch)
    - **IMPORTANT** — should fix before implementation (unclear scenarios, doc gaps, parity)
    - **SUGGESTION** — nice to have
 3. **Create a unified review** with this structure:

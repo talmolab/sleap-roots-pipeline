@@ -9,43 +9,47 @@ manifest/script/doc change that turns it green.
 
 This repo has no application code, so "the test" is one of:
 
-| What changes | Where the test goes | Run with |
+| What changes | Where the test goes | Run with (`/test`, from **Git Bash**) |
 |---|---|---|
 | A manifest convention (priority class, quota label, retry shape, mounts, pins, env, semaphores) | a `check(...)` in `scripts/check_manifests.py` | `uv run --no-project --with pyyaml python scripts/check_manifests.py` |
-| A claim in `README.md`, `docs/cluster-identities.md`, or `.claude/skills/runai/SKILL.md` | a `check(...)` in `scripts/check_docs.py` | `uv run --no-project python scripts/check_docs.py` |
+| A claim in a doc `check_docs.py` reads (see `/test` for the list) | a `check(...)` in `scripts/check_docs.py` | `uv run --no-project python scripts/check_docs.py` |
 | Argo schema / `templateRef` resolution | nothing to write — `/lint` already covers it | `wsl -e bash scripts/lint_manifests.sh` |
-| Behavior only the live cluster shows (GPU allocation, scheduling, quota, pod logs) | an **acceptance test**: a recorded red baseline + the same observation after the fix | `argo submit` / `kubectl` (via WSL — see `.claude/skills/runai/SKILL.md` §1a) |
+| Behavior only the live cluster shows (GPU allocation, scheduling, quota, pod logs) | an **acceptance test** — see [Live acceptance](#live-acceptance-tests) | `argo submit` / `kubectl` via WSL (`.claude/skills/runai/SKILL.md` §1a) |
+
+**Run the suites from Git Bash, never PowerShell** — in PowerShell `bash` is the WSL launcher
+and `check_manifests.py`'s exit-gate assertion fails for the wrong reason. See `/test`.
 
 Both suites use the same helper, `check(label, got, want)`, which prints `PASS`/`FAIL` and
 makes the script exit 1 on any failure.
 
 ## Phase 1: Red — write the failing assertion
 
-Add the assertion next to the related ones in `main()`. Make `got` something read from the
-file, not a value you typed:
+Add the assertion inside `main()`, next to the related ones. Make `got` something read from
+the file, not a value you typed. The shape (names in `<>` are yours to fill):
 
 ```python
-# scripts/check_manifests.py
-pred_tmpl = load(BATCH_STAGES["predictor"])["spec"]["templates"][0]
+# scripts/check_manifests.py — load(), BATCH_STAGES and check() are module-level
+tmpl = load(BATCH_STAGES["<stage>"])["spec"]["templates"][0]
 check(
-    "predictor directs its GPU slice at the main container",
-    ((pred_tmpl.get("metadata") or {}).get("annotations") or {}).get("gpu-fraction-container-name"),
-    "main",
+    "<stage> carries <the behavior the scenario requires>",
+    ((tmpl.get("metadata") or {}).get("annotations") or {}).get("<annotation-key>"),
+    "<required value>",
 )
 ```
 
 ```python
-# scripts/check_docs.py — doc text is whitespace-normalised by norm(), so
-# assertions survive re-wrapping
+# scripts/check_docs.py — inside main(), `readme`, `ident` and `skill` are already
+# read and whitespace-normalised by norm(), so assertions survive re-wrapping
 check(
-    "README: lint instructions point at the wrapper, not bare argo lint",
-    "scripts/lint_manifests.sh" in readme,
+    "README: <the claim that must hold>",
+    "<the exact phrase the doc must contain>" in readme,
     True,
 )
 ```
 
-Assert the behavior the spec scenario describes, and include the negative too (`... False`) when
-the bug is something *present* that must go away.
+Use a fresh local name (don't reuse one `main()` already binds, e.g. `pred_tmpl`). Assert the
+behavior the spec scenario describes, and add the negative (`... False`, or `[]` for "nothing
+offending") when the bug is something *present* that must go away.
 
 ## Phase 2: Confirm red
 
@@ -54,69 +58,88 @@ uv run --no-project --with pyyaml python scripts/check_manifests.py | grep -E "F
 ```
 
 The new assertion must fail **with the value you expected to see today** (e.g. `got None,
-expected 'main'`). If it fails with a `KeyError`/traceback, or passes, the test is wrong — fix
-the test before touching any manifest.
+expected 'main'`), and it must be the **only** new failure. If it fails with a
+`KeyError`/traceback, or passes, the test is wrong — fix the test before touching any manifest.
+If an *existing* assertion fails too, stop: check you are in Git Bash (see `/test`) before
+suspecting anything else.
 
-**Live-cluster acceptance tests:** red means recording the bug as observed, before the fix, so
-the after-state can be compared to it. Save the evidence (the pod spec, `kubectl describe pod`
-events, or the pod log line) into the change's `tasks.md` or design doc with the workflow name
-and date. A claim with no recorded baseline cannot later be shown fixed.
+A task may not both write an assertion and make the edit it asserts on — the red must be
+observed between them. Record the FAIL line you saw; it goes in the commit body (Phase 6).
 
 ## Phase 3: Green — minimum change
 
 Edit the manifest/doc until the assertion passes. Don't weaken the assertion to make it pass;
 if the assertion was wrong, fix it and say why in the commit message.
 
-```bash
-uv run --no-project --with pyyaml python scripts/check_manifests.py | grep -E "FAIL|==="
-```
-
 ## Phase 4: Refactor
 
-Tidy comments and wording with the suite as the safety net. Keep cluster (`*.yaml`) and local
-(`local-WSL2-*.yaml`) variants in sync where the change applies to both.
+Tidy comments and wording with the suite as the safety net. Check the local
+(`local-WSL2-*.yaml`) variant for **mount/path parity** — not byte parity: the locals
+deliberately differ in template names and `retryStrategy` limits, and the local predictor's
+`nvidia.com/gpu: 1` is a known stale spot, so don't mirror GPU/scheduling changes
+(`openspec/project.md`, "Cluster vs. local parity").
 
 ## Phase 5: Verify
 
 ```bash
-# Both suites (the full test run)
-uv run --no-project --with pyyaml bash scripts/check_all.sh
-
-# Manifest lint (only if a manifest changed)
-wsl -e bash scripts/lint_manifests.sh
+uv run --no-project --with pyyaml bash scripts/check_all.sh   # /test — both suites
+wsl -e bash scripts/lint_manifests.sh                          # /lint — if a manifest changed
 ```
-
-For a live-cluster acceptance test, register the changed templates (after checking
-`scripts/check_cluster_drift.sh` — it doubles as the rollback pre-image), re-run the same
-observation you recorded as red, and record the green result alongside it.
 
 ## Phase 6: Commit
 
-Commit the assertion and the fix together, or the assertion first if you want the red state in
-history. `check_all.sh` must be green at every commit that touches a manifest or doc.
+Commit the assertion and the change that turns it green **together**, and paste the red FAIL
+line from Phase 2 into the commit body — that is the evidence of red. **Never commit a red
+suite**: `/test` must pass at every commit.
 
 ```bash
-git add scripts/check_manifests.py sleap-roots-predictor-template.yaml
-git commit -m "fix(predictor): <what changed>
+git add scripts/check_manifests.py <manifest>
+git commit -m "fix(<stage>): <what changed>
 
-- check_manifests.py asserts <behavior>; red before the fix (got <x>)"
+check_manifests.py asserts <behavior>. Red before the fix:
+  FAIL  <label>: got <x>, expected <y>"
 ```
+
+## Live acceptance tests
+
+For behavior only the cluster shows. `runai-busch-lab` is shared by Bloom's staging **and**
+production dispatch, so **never register a template from an unmerged branch** — an
+`argo template update` there changes every future dispatch.
+
+1. **Red baseline (before the fix).** Record the bug as observed: the live pod spec,
+   `kubectl describe pod` events, or a pod log line, with the workflow name and date, in the
+   change's `tasks.md`/design doc. If no baseline is observable (a new capability), say why and
+   name the observation that will go red → green. "Not observed" is not a baseline.
+2. **Pre-merge (optional, recommended for GPU/scheduling changes).** Submit a **throwaway
+   Workflow with the edited template inlined** (a `templates:` entry, no `templateRef`) — nothing
+   registered, nothing shared changed — and run the same observation.
+3. **After merge, from `main`.** Save a rollback copy of what is live
+   (`kubectl get workflowtemplate <name> -n runai-busch-lab -o yaml > <name>.pre.yaml`), run
+   `wsl -e bash scripts/check_cluster_drift.sh`, register (`argo template update`, or `create`
+   for a new template), re-run the drift check, then re-run the **same** observation on the first
+   real run and record it green next to the baseline.
+
+## Testing patterns that transfer
+
+- **Vector tables** — when a script's behavior is a function of inputs, execute it over a table
+  of input → expected outcome (`check_manifests.py` already runs the exit gate this way).
+- **Negative cases** — assert the bad thing is absent (`[]`), not only that the good thing is present.
+- **Every member** — when a rule applies to all stages/templates, loop over all of them so a new
+  template can't slip past.
 
 ## OpenSpec alignment
 
-When the change has an OpenSpec proposal, every delta-spec scenario that can be read off the
-manifests or docs should map to a `check(...)`; scenarios that need the cluster map to an
-acceptance task. Then:
+Every delta-spec scenario that can be read off the manifests or docs maps to a `check(...)`;
+scenarios that need the cluster map to an acceptance task (above). Tick each `tasks.md` item as
+its red → green commit lands, then:
 
 ```bash
 openspec validate <change-id> --strict
 ```
 
-Tick the `tasks.md` items this cycle closes before committing.
-
 ## Related Commands
 
-- `/test` — run the assertion suites
+- `/test` — run the assertion suites (and why Git Bash)
 - `/lint` — lint the manifests
 - `/pre-merge` — full gate before opening a PR
 - `/new-feature` — the workflow this loop runs inside

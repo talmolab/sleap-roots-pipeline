@@ -7,27 +7,22 @@ Run every local check, create or update the PR, and prepare for merge. This repo
 
 ## Phase 1: Tests
 
-1. **Assertion suites.** Run `/test`:
-   ```bash
-   uv run --no-project --with pyyaml bash scripts/check_all.sh
-   ```
+1. **Assertion suites.** Run `/test` (from Git Bash — see `/test` for why not PowerShell).
    Every assertion must pass. Every behavior the branch changes should have an assertion that
    was seen red first (`/tdd`) — check that the branch adds one, or say why not.
 
 ## Phase 2: Lint
 
-2. **Manifest lint.** Run `/lint` (required if any `*.yaml` manifest changed):
-   ```bash
-   wsl -e bash scripts/lint_manifests.sh
-   ```
+2. **Manifest lint.** Run `/lint` (required if any `*.yaml` manifest changed).
 
 ## Phase 3: Live acceptance (only if the change claims live behavior)
 
-3. **Cluster acceptance.** If the change claims something only the cluster shows (GPU
-   allocation, scheduling, quota), confirm the red baseline was recorded and the same
-   observation has been re-run green on a real `argo submit`. If the templates changed, run
-   `wsl -e bash scripts/check_cluster_drift.sh` before registering them (rollback pre-image)
-   and after (confirm what's live). If it hasn't been run yet, say so in the PR (`[ ]`, not `[x]`).
+3. **Pre-merge evidence.** If the change claims something only the cluster shows (GPU
+   allocation, scheduling, quota), confirm the red baseline is recorded and — if a pre-merge
+   probe was run — that it used a throwaway Workflow with the edited template **inlined**.
+   **Do not register templates from this branch**: `runai-busch-lab` is shared by Bloom
+   staging and production. Registration and the green re-run happen after merge, from `main`
+   (`/tdd`, "Live acceptance tests"); list them in the PR as `[ ]` post-merge items.
 
 ## Phase 4: Documentation
 
@@ -72,7 +67,7 @@ Run every local check, create or update the PR, and prepare for merge. This repo
 
 ## Phase 9: Final Verification
 
-11. **Final gate.**
+11. **Final gate** (Git Bash — `/test` + `/lint` + OpenSpec in one line):
     ```bash
     git fetch origin main
     git merge-base --is-ancestor origin/main HEAD && echo "up to date with main"
@@ -86,7 +81,7 @@ Run every local check, create or update the PR, and prepare for merge. This repo
 
 - [x/!/ ] Tests (check_all.sh): N + M assertions pass; new assertions seen red first
 - [x/!/ ] Lint (lint_manifests.sh): PASS / N/A (no manifest changed)
-- [x/!/ ] Live acceptance: re-run green vs recorded baseline / not run (why) / N/A
+- [x/!/ ] Live acceptance: baseline recorded; inlined probe green / post-merge (listed in PR) / N/A
 - [x/!/ ] Docs: current / updated
 - [x/!/ ] OpenSpec: all tasks complete / N/A
 - [x/!/ ] PR: #N created/updated
@@ -103,8 +98,11 @@ Merge command:
 gh pr merge <PR_NUMBER> --squash --delete-branch
 ```
 
-Post-merge: run `/cleanup-merged`. Merging does **not** update the cluster — WorkflowTemplates
-are registered by hand (`argo template update`); see `scripts/check_cluster_drift.sh`.
+Post-merge: merging does **not** update the cluster. If templates changed, register them from
+`main` by hand — `argo template update`, or `create` for a template that doesn't exist yet — with
+the drift check and rollback copy in `/tdd` ("Live acceptance tests"). If the Workflow's
+`volumes`, `entrypoint`, `serviceAccountName` or DAG changed, also update Bloom's vendored copy
+and pin (see the header of `sleap-roots-pipeline.yaml`). Then run `/cleanup-merged`.
 
 ## When to Skip Phases
 

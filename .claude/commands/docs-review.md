@@ -66,8 +66,9 @@ grep -r "sleap-roots-predictor-template\|hostPath\|runai-busch-lab" --include="*
 # live instruction still naming the old one is stale (historical log entries are fine).
 # Match bare `talmo-lab` too, NOT just `runai-talmo-lab` — the project-label form
 # (`project: talmo-lab`) is the one that hid in openspec/specs/ through a whole sweep.
-# `talmolab` is the GitHub org and is always correct, hence the -w style exclusion.
-grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" . | grep -v talmolab
+# (`talmolab`, the GitHub org, can't match this pattern — don't filter it out, or lines that
+# contain both a GitHub URL and a stale namespace get hidden.)
+grep -rn "talmo-lab" --include="*.md" --include="*.sh" --include="*.yaml" .
 ```
 
 ### Step 2: Update Affected Documentation

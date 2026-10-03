@@ -34,13 +34,15 @@ Use a three-state convention for verification checkboxes — don't tick `[x]` ou
 - `[!]` — Pre-existing issue on `main`. This PR introduces no new failure. Link the issue tracking the baseline problem.
 - `[ ]` — Not yet verified, or doesn't apply.
 
+The `[!]` state exists because docs/config PRs often inherit failures that already exist on `main`. Ticking `[x]` on those would be a false claim. Use `[!]` to be honest.
+
 Example:
 ```
-- [x] `check_all.sh` passes — new assertion `predictor directs its GPU slice at the main container` seen red first (got None)
+- [x] `/test` (`check_all.sh`, Git Bash) passes — new assertion `<label>` seen red first (got None; FAIL line in the commit body)
 - [x] `lint_manifests.sh` passes
 - [x] `openspec validate <change-id> --strict` passes
 - [!] Local WSL2 dry-run not possible — `local_run_pipeline_first_time.sh` is broken for the current DAG (#21), not introduced here
-- [ ] Cluster submit (not run yet — templates not registered until after merge)
+- [ ] Post-merge: register from `main` and re-run the baseline observation green (templates are never registered from a branch)
 ```
 
 ## PR Description Template
@@ -67,12 +69,12 @@ Example:
 
 ## Verification
 
-- [ ] `uv run --no-project --with pyyaml bash scripts/check_all.sh` passes
+- [ ] `/test` passes — `uv run --no-project --with pyyaml bash scripts/check_all.sh`, from Git Bash
 - [ ] New/changed behavior has an assertion that was seen red before the fix (name it), or N/A
 - [ ] `wsl -e bash scripts/lint_manifests.sh` passes (or N/A — no manifest changed)
 - [ ] `openspec validate <change-id> --strict` passes
 - [ ] Cluster (`*.yaml`) and local (`local-WSL2-*.yaml`) variants kept in sync (or N/A)
-- [ ] Live acceptance: cluster submit re-run green against the recorded baseline (or stated why not / when)
+- [ ] Live acceptance: red baseline recorded; inlined pre-merge probe green (or N/A); post-merge registration + re-run listed (or stated why not)
 - [ ] No `ARGO_TOKEN` / secrets committed or echoed
 
 ## Breaking Changes

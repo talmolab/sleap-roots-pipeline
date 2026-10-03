@@ -20,16 +20,11 @@ script ran in — see `.claude/skills/runai/SKILL.md` §1a for where it lives.
 
 ## Why the wrapper, not bare `argo lint`
 
-```bash
-argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml   # FAILS on this tree
-```
-
-Offline lint resolves `templateRef` by **(namespace, name)**. `sleap-roots-pipeline.yaml`
-declares `metadata.namespace: runai-busch-lab` while the templates declare none, so the lookup
-never matches and reports `couldn't find workflow template …` although nothing is wrong.
-`scripts/lint_manifests.sh` strips that one line from a temp copy so both sides are `""`.
-**Never strip it from the real file** — Bloom's dispatch and `runai_run_pipeline.sh` depend on it.
-The script header has the full explanation.
+Bare `argo lint --offline sleap-roots-pipeline.yaml sleap-roots-*-template.yaml` reports
+`couldn't find workflow template …` on this valid tree — a namespace mismatch between the
+Workflow and the templates. The wrapper lints a temp copy without it. The full explanation, and
+why the real file must keep its `metadata.namespace`, is in the `scripts/lint_manifests.sh`
+header and `openspec/project.md` (Testing Strategy).
 
 ## What lint does and does not catch
 
