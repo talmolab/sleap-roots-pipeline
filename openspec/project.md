@@ -103,7 +103,13 @@ are YAML manifests and shell scripts.
 
 ### Testing Strategy
 
-There is no unit-test harness (no application code). Validation is **operational**:
+There is no application code, but there **is** an executable test harness:
+`scripts/check_manifests.py` and `scripts/check_docs.py`, run together by
+`uv run --no-project --with pyyaml bash scripts/check_all.sh` (`/test`). **TDD applies to them:**
+write the failing `check(...)` first, run it, see it fail for the right reason, then edit the
+manifests/docs to green (`/tdd`). Behavior only the cluster shows (GPU allocation, scheduling,
+quota) is an **acceptance test**: record the red baseline (live pod spec, events, or log) before
+the fix and re-run the same observation after. The full set of checks:
 
 - `bash scripts/lint_manifests.sh` (from WSL, where `argo` lives) — lints the Workflow **together
   with every template it references**, in one invocation. Use the script, **not** the bare command:
@@ -134,10 +140,11 @@ There is no unit-test harness (no application code). Validation is **operational
 - (A4, later) end-to-end on a reference scan: idempotent re-delivery + notification on
   success **and** failure
 
-Because the standard Python/test/build dev-commands don't apply, this repo's
-`.claude/commands` suite deliberately **omits** `dev`/`lint`/`test`/`coverage`/`tdd`/
-`build`/`pre-merge`/`validate-env`/`run-ci-locally` and keeps the repo-agnostic
-git/GitHub/OpenSpec/docs commands.
+The `.claude/commands` suite is rendered from the lab's canonical templates against this
+toolchain: `/test` (`check_all.sh`), `/lint` (`lint_manifests.sh`), `/tdd`, `/pre-merge` and
+`/validate-env` wrap the scripts above. It **omits** `dev`/`build`/`coverage`/`fix-formatting`/
+`run-ci-locally` — there is no app to run, no build, no coverage tool, no formatter config, and
+no CI.
 
 ### Git Workflow
 

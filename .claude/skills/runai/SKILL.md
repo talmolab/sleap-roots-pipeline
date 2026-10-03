@@ -41,9 +41,9 @@ wsl -e bash -c "export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.y
 ### 1a. Where the three CLIs actually live
 
 Verified on this workstation **2026-09-15** — re-check before trusting, these are
-operator-specific. Several of this repo's slash commands (`/ci-debug`, `/docs-review`,
-`/new-feature`, `/pr-description`, `/review-openspec`, `/review-pr`) invoke `argo lint` without
-saying where `argo` is; this table is the answer.
+operator-specific. This repo's slash commands lint through `wsl -e bash
+scripts/lint_manifests.sh` (`/lint`, `/pre-merge`, and the review commands); this table is
+where that `argo` comes from, and what to fix when the script exits `127`.
 
 | Tool | Location | On PATH? |
 |---|---|---|
@@ -56,7 +56,11 @@ translates to `/mnt/c/repos/sleap-roots-pipeline`:
 
 ```bash
 wsl -e bash -c 'export PATH=$HOME/bin:/usr/local/bin:$PATH; \
-  cd /mnt/c/repos/sleap-roots-pipeline && argo lint --offline sleap-roots-pipeline.yaml'
+  cd /mnt/c/repos/sleap-roots-pipeline && argo list -n runai-busch-lab'
+
+# Lint: use the wrapper — bare `argo lint --offline sleap-roots-pipeline.yaml` fails on this
+# tree (see the troubleshooting row below)
+wsl -e bash scripts/lint_manifests.sh
 ```
 
 > A non-login WSL shell (`wsl -e bash -c`) does **not** source `.profile`, so `$HOME/bin` is
