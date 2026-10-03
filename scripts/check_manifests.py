@@ -10,12 +10,13 @@ It deliberately does NOT replace `argo lint` — lint validates Argo schema and 
 `templateRef`s; this validates the repo's own conventions, which lint knows nothing about
 (priority classes, quota labels, credential isolation, retry shape, pin hygiene).
 
-Usage:  python scripts/check_manifests.py        # from the repo root
+Usage:  uv run --with pyyaml python scripts/check_manifests.py   # from the repo root
 Exit:   0 = all assertions hold, 1 = at least one failed.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -645,11 +646,58 @@ def main() -> int:
             [],
         )
     pred_tmpl = load(BATCH_STAGES["predictor"])["spec"]["templates"][0]
+    pred_annotations = (pred_tmpl.get("metadata") or {}).get("annotations") or {}
     check(
         "predictor gpu-memory is the value GPU_SLICE_CAPACITY was derived at",
-        ((pred_tmpl.get("metadata") or {}).get("annotations") or {}).get("gpu-memory"),
+        pred_annotations.get("gpu-memory"),
         GPU_SLICE_MEMORY,
     )
+
+    # --- Scenario: Predictor requests a fractional GPU at the pod level -------------------
+    # #117: RunAI gives a pod-level fractional GPU to spec.containers[0] unless the pod names a
+    # container, and in an Argo pod that is the `wait` sidecar. Without the annotation `main` gets
+    # NVIDIA_VISIBLE_DEVICES=void and predict runs on CPU while holding the slice -- with every
+    # other clause below satisfied, so nothing else here would notice.
+    check(
+        "predictor names main as its GPU-fraction container",
+        pred_annotations.get("gpu-fraction-container-name"),
+        "main",
+    )
+    # ...but that annotation only exists from Run:ai cluster v2.24, and this cluster runs 2.22
+    # (live-tested 2026-10-02: ignored). What actually works on 2.22 is making `main` the first
+    # container: Argo appends `wait` first, then applies podSpecPatch as a Kubernetes strategic
+    # merge, whose $setElementOrder directive reorders the list. Removing this line silently sends
+    # the GPU back to `wait` -- nothing else in the pod would look different.
+    try:
+        pred_patch = json.loads(pred_tmpl.get("podSpecPatch") or "null")
+    except json.JSONDecodeError as e:
+        pred_patch = f"unparseable: {e}"
+    check(
+        "predictor podSpecPatch orders main before wait",
+        pred_patch,
+        {"$setElementOrder/containers": [{"name": "main"}, {"name": "wait"}]},
+    )
+    # The annotation must name a container that exists, or RunAI fails the pod at admission. Argo
+    # names a `container:` template's container `main`; a script/containerSet, or an explicit
+    # other name, would break that.
+    check(
+        "predictor is a plain container template",
+        sorted(k for k in ("container", "script", "containerSet") if k in pred_tmpl),
+        ["container"],
+    )
+    pred_ctr = pred_tmpl.get("container") or {}
+    check("predictor container name is absent or main", pred_ctr.get("name", "main"), "main")
+    check("predictor declares no relative gpu-fraction", "gpu-fraction" in pred_annotations, False)
+    pred_res = pred_ctr.get("resources") or {}
+    check(
+        "predictor requests no whole nvidia.com/gpu",
+        [k for k in ("limits", "requests") if "nvidia.com/gpu" in (pred_res.get(k) or {})],
+        [],
+    )
+    check("predictor schedulerName", pred_tmpl.get("schedulerName"), "runai-scheduler")
+    pred_sc = pred_ctr.get("securityContext") or {}
+    check("predictor is not privileged", pred_sc.get("privileged") is True, False)
+    check("predictor does not run as root", pred_sc.get("runAsUser") == 0, False)
 
     print()
     if _failures:

@@ -253,7 +253,8 @@ resources:
 ```
 
 **On the cluster**, the predictor template (`sleap-roots-predictor-template.yaml`) instead uses a
-RunAI pod-level `gpu-memory` annotation with no `nvidia.com/gpu` resource at all — see
+RunAI pod-level `gpu-memory` annotation, plus a `podSpecPatch` that orders `main` first so the
+slice reaches the predict container (#117), with no `nvidia.com/gpu` resource at all — see
 "Run:AI-Specific Configuration in WorkflowTemplates" below.
 
 Example to test GPU support.
@@ -363,6 +364,7 @@ actually reads:
 ```yaml
 annotations:
   gpu-memory: "8192"
+  gpu-fraction-container-name: "main"
 ```
 
 - **`gpu-memory`**: requests an absolute amount of GPU memory (MiB) rather than a whole GPU —
@@ -370,6 +372,11 @@ annotations:
   (e.g. `"0.5"`) annotation instead; this repo uses the absolute `gpu-memory` form, sized from a
   real measured VRAM trace (see `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`)
   — precision RunAI's own docs recommend over a flat percentage.
+- **`gpu-fraction-container-name`** and the template's **`podSpecPatch`**: route the slice to
+  `main` rather than Argo's `wait` sidecar. On Run:ai 2.22 only the `podSpecPatch` reorder works;
+  the annotation takes effect from Run:ai ≥ 2.24
+  ([#117](https://github.com/talmolab/sleap-roots-pipeline/issues/117); see the comments beside
+  both in `sleap-roots-predictor-template.yaml`).
 
 ### 🏷️ `labels`
 
@@ -382,10 +389,11 @@ labels:
 
 ### ⚙️ `resources.limits`
 
-The predictor template sets **no** `nvidia.com/gpu` resource — GPU access comes entirely from the
-pod-level `gpu-memory` annotation above. `nvidia.com/gpu` and RunAI's fractional/absolute-memory
-annotations are mutually exclusive: including both makes RunAI treat the request as a whole GPU
-and ignore the annotation (this combination is exactly what caused #25).
+The predictor template sets **no** `nvidia.com/gpu` resource — its GPU is requested by the
+pod-level `gpu-memory` annotation above and reaches `main` via the `podSpecPatch` reorder.
+`nvidia.com/gpu` and RunAI's fractional/absolute-memory annotations are mutually exclusive:
+including both makes RunAI treat the request as a whole GPU and ignore the annotation (this
+combination is exactly what caused #25).
 
 ---
 

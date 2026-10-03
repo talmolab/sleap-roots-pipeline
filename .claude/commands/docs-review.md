@@ -145,7 +145,7 @@ How to run it (`argo submit ...`) with an example.
 
 ### Configuration
 
-Available parameters, annotations (`gpu-memory` pod-level; `preemptible` is inert), and env vars (`ARGO_TOKEN`).
+Available parameters, annotations (`gpu-memory` + `gpu-fraction-container-name` pod-level; the predictor's `podSpecPatch`; `preemptible` is inert), and env vars (`ARGO_TOKEN`).
 
 ### Troubleshooting
 
