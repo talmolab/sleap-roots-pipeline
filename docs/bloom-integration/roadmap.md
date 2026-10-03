@@ -60,6 +60,8 @@ a0→a1→a2→a3, see the version-pinning constraint); Bloom pins it with a dri
 
 Cross-linked (Track B — analyze/bloom-mcp): [bloom #310](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/310) ✅ · [bloom #339](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/339) (open).
 
+Track B — Bloom trait export (B3): export jobs and routes [bloom #996](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/996) ✅ · "Download traits" dialog [bloom #1025](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1025) ✅ (records [bloom #1037](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1037); both on Bloom main via the 2026-10-04 promotion, bloom #1043)
+
 > Note: bare `#NNN` elsewhere in this file are issues/PRs in **`salk-bloom`** (the bloom repo),
 > not this repo — they don't auto-link from here.
 
@@ -317,6 +319,7 @@ wording) before merge — see the archived OpenSpec change's `design.md` for the
 |---|---|---|---|---|---|
 | **B1 — analysis-input contract** | sleap-roots-contracts | canonical analyze CSV schema + `validate_analysis_input` (structural-only: fixed canonical role names, opaque traits, no registry/range checks; co-versions A1 in the same package — a B1 release can force A2 to re-pin; prefer per-`$id` pinning) + **packaged examples** (`load_analysis_input_example` accessor, ship in wheel) + **`canonicalize_role_dtypes`** helper (role→string cast; rename stays consumer-side) | A1 | structural validation of canonical role+trait frame; real EDPIE fixtures; drift guard + `--strict` green | ✅ **contracts #3 / PR #4 merged 2026-06-11; released `v0.1.0a1` to PyPI** (validator + accessor + 5 examples + `canonicalize_role_dtypes`; PyPI install verified). Alpha until first consumer (analyze #144) round-trips end-to-end. |
 | **B2 — analyze consumes the contract** | sleap-roots-analyze | wire `validate_analysis_input` into `run-all` / loaders — call it on the **canonicalized, trait-subsetted** frame (after `get_trait_columns` drops metadata + role rename to canonical), **not** the raw wide frame. The contract is structural and has no metadata registry, so column exclusion stays in analyze's config (do not duplicate the denylist in the contract). | B1 | run-all rejects malformed input; reproducibility gates (analyze #133 / epic #130 — both now **closed**) | ⬜ **analyze #144** (open) |
+| **B3 — Bloom trait export (web)** | salk-bloom | one recipe's traits per file, for an experiment (optionally one wave and/or plant age) or one scan: a zip of `<stem>.csv` (with `recipe_key`, `source_id`, `genotype`), `<stem>.export.json` (sidecar v1: the recipe's definition, the selection, every excluded scan with its reason) and `<stem>.excluded.csv`. The default is the most recently added recipe; the dialog names the one covering the most scans. Conventions shared with bloomctl (bloom#481) and bloommcp (bloom#936) in Bloom's `_WIKI/SUPABASE/trait-recipes.md` §"Export sidecar v1" | A2 recipe key ([bloom #976](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/976)) | `load_trait_data(…, barcode_col="plant_qr_code", genotype_col="genotype")` loads the CSV (verified on 3313); staging experiment 1, `legacy:5`: 13,396 + 5,075 excluded = 18,471 scans in about 140 s | 🟡 routes on Bloom main ([bloom #996](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/996), promoted by #1018); "Download traits" dialog on Bloom main ([bloom #1025](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1025), browser-checked on staging in Chrome 2026-10-03, promoted by #1043 on 2026-10-04); bloom#1007's bloom-web fix (#1009: restart policy, 3g memory limit, build SHA) reached main in #1018, with bloom#1007 still open on its staging checks; open: default-recipe rule (bloom#865/#936), browser e2e (bloom#1024) |
 
 ### Cross-cutting
 
@@ -920,6 +923,25 @@ Adversarial 4-lens review. Resolutions:
     `check_manifests`). The cluster admins were asked (2026-10-04) about upgrading to Run:ai ≥ 2.24
     and about the reorder. OpenSpec change `fix-predictor-gpu-container-target` is archived in this
     PR.
+- **2026-10-03 (trait export)** — **Bloom's trait export (bloom#865) is tracked here as tier B3, the Bloom side of
+  Track B's analysis input. Its web routes are in production and the "Download traits" dialog is on staging.**
+  - **What it is.** A user downloads one recipe's traits for an experiment (optionally one wave or age) or one
+    scan, as a zip of a CSV, a sidecar (`export.json`) and the excluded scans with their reasons. One recipe per
+    file: never mixed.
+  - **Landed.**
+    - Routes and jobs: [bloom #996](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/996), promoted to main in #1018.
+    - Dialog and buttons: [bloom #1025](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1025), merged to staging 2026-10-03 as `cba1c28a` after two
+      review rounds.
+  - **Checked on staging.** Seven browser checks in Chrome, recorded in [bloom #1037](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1037).
+    The largest, experiment 1 `legacy:5`, gave 13,396 + 5,075 = 18,471 scans in about 140 s, a 40 MB zip.
+  - **Open.**
+    - The default recipe is the most recently added one, which can cover only a few scans; whether it should
+      follow coverage is open on bloom#865/#936, and recipe retirement is bloom#1021.
+    - Production use waits on the bloom-web runtime fix (bloom#1007); browser e2e is bloom#1024.
+      *Updated 2026-10-04:* the dialog (bloom #1025, #1037) reached Bloom main in the promotion
+      bloom #1043. bloom#1007's fix (#1009) had reached main on 2026-10-02 in #1018; the issue stays
+      open on its staging checks.
+    - The status dashboard (`dashboard/roadmap-status.html`, last refreshed 2026-08-24) has no B3 entry yet.
 - **2026-10-02 (wheat + sorghum)** — **New A3 change set: wheat and sorghum models for production
   ([#118](https://github.com/talmolab/sleap-roots-pipeline/issues/118)). The owner decided the spec; per-change issues are filed; and a 4-lens
   roadmap review reshaped the plan before it was committed.**
