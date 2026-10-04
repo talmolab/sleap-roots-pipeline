@@ -25,6 +25,7 @@
 
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
+      color-scheme: dark;
       --bg: #17140F;
       --surface: #201C16;
       --surface-raised: #262119;
@@ -46,6 +47,7 @@
     }
   }
   :root[data-theme="dark"] {
+    color-scheme: dark;
     --bg: #17140F;
     --surface: #201C16;
     --surface-raised: #262119;
@@ -242,19 +244,20 @@
   <header>
     <span class="eyebrow">sleap-roots ↔ Bloom · A4 program</span>
     <h1>Root System Status</h1>
-    <p class="sub">Where the whole integration program stands as of 2026-08-24 — every tier, what's actually shipped vs. claimed, and what's moving right now. Source of truth: <code>sleap-roots-pipeline/docs/bloom-integration/roadmap.md</code>.</p>
+    <p class="sub">Where the whole integration program stands as of 2026-10-04, the day production went live. It covers every tier, what's actually deployed rather than just merged, and what's moving right now. Source of truth: <code>sleap-roots-pipeline/docs/bloom-integration/roadmap.md</code>.</p>
   </header>
 
   <div class="strip">
+    <div class="cell"><span class="num">1</span><span class="label">tier live in production (A4, since 2026-10-04)</span></div>
     <div class="cell"><span class="num">3</span><span class="label">tiers fully done (A0, A1, B1)</span></div>
-    <div class="cell"><span class="num">3</span><span class="label">tiers in progress (A2, A3, A4)</span></div>
-    <div class="cell"><span class="num">0</span><span class="label">sessions actively in flight</span></div>
-    <div class="cell"><span class="num">2</span><span class="label">live blockers, unfixed &amp; unowned</span></div>
+    <div class="cell"><span class="num">2</span><span class="label">tiers in progress (A2, A3)</span></div>
+    <div class="cell"><span class="num">4</span><span class="label">changes in flight right now</span></div>
+    <div class="cell"><span class="num">3</span><span class="label">open risks, none blocking</span></div>
   </div>
 
   <section>
-    <h2>Tiers <span class="idx">A0 → B2</span></h2>
-    <p class="lede">The program's own vocabulary: a <em>tier</em> decomposes into <em>changes</em>, one OpenSpec PR per change, per repo.</p>
+    <h2>Tiers <span class="idx">A0 → B3</span></h2>
+    <p class="lede">The program's own vocabulary: a <em>tier</em> decomposes into <em>changes</em>, with one OpenSpec PR per change, per repo.</p>
     <div class="tablewrap">
       <table>
         <thead>
@@ -263,45 +266,51 @@
         <tbody>
           <tr>
             <td class="tier">A0</td>
-            <td>Tooling baseline — OpenSpec + commands + Dockerfile/GHCR across all four service repos</td>
+            <td>Tooling baseline: OpenSpec, commands and Dockerfile/GHCR across the service repos</td>
             <td><span class="pill done">done</span></td>
-            <td class="note">All four repos standardized.</td>
+            <td class="note">Predict's GHCR build is green on <code>main</code>; its old tracking issue (<code>predict#5</code>) can be closed. This repo's <code>.claude/commands</code> were re-standardized against the lab templates on 2026-10-03 (<code>#121</code>).</td>
           </tr>
           <tr>
             <td class="tier">A1</td>
             <td>Result + provenance contract (<code>sleap-roots-contracts</code>)</td>
             <td><span class="pill done">done</span></td>
-            <td class="note">On PyPI, now at <code>v0.1.0a8</code>. Every consumer pins explicitly.</td>
+            <td class="note">On PyPI at <code>v0.1.0a9</code> (2026-09-22). Every consumer, Bloom included, pins a9.</td>
           </tr>
           <tr>
             <td class="tier">A2</td>
             <td>Bloom schema + write-back RPC + RLS + CLI</td>
             <td><span class="pill progress">in progress</span></td>
-            <td class="note">Consume-pin, changes A/C/D/E, read-path, CLI all shipped. Change B deferred (no image traits). Box backfill (<code>#19</code>) not started — needs a key-derivation decision first.</td>
+            <td class="note">Everything on the live path has shipped, and the RPC accepts a9 (bloom #895). Change B is deferred (no image traits). The Box backfill of legacy results (<code>#19</code>) hasn't started; it needs a key-derivation decision first.</td>
           </tr>
           <tr>
             <td class="tier">A3</td>
-            <td>Producers — predict / traits / training / params</td>
+            <td>Producers: predict / traits / training / params</td>
             <td><span class="pill progress">in progress</span></td>
-            <td class="note">Parity gate closed, params landed, manifest-consumption shipped both sides. Argo-readiness hardening (exit codes, SIGTERM) in flight now. Training's native sleap-nn rebuild still pending.</td>
+            <td class="note">Predict (sleap-nn runtime, <code>sha-79939ee</code>), traits (<code>sha-426ad4d</code>) and params are live, including the past-window rule (bloom #971 phase 1, deployed 2026-10-02). In progress: wheat and sorghum models (<code>#118</code>). The native sleap-nn retraining (<code>#13</code>) is post-v1.</td>
           </tr>
           <tr>
             <td class="tier">A4</td>
-            <td>Scan-level Argo orchestration — the pipeline itself</td>
-            <td><span class="pill progress">in progress</span></td>
-            <td class="note">Full breakdown below — this is where almost everything active right now lives.</td>
+            <td>Scan-level Argo orchestration: the pipeline itself</td>
+            <td><span class="pill done">live in prod</span></td>
+            <td class="note">Every tracked change is done (breakdown below). Bloom staging and prod both dispatch to it. What's left is hardening: <code>#106</code>, <code>#63</code>, the GPU follow-ups and the runbook (<code>#132</code>).</td>
           </tr>
           <tr>
             <td class="tier">B1</td>
             <td>Analysis-input contract</td>
             <td><span class="pill done">done</span></td>
-            <td class="note">Released, alpha until a consumer round-trips it.</td>
+            <td class="note">Released; alpha until a consumer round-trips it.</td>
           </tr>
           <tr>
             <td class="tier">B2</td>
             <td>Analyze consumes the contract</td>
             <td><span class="pill notstarted">cross-linked</span></td>
-            <td class="note"><code>sleap-roots-analyze#144</code> — owned by the analyze/bloom-mcp effort, not this program.</td>
+            <td class="note"><code>sleap-roots-analyze#144</code> (open) is owned by the analyze/bloom-mcp effort, not this program.</td>
+          </tr>
+          <tr>
+            <td class="tier">B3</td>
+            <td>Bloom trait export: download one recipe's traits as a zip</td>
+            <td><span class="pill progress">cross-linked</span></td>
+            <td class="note">Owned by salk-bloom. The export routes (bloom #996) and the "Download traits" dialog (bloom #1025) are on Bloom <code>main</code>. Still open: the default-recipe rule (bloom #865/#936), the staging checks for bloom-web's memory limit (bloom #1007) and browser e2e (bloom #1024).</td>
           </tr>
         </tbody>
       </table>
@@ -309,8 +318,8 @@
   </section>
 
   <section>
-    <h2>A4 detail <span class="idx">the active tier</span></h2>
-    <p class="lede">Eleven tracked changes. Seven done (three more closed this week), one staging-only, one blocked, two not started — and nobody currently working any of the last three.</p>
+    <h2>A4 detail <span class="idx">live since 2026-10-04</span></h2>
+    <p class="lede">Twelve tracked changes, all done. Prod run 2 (<code>x68sv</code>, 2026-10-02) wrote back all 24 scans, 15 of them past their model's age window. Prod run 3 (<code>cqc5b</code>, 2026-10-04) ran end to end on the GPU with prod's own credential and storage.</p>
     <div class="tablewrap">
       <table>
         <thead>
@@ -318,77 +327,96 @@
         </thead>
         <tbody>
           <tr><td>firewall</td><td><span class="pill done">done</span></td><td class="note"><code>bloom-dev</code> → cluster API, resolved 2026-07-21.</td></tr>
-          <tr><td>credential</td><td><span class="pill done">staging + prod</span></td><td class="note">Dedicated Supabase account + K8s ServiceAccounts live in both namespaces. Production credential (<code>genericsecret-bloom-prod-pipeline-credentials</code>) live on the prod worker since 2026-10-04 (bloom#863).</td></tr>
-          <tr>
-            <td>bloom trigger route</td>
-            <td><span class="pill done">done — 3 of 3</span></td>
-            <td class="note">Phase 3 (status polling) shipped 2026-08-21 (<a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/701">bloom #701</a>, closes bloom #11) — unusually rigorous review history, 5 adversarial rounds, 4 follow-up issues filed (<code>#696 #706 #710 #716</code>). All three phases of the trigger route are now complete.</td>
-          </tr>
-          <tr><td>pipeline-runs data model + dispatch worker</td><td><span class="pill done">done</span></td><td class="note">Built alongside Phase 1/2.</td></tr>
-          <tr><td>images-downloader</td><td><span class="pill done">done</span></td><td class="note">Real-cluster validated, both namespaces.</td></tr>
-          <tr><td>workflow template</td><td><span class="pill done">done</span></td><td class="note">All four stages run together. Concurrent-batch semaphore/quota still unbuilt — becomes a real question once dispatch is fully live.</td></tr>
-          <tr><td>predict wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots-predict/pull/36">predict #36</a>: exit-code convention, atomic writes, SIGTERM handling) plus a 2026-08-24 cross-repo-review follow-up (<a href="https://github.com/talmolab/sleap-roots-predict/pull/38">predict #38</a>).</td></tr>
-          <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Argo-readiness hardening shipped 2026-08-21 (<a href="https://github.com/talmolab/sleap-roots/pull/266">sleap-roots #266</a>) — exit-code convention independently verified byte-identical to predict's.</td></tr>
-          <tr><td>write-back</td><td><span class="pill blocked">blocked</span></td><td class="note">Ingest CLI, blob upload, and manifest-scoped discovery all shipped and cluster-validated. <strong>Two live blockers, both unowned</strong>: the RPC's hard-pinned <code>contract_version</code>, and the manifest not actually reaching write-back in production — see below.</td></tr>
-          <tr><td>notification</td><td><span class="pill notstarted">not started</span></td><td class="note">Channel undefined (<code>#18</code>) — but likely moot for v1: the design's own §14 puts Slack/email out of scope and treats the status panel (below) as v1's notification.</td></tr>
-          <tr>
-            <td>Bloom UI — trigger + progress panel</td>
-            <td><span class="pill notstarted">not started</span></td>
-            <td class="note"><strong>Found missing from this roadmap's own tracking, 2026-08-24</strong> — design §10 spec (trigger button + Realtime "N/M" status panel + drill-down) existed since 2026-07-06, but the tracking issue (<a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/15">bloom #15</a>, filed 2026-02-11) was marked out-of-scope before the backend existed, and nobody revisited that call once it shipped. Backend's fully ready now. Blocked on <a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/716">bloom #716</a> for the "N/M" count. No session assigned.</td>
-          </tr>
+          <tr><td>credential</td><td><span class="pill done">staging + prod</span></td><td class="note">A dedicated Supabase account per environment. Prod's Secret (<code>genericsecret-bloom-prod-pipeline-credentials</code>) has been live on the prod worker since 2026-10-04 (bloom #863). <code>#17</code> closed.</td></tr>
+          <tr><td>bloom trigger route</td><td><span class="pill done">done</span></td><td class="note">All three phases shipped by 2026-08-21 (<a href="https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/701">bloom #701</a> closed bloom #11).</td></tr>
+          <tr><td>pipeline-runs data model + dispatch worker</td><td><span class="pill done">done</span></td><td class="note">Tables (bloom #570), dispatch worker (#677) and status poller (#701), running in both environments.</td></tr>
+          <tr><td>per-environment dispatch</td><td><span class="pill done">done</span></td><td class="note">Bloom gives staging and prod their own stage folders and Secret at dispatch (bloom #988). Staging uses <code>…/a4_poc/</code>; prod uses <code>…/bloom_cyl_pipeline/prod/</code>. The shared templates mean every <code>argo template update</code> reaches both.</td></tr>
+          <tr><td>images-downloader</td><td><span class="pill done">done</span></td><td class="note">Batch stage-in, on bloomctl <code>sha-5b709d0</code>.</td></tr>
+          <tr><td>workflow template</td><td><span class="pill done">done</span></td><td class="note">Five tasks, ending in an exit-gate that tells a partial batch from a crash (<code>#60</code>). The concurrency gate caps the predictor at 8 and stage-in at 5 across both environments (<code>#102</code>).</td></tr>
+          <tr><td>predict wiring</td><td><span class="pill done">done</span></td><td class="note">Runs on the GPU again since 2026-10-04 (<a href="https://github.com/talmolab/sleap-roots-pipeline/pull/124"><code>#124</code></a>). Run:ai 2.22.64 gives the GPU slice to the pod's first container, so a <code>podSpecPatch</code> puts <code>main</code> first. Runs from 2026-08-05 until then had most likely used the CPU.</td></tr>
+          <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Reads the per-run manifest (contracts a9). Live pin <code>sha-426ad4d</code>; the wheat/sorghum re-pin (<code>#133</code>) is merged but not deployed.</td></tr>
+          <tr><td>write-back</td><td><span class="pill done">done</span></td><td class="note">Writes each scan's results to Bloom and uploads its <code>.slp</code> predictions to the <code>cyl-intermediates</code> bucket (S3 on MinIO; Box is out of v1 scope). Since 2026-10-04, a retried write-back marks its scans <code>written</code> (bloomctl <code>sha-5b709d0</code>, bloom #1034).</td></tr>
+          <tr><td>notification</td><td><span class="pill done">decided</span></td><td class="note">The Realtime run panel in the Bloom UI is v1's notification; <code>#18</code> was closed 2026-10-04. Nobody is alerted on a failure: the panel shows it.</td></tr>
+          <tr><td>Bloom UI: trigger + progress panel</td><td><span class="pill done">done</span></td><td class="note">UI v1 is on Bloom <code>main</code>, with prod's trigger switched on (bloom #1016). The confirm dialog warns about scans past their model's age window (bloom #1028, on prod since 2026-10-04).</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section>
-    <h2>Right now <span class="idx">0 sessions in flight</span></h2>
-    <p class="lede">Everything that was in flight as of the last sweep (2026-08-19) has since shipped — trigger-route Phase 3, both producers' Argo-readiness hardening, and download concurrency all merged 2026-08-21 through 2026-08-24. The critical path has gone quiet: what's left is two unowned blockers and three decisions only Elizabeth can make (see below). Nobody is currently working any of them.</p>
+    <h2>Right now <span class="idx">4 in flight</span></h2>
+    <div class="cards">
+      <div class="card">
+        <span class="repo">sleap-roots-pipeline</span>
+        <h3>Deploy the wheat/sorghum traits image</h3>
+        <p>The trait-extractor re-pin to <code>sha-e45b6bf</code> is merged but not deployed; the drift check flags it as expected. Waiting on an <code>argo template update</code>, run only when no Workflow is running in either environment.</p>
+        <span class="idnum">#133 · merged, awaiting deploy</span>
+      </div>
+      <div class="card">
+        <span class="repo">training · predict · pipeline</span>
+        <h3>Wheat and sorghum in production</h3>
+        <p>Cards are published under the <code>candidate</code> alias, and the traits rows are done. Next: parity on the candidates, the trait check, and only then the <code>production</code> link, which reaches staging and live prod at once.</p>
+        <span class="idnum">#118 · predict#51 · #120 · training#72</span>
+      </div>
+      <div class="card">
+        <span class="repo">salk-bloom</span>
+        <h3>Finish runs whose workflows vanished</h3>
+        <p>The status poller leaves a run unfinished when Argo deletes its workflow before the poller sees it end. A PR concludes those runs.</p>
+        <span class="idnum">bloom #1042 · PR #1048 open</span>
+      </div>
+      <div class="card">
+        <span class="repo">sleap-roots-predict</span>
+        <h3>Narrow the override design to the past-window rule</h3>
+        <p>A docs PR that brings predict's param-resolution design in line with bloom #971's decision that users don't override params.</p>
+        <span class="idnum">predict #49 · PR open</span>
+      </div>
+    </div>
   </section>
 
   <section>
     <h2>Open &amp; blocked</h2>
+    <p class="lede">Nothing blocks the live pipeline today. The red items are risks that grow now that prod users can start runs; the amber ones need a call from Elizabeth.</p>
     <div class="blockers">
       <div class="blocker">
-        <span class="idnum">bloom #685</span>
+        <span class="idnum">#106</span>
         <div>
-          <p class="what">Write-back RPC will reject every new envelope once the traits image redeploys.</p>
-          <p class="why"><code>insert_cyl_result_envelope</code> hard-pins <code>contract_version</code> to exactly <code>0.1.0a3</code>. Traits just bumped its own pin to <code>a7</code> (<code>#263</code>, already merged) — the RPC has no idea <code>a7</code> exists. Not urgent until that image is actually redeployed, but it will silently reject 100% of scans the moment it is. Open since 2026-08-14, still unowned, zero comments.</p>
+          <p class="what">A pod that never schedules holds its concurrency slot forever.</p>
+          <p class="why">Both environments share one semaphore, so a stuck staging pod now starves prod users, and vice versa. The fix is a pending-pod timeout on the gated templates.</p>
         </div>
       </div>
       <div class="blocker">
-        <span class="idnum">#37 (gap 4)</span>
+        <span class="idnum">#63</span>
         <div>
-          <p class="what">The run manifest never actually reaches write-back in production — a losing concurrent batch could silently lose real results.</p>
-          <p class="why">Predict doesn't copy <code>run_manifest.json</code> forward into its own output (confirmed: no such code in <code>batch.py</code>), so traits' manifest-consumption sees "absent" and falls back to unscoped in every real run today. Separately, traits' own <code>copy_run_manifest_forward</code> is a naive copy with no lock, unlike bloomctl's origin-stage handling — two concurrent batches sharing an output dir could clobber each other's <code>scan_keys</code>. Harmless while nothing downstream consumed the manifest; no longer harmless now that write-back scopes its own discovery to it (bloom #697, merged 2026-08-19). Found 2026-08-19, filed as a comment on <code>#37</code>, flagged on bloom PR #697 — still unaddressed, unowned.</p>
+          <p class="what">Both environments' stage folders live under one person's user path, and nothing would recreate them.</p>
+          <p class="why">A missing folder leaves pods Pending, not Failed. Since 2026-10-04 this covers prod's folder too.</p>
+        </div>
+      </div>
+      <div class="blocker">
+        <span class="idnum">#132</span>
+        <div>
+          <p class="what">There's no production runbook yet.</p>
+          <p class="why">Rollback orders, the drift check and the operator rules are scattered across the roadmap and issues. The issue was filed 2026-10-04 and nobody has started it.</p>
         </div>
       </div>
       <div class="blocker decision">
-        <span class="idnum">#18</span>
+        <span class="idnum">#133</span>
         <div>
-          <p class="what">Notification channel undecided.</p>
-          <p class="why">Success/failure needs somewhere to fire — Slack? email? Needs your call before it's handoff-ready.</p>
+          <p class="what">When to deploy the wheat/sorghum traits image.</p>
+          <p class="why">It has to go live before the cards are linked to <code>production</code>, and the update reaches staging and prod at once.</p>
         </div>
       </div>
       <div class="blocker decision">
         <span class="idnum">#19</span>
         <div>
-          <p class="what">Box backfill for legacy results — key-derivation undecided.</p>
+          <p class="what">Box backfill for legacy results: the key derivation is undecided.</p>
           <p class="why">Provenance-incomplete legacy rows need a distinct key scheme or they'll silently collide.</p>
-        </div>
-      </div>
-      <div class="blocker decision">
-        <span class="idnum">bloom #398</span>
-        <div>
-          <p class="what">bloomctl auth is still a static, non-refreshing credential file.</p>
-          <p class="why">The same fragile pattern behind this week's JWT outage (<code>#646</code>/<code>#647</code>). Not yet handed off.</p>
         </div>
       </div>
     </div>
   </section>
 
   <footer>
-    <span>Last swept 2026-08-24</span>
+    <span>Last swept 2026-10-04</span>
     <span>Canonical doc: <code>docs/bloom-integration/roadmap.md</code></span>
   </footer>
 
