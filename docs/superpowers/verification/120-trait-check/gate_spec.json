@@ -1,0 +1,22 @@
+{
+  "status": "FROZEN: approved by the owner 2026-10-04, before any run. Never loosened after results are seen.",
+  "thresholds": {"spearman_rho_min": 0.9, "median_rel_delta_max": 0.10, "min_finite_pairs": 10},
+  "notes": "Trait names are the trait-extractor envelope names; each is also the reference traits_summary.csv column (same compute_batch_traits naming: per-frame summary, then the summary across frames). atol is in the trait's units (count, px, degrees).",
+  "species": {
+    "wheat": [
+      {"trait": "crown_count_median", "reference_column": "crown_count_median", "atol": 1},
+      {"trait": "crown_lengths_mean_median", "reference_column": "crown_lengths_mean_median", "atol": 10},
+      {"trait": "crown_angles_proximal_mean_median", "reference_column": "crown_angles_proximal_mean_median", "atol": 5},
+      {"trait": "crown_angles_distal_mean_median", "reference_column": "crown_angles_distal_mean_median", "atol": 5},
+      {"trait": "network_length_median", "reference_column": "network_length_median", "atol": 10}
+    ],
+    "sorghum": [
+      {"trait": "primary_length_median", "reference_column": "primary_length_median", "atol": 10},
+      {"trait": "lateral_count_median", "reference_column": "lateral_count_median", "atol": 1},
+      {"trait": "lateral_lengths_mean_median", "reference_column": "lateral_lengths_mean_median", "atol": 10},
+      {"trait": "primary_angle_proximal_median", "reference_column": "primary_angle_proximal_median", "atol": 5},
+      {"trait": "lateral_angles_proximal_mean_median", "reference_column": "lateral_angles_proximal_mean_median", "atol": 5},
+      {"trait": "network_length_median", "reference_column": "network_length_median", "atol": 10}
+    ]
+  }
+}
