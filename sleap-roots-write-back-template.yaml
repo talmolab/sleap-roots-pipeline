@@ -51,6 +51,17 @@
 # server-side and report `skipped` (bloom #1001's RPC, live on staging since 2026-10-01), so this
 # message appears only for the residual case.
 # Rollback target: sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802.
+# Bumped 2026-10-04: sha-88cbcbf -> sha-5b709d0@sha256:f2c2fb412a4a6ee48477e0b89f762dea70b8ad51f78c367f51cbd218c957e640
+# (salk-bloom #1038, squash 5b709d0b, bloomctl 0.1.0a8; part of bloom#1034; see
+# sleap-roots-images-downloader-template.yaml for the ride-along commit). THIS stage's code
+# changes: when an envelope fails retriably, `cyl batch-ingest-result` no longer closes this
+# workflow's still-`queued` scans as `failed` at the end of the attempt. It leaves them to Bloom's
+# status poller and says so on stderr ("reconciliation deferred"). A scan that Argo's retry of this
+# step then ingests ends `written`, instead of staying `failed` with its data written (prod run 2).
+# The poller half shipped first: prod's workflows service runs bloom #1038 since the 2026-10-04
+# staging->main promotion (bloom #1043), so the poller closes those scans once the Workflow ends.
+# Non-retriable failures and exit codes are unchanged.
+# Rollback target: sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265.
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -67,7 +78,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-5b709d0@sha256:f2c2fb412a4a6ee48477e0b89f762dea70b8ad51f78c367f51cbd218c957e640
         imagePullPolicy: Always
         args:
           - "cyl"

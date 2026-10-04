@@ -56,6 +56,19 @@
 # matter for this bump. Write-back first anyway, as for the last one.
 # Rollback target: sha-1bc3056@sha256:8e9eb22c7cd0ed5f3af45d7393463d3261699032dd8bb8aa4f1899ede250d802
 # (all three templates; re-derive the live pin from the cluster first).
+# Bumped 2026-10-04: sha-88cbcbf -> sha-5b709d0@sha256:f2c2fb412a4a6ee48477e0b89f762dea70b8ad51f78c367f51cbd218c957e640
+# (salk-bloom #1038, squash 5b709d0b, bloomctl 0.1.0a8; part of bloom#1034). Digest from the
+# docker-build-bloomcli run for 5b709d0b and `imagetools inspect` (OCI index, the same kind as the
+# sha-88cbcbf digest). THIS stage's code is unchanged; the bump is here for the lockstep rule.
+# What changes is write-back's retry hand-off; see sleap-roots-write-back-template.yaml. One other
+# bloomcli/ commit on bloom staging since 88cbcbf3 rides along: #1002 (8b6c4c7b, version
+# 0.1.0a7 -> 0.1.0a8; h5py/numpy move from the `scrna` extra into the base install, which the
+# image already installed, so it still carries them; scrna-only code and the PyPI README). None
+# changes a cyl CLI flag, the sleap-roots-contracts pin (still 0.1.0a9), the run-manifest name or
+# an exit code, so registration order does not matter for this bump. Write-back first anyway, as
+# for the last one.
+# Rollback target: sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
+# (all three templates; re-derive the live pin from the cluster first).
 apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
@@ -83,7 +96,7 @@ spec:
         limit: 2
         retryPolicy: Always
       container:
-        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-88cbcbf@sha256:0259ec0ad3c6a1cea927a7b28cfc6f20aad42919e43fe4d2767f6430607e3265
+        image: ghcr.io/salk-harnessing-plants-initiative/bloomctl:sha-5b709d0@sha256:f2c2fb412a4a6ee48477e0b89f762dea70b8ad51f78c367f51cbd218c957e640
         imagePullPolicy: Always
         args:
           - "cyl"
