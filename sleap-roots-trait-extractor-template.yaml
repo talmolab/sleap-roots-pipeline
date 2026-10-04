@@ -87,7 +87,8 @@ spec:
           # pipeline_run_id from this (stripped) env var, and falls back to the legacy
           # `run_manifest.json` only when no per-run manifest exists (allow_legacy=True). Carried
           # for the same reason as the predictor template: the stage directories are fixed, shared
-          # hostPaths that every run (and every environment) writes into, so an unscoped manifest
+          # hostPaths that every run in an environment writes into (one tree per environment since
+          # bloom#988), so an unscoped manifest
           # may belong to a different run. See sleap-roots-pipeline#56 and #82 (the
           # allow_legacy=False hardening -- closed won't-fix 2026-10-01: the stale legacy files were
           # deleted 2026-09-29, so the fallback already fails loud; see the roadmap's row 7).
