@@ -318,7 +318,7 @@
         </thead>
         <tbody>
           <tr><td>firewall</td><td><span class="pill done">done</span></td><td class="note"><code>bloom-dev</code> → cluster API, resolved 2026-07-21.</td></tr>
-          <tr><td>credential</td><td><span class="pill progress">staging only</span></td><td class="note">Dedicated Supabase account + K8s ServiceAccounts live in both namespaces. Production credential not yet created — deliberate, pending real go-live.</td></tr>
+          <tr><td>credential</td><td><span class="pill done">staging + prod</span></td><td class="note">Dedicated Supabase account + K8s ServiceAccounts live in both namespaces. Production credential (<code>genericsecret-bloom-prod-pipeline-credentials</code>) live on the prod worker since 2026-10-04 (bloom#863).</td></tr>
           <tr>
             <td>bloom trigger route</td>
             <td><span class="pill done">done — 3 of 3</span></td>

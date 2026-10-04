@@ -232,7 +232,8 @@ def main() -> int:
     # the same working copy is used to `argo submit` -- exactly the state in which a stray
     # `git commit -a` lands. Nothing else would catch it: the drift checker only reads
     # `sleap-roots-*-template.yaml` and `argo lint` is path-agnostic. Bloom no longer takes
-    # `spec.volumes` verbatim (bloom#988 rewrites the stage paths per environment at dispatch), so a
+    # `spec.volumes` verbatim (bloom#988 rewrites the stage paths, and the `bloom-credentials`
+    # secretName, per environment at dispatch), so a
     # committed scratch path would silently redirect only a hand-run `argo submit`. Pin the paths.
     check(
         "hostPath volumes point at the a4_poc tree, not a scratch tree",
