@@ -231,9 +231,9 @@ def main() -> int:
     # A scratch-tree test run requires hand-editing these paths (they are not parameterised), while
     # the same working copy is used to `argo submit` -- exactly the state in which a stray
     # `git commit -a` lands. Nothing else would catch it: the drift checker only reads
-    # `sleap-roots-*-template.yaml`, `argo lint` is path-agnostic, and salk-bloom's vendored copy
-    # takes `spec.volumes` verbatim, so a committed scratch path would silently redirect
-    # production dispatch. Pin the paths.
+    # `sleap-roots-*-template.yaml` and `argo lint` is path-agnostic. Bloom no longer takes
+    # `spec.volumes` verbatim (bloom#988 rewrites the stage paths per environment at dispatch), so a
+    # committed scratch path would silently redirect only a hand-run `argo submit`. Pin the paths.
     check(
         "hostPath volumes point at the a4_poc tree, not a scratch tree",
         sorted(
