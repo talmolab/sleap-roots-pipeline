@@ -865,6 +865,30 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-10-04 (bloomctl + Bloom prod)** — **bloomctl `sha-5b709d0` deployed: a retried write-back's
+  scans now end `written` ([bloom#1034](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1034));
+  prod's id sequences fixed ([bloom#1022](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1022)).**
+  - **What changed.** [#125](https://github.com/talmolab/sleap-roots-pipeline/pull/125) moves
+    images-downloader, write-back and exit-gate from `sha-88cbcbf@sha256:0259ec0a…` to
+    `sha-5b709d0@sha256:f2c2fb41…`, together. On a retriable envelope failure, write-back leaves the
+    workflow's still-`queued` scans to Bloom's status poller ("reconciliation deferred") instead of
+    closing them `failed`, so a scan Argo's retry ingests ends `written`. Non-retriable failures and
+    exit codes are unchanged.
+  - **Poller first.** The bump reaches staging and prod at once, so Bloom's poller half (bloom #1038)
+    shipped first: staging 2026-10-03, prod with the staging→main promotion bloom #1043 on 2026-10-04.
+  - **Other changes between the pins:** #1002 (version 0.1.0a8; h5py/numpy into the base install,
+    which the image already had). Contracts is still `0.1.0a9`, so there's no writer/reader skew.
+  - **Prod's id sequences** (bloom#1022): 21 of 65 were behind their data, which is what collided on
+    prod run 2's first write-back. Bloom's migration advanced them during the same promotion, and a
+    deploy step now fails when any falls behind.
+  - **Deploy** (an `argo template update`, run by Claude Code at the owner's request): the namespace
+    was idle beforehand. Applied write-back, then images-downloader, then exit-gate.
+    `check_cluster_drift.sh` reported all 5 templates and the ConfigMap **IN SYNC** before (old pins)
+    and after (new pins), exit 0.
+  - **Verified on prod:** run 3 (3 scans) succeeded end to end on the new image. Rows `written`, new
+    sources 49–51, no collision, and the run concluded `complete`.
+  - **Rollback:** all three templates to `sha-88cbcbf@sha256:0259ec0a…`. Re-derive the live pin from
+    the cluster first.
 - **2026-10-04** — **The predictor runs on GPU again
   ([#117](https://github.com/talmolab/sleap-roots-pipeline/issues/117), fixed by
   [#124](https://github.com/talmolab/sleap-roots-pipeline/pull/124), deployed 2026-10-04 03:06
