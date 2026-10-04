@@ -103,7 +103,7 @@ clean up manually) rather than `runai training` (auto-terminates on completion).
 |---|---|
 | GPU (whole) | `--gpu-devices-request 1` |
 | GPU (fractional, relative) | `--gpu-portion-request 0.5` (fraction of a GPU, 0-1) |
-| GPU (fractional, absolute) | `--gpu-memory-request 8192M` (absolute amount, e.g. `1G`/`500M` — the predictor template annotates the pod-level `gpu-memory: "8192"` (MiB); using `8192M` here rather than `8G` since a bare `G` suffix may mean decimal `10^9` bytes elsewhere in this CLI, ~7% less than `8192` MiB/`8Gi` — this hasn't been exercised live to confirm which convention `--gpu-memory-request` actually follows, so `M` avoids the ambiguity rather than resolving it) |
+| GPU (fractional, absolute) | `--gpu-memory-request 8192M` (absolute amount, e.g. `1G`/`500M` — the predictor template annotates the pod-level `gpu-memory: "8192"`, which Run:ai applies in MB of 10^6 bytes: probe pods got `RUNAI_GPU_MEMORY_LIMIT=8192000000`, about 7,813 MiB, #117. Whether `--gpu-memory-request 8192M` follows the same decimal convention hasn't been checked live) |
 | CPU cores | `--cpu-core-request 12` |
 | Memory | `--cpu-memory-request 32G` |
 | Always re-pull image | `--image-pull-policy Always` |

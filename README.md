@@ -367,7 +367,8 @@ annotations:
   gpu-fraction-container-name: "main"
 ```
 
-- **`gpu-memory`**: requests an absolute amount of GPU memory (MiB) rather than a whole GPU —
+- **`gpu-memory`**: requests an absolute amount of GPU memory (MB of 10^6 bytes: `"8192"` is
+  enforced as 8,192,000,000 bytes, about 7,813 MiB, #117) rather than a whole GPU —
   multiple pods can then share one physical GPU. RunAI also supports a relative `gpu-fraction`
   (e.g. `"0.5"`) annotation instead; this repo uses the absolute `gpu-memory` form, sized from a
   real measured VRAM trace (see `docs/superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md`)

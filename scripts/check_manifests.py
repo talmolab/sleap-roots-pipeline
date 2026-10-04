@@ -654,10 +654,11 @@ def main() -> int:
     )
 
     # --- Scenario: Predictor requests a fractional GPU at the pod level -------------------
-    # #117: RunAI gives a pod-level fractional GPU to spec.containers[0] unless the pod names a
-    # container, and in an Argo pod that is the `wait` sidecar. Without the annotation `main` gets
-    # NVIDIA_VISIBLE_DEVICES=void and predict runs on CPU while holding the slice -- with every
-    # other clause below satisfied, so nothing else here would notice.
+    # #117: Run:ai gives a pod-level fractional GPU to spec.containers[0], and in an Argo pod that
+    # is the `wait` sidecar, so `main` got NVIDIA_VISIBLE_DEVICES=void and predict ran on CPU while
+    # holding the slice -- with every other clause below satisfied. On this cluster (Run:ai
+    # 2.22.64) the annotation below is ignored (probe 2026-10-02); the podSpecPatch asserted
+    # further down is what fixes it. The annotation is asserted so the fix holds from Run:ai 2.24.
     check(
         "predictor names main as its GPU-fraction container",
         pred_annotations.get("gpu-fraction-container-name"),
@@ -687,6 +688,9 @@ def main() -> int:
     )
     pred_ctr = pred_tmpl.get("container") or {}
     check("predictor container name is absent or main", pred_ctr.get("name", "main"), "main")
+    # The podSpecPatch below orders exactly [main, wait]. A sidecar is appended by Argo and is not
+    # in that list, so its position -- and whether it takes the GPU slice -- is no longer pinned.
+    check("predictor declares no sidecars", "sidecars" in pred_tmpl, False)
     check("predictor declares no relative gpu-fraction", "gpu-fraction" in pred_annotations, False)
     pred_res = pred_ctr.get("resources") or {}
     check(

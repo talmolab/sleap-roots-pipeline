@@ -305,6 +305,31 @@ def main() -> int:
         "to direct it to the predict container" in norm(read(README)),
         False,
     )
+    # Presence of "podSpecPatch" is not enough: a doc can name it while calling it optional. Reject
+    # the phrasings that would teach a reader to drop it, in every doc above.
+    dismissive = re.compile(
+        r"podSpecPatch[^.|]{0,60}\b(cosmetic|optional|not needed|unnecessary|can be removed)\b"
+        r"|annotation alone (works|is enough|suffices)",
+        re.IGNORECASE,
+    )
+    check(
+        "no GPU doc calls the podSpecPatch optional or the annotation sufficient",
+        [n for n in gpu_docs if dismissive.search(norm(read(n)))],
+        [],
+    )
+    # Run:ai applies gpu-memory in MB of 10^6 bytes: "8192" became RUNAI_GPU_MEMORY_LIMIT=8192000000
+    # in every probe pod (#117), i.e. 7,813 MiB, not 8,192. These are the phrasings that said MiB.
+    stale_units = {
+        README: "absolute amount of GPU memory (MiB)",
+        "openspec/project.md": "absolute MiB",
+        ".claude/commands/ci-debug.md": "absolute **MiB**",
+        SKILL: '`gpu-memory: "8192"` (MiB)',
+    }
+    check(
+        "no doc gives gpu-memory in MiB (Run:ai applies MB)",
+        [n for n, phrase in stale_units.items() if phrase in norm(read(n))],
+        [],
+    )
     # The pre-#25 review checklists ("`gpu-fraction`; `nvidia.com/gpu` on the predictor") are
     # worded three ways across two files, so match the pairing, not one sentence.
     stale_checklist = re.compile(r"`?gpu-fraction`?\s*[,;]\s*`?nvidia\.com/gpu")

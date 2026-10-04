@@ -57,8 +57,9 @@ not by test: every retry is a new pod built from the same template, so the same 
   per GPU. Kept as the **fallback** if the reorder ever breaks. It would be a separate fix PR:
   1. set `pipeline-gpu` to `"1"` in the live ConfigMap **and** in the yaml first;
   2. remove `gpu-memory`, `gpu-fraction-container-name` and the `podSpecPatch`;
-  3. update `check_manifests.py` (its `gpu-memory`, `GPU_SLICE_*` and `podSpecPatch` assertions)
-     and this requirement.
+  3. update `check_manifests.py` (its `gpu-memory`, `GPU_SLICE_*`, `podSpecPatch` and sidecar
+     assertions), `check_docs.py` (which requires both GPU mechanisms in seven docs), and this
+     requirement with its co-schedule scenario.
 - **Annotation only.** Live-tested and ignored on 2.22. Kept alongside the reorder for ≥ 2.24.
 - **Leave it on CPU and wait for the upgrade.** The results are correct, but it's about 10–15x
   slower, and each predictor holds an unused 0.18-GPU slice (up to 1.44 of the lab's 2-GPU quota
@@ -99,5 +100,14 @@ not by test: every retry is a new pod built from the same template, so the same 
   the `check_manifests.py` assertion.
 - **A Workflow-level `podSpecPatch` is added later.** It would be applied before ours, and ours
   would still decide the order. Bloom has none today.
+- **CPU and GPU results will coexist.** Scans already predicted on CPU are not recomputed:
+  `device` is deliberately excluded from predict's idempotency key (`warm_worker.py:205-212`), so
+  only scans that are new or otherwise changed run on GPU. Their outputs can differ slightly
+  (T2: `scan_577` lateral has 524 instances on GPU against 523 on CPU). Each result records its
+  inference `device`, so the two groups can be told apart. A forced recompute would need a
+  separate decision.
+- **Untested: more than two predictors on one GPU.** The accounting allows about 5 slices per
+  A40, and slices share compute without isolation. T3 measured two; the 22–30 fps figure is for
+  one or two per GPU.
 - **The cluster is nearly full.** On 2026-10-03, 59 of 64 GPUs were allocated. That isn't caused
   by this change, but node-pinned probes can sit Unschedulable (T3's first attempt did).

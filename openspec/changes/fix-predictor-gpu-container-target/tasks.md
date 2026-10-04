@@ -165,7 +165,8 @@ reorder suite in §3 passed.
   - a "DO NOT remove as cosmetic" warning goes on the patch.
 
   Validate: Checks pass. Recorded: `=== ALL 108 ASSERTIONS PASS ===` from Git Bash,
-  `lint_manifests.sh` reports no errors, and the template blob is now `706f7068`.
+  `lint_manifests.sh` reports no errors, and the template blob was `706f7068`. After the round-3
+  comment rewording it is `a76960e1`: comments only, parsing equal.
 - [x] 2.6 **Mutation checks**, not committed. Each mutation failed the new assertion, and the
   template was restored byte-for-byte afterwards:
   ```
@@ -284,7 +285,7 @@ committed template.
   2. Pick the scans:
      - read every `*.scan_metadata.json` under `a4_poc/input`;
      - group them by (species, imaging mode), and spread the ages within each group;
-     - take one scan per group, up to 6 in total;
+     - take one scan per group (T2 used 8);
      - list the chosen `scan_key`s and the models predict resolves for them.
   3. Copy each chosen scan's sidecar and frames into `input/`. Treat `a4_poc` as read-only.
   4. Write `input/run_manifest.gpu-probe-117-b.json` in the contracts `RunManifest` shape:
@@ -331,7 +332,8 @@ committed template.
 
 - [x] 3.6 **Final template equals the probed template (offline).** T2 and T3 ran a copy of the
   annotation-only template (blob `ee5676b6`) with the `podSpecPatch` added. Load that copy
-  (`probe117-template.yaml`, sha256 `ce7ce852…`) and the committed template (blob `706f7068`) with
+  (`probe117-template.yaml`, sha256 `ce7ce852…`) and the committed template (blob `706f7068`; the shipped blob is `a76960e1`, a comment-only
+  rewording that parses equal, re-checked 2026-10-03) with
   `yaml.safe_load`, drop the probe-only `metadata.name` and the `metadata.annotations.probe`, and
   compare.
   Validate: recorded 2026-10-03, `probed spec == committed spec: True` and
@@ -401,8 +403,9 @@ committed template.
     - `Batch complete: 8 ok, 0 skipped, 0 failed`, 8/8 `*.predictions.json` written, exitCode=0,
       and no out-of-memory error or traceback.
     - Throughput was 22–30 fps (2.4–3.1 s per 72-frame pass), against about 2 fps on CPU for x68sv.
-    - Parity with the earlier CPU outputs in `a4_poc/predictions`: frame and instance counts are
-      identical for `scan_289`, `scan_1009` and `scan_12894746`. `scan_577` lateral has 524
+    - Parity with the earlier CPU outputs in `a4_poc/predictions`, spot-checked on 4 of the 8
+      scans: frame and instance counts are identical for `scan_289`, `scan_1009` and
+      `scan_12894746`. `scan_577` lateral has 524
       instances on GPU against 523 on CPU, which is expected floating-point variation.
     - The log line `frames=0` for `scan_289` lateral is real and matches CPU: the scan is age 2,
       with no laterals.
@@ -526,9 +529,10 @@ go in one commit with it.
 
   Recorded 2026-10-03: rebased onto `origin/main` `7ba5b65`, with #121 and #122 included. All 7 doc
   edits applied cleanly in a three-way merge. `check_all.sh` passes at each of the 4 commits;
-  `lint_manifests.sh` reports no errors; `openspec validate --strict` passes. The diff against
+  `lint_manifests.sh` reports no errors; `openspec validate --strict` passes. That run covered the
+  first 4 commits; the PR's /review-pr pass re-ran `check_all` at all 5. The diff against
   `origin/main` is 14 files: the change folder plus the Impact list. The rebuilt template and
-  check scripts are byte-identical to the pre-rewrite state, so 3.6 still holds.
+  check scripts are byte-identical to the pre-rewrite snapshot, so 3.6 still holds.
 
 ## 6. Deploy (needs explicit user approval)
 

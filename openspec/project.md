@@ -33,8 +33,8 @@ built (#98). Still open: Bloom's UI trigger (bloom PR #965, in review) and per-r
 - **Argo Events** — (planned, A4) scan-ingest → workflow trigger
 - **RunAI** — GPU scheduling on the `runai-busch-lab` namespace (fractional GPU via a pod-level
   `gpu-memory` annotation, routed to `main` by a `podSpecPatch` reorder plus
-  `gpu-fraction-container-name` for Run:ai ≥ 2.24 (#117; see the template comments) — absolute
-  MiB, not the relative `gpu-fraction` annotation, which must
+  `gpu-fraction-container-name` for Run:ai ≥ 2.24 (#117; see the template comments) — an absolute
+  amount in MB (10^6 bytes), not the relative `gpu-fraction` annotation, which must
   also live at `spec.templates[].metadata.annotations`, not the WorkflowTemplate object's own
   metadata, or Argo never copies it to the pod — see issue #25; `preemptible`, `project` labels
   for quota)

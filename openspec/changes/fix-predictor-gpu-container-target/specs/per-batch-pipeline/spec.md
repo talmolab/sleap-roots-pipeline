@@ -34,7 +34,7 @@ It SHALL explicitly set
 
 - **WHEN** `sleap-roots-predictor-template.yaml` is inspected
 - **THEN** `spec.templates[predictor].metadata.annotations` declares `gpu-memory` with a positive
-  numeric string value (MiB)
+  numeric string value (MB of 10^6 bytes)
 - **AND** it declares `gpu-fraction-container-name` with the value `"main"`
 - **AND** `spec.templates[predictor].podSpecPatch` parses as JSON equal to
   `{"$setElementOrder/containers": [{"name": "main"}, {"name": "wait"}]}`

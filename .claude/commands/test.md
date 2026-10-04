@@ -55,7 +55,7 @@ unpiped form when the exit code matters.
 | Suite | Asserts on | Typical assertions |
 |---|---|---|
 | `scripts/check_manifests.py` | the Workflow + every WorkflowTemplate + `sleap-roots-pipeline-semaphores.yaml`; also reads `runai_run_pipeline.sh` and executes the `normalise()` body of `scripts/check_cluster_drift.sh` | DAG shape, priority classes, quota labels, credential isolation, retry shape, pin/digest hygiene, mount agreement, semaphores; **executes** the exit-gate script over a vector table |
-| `scripts/check_docs.py` | `README.md`, `docs/cluster-identities.md`, `.claude/skills/runai/SKILL.md`, `docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md` (and each template's `priorityClassName`, to compare the docs against) | claims about cluster identities, credentials, log access, and priority classes stay true |
+| `scripts/check_docs.py` | `README.md`, `docs/cluster-identities.md`, `.claude/skills/runai/SKILL.md`, `docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md`, `openspec/project.md`, `.claude/commands/{ci-debug,review-pr,review-openspec,docs-review}.md` (and each template's `priorityClassName`, to compare the docs against) | claims about cluster identities, credentials, log access, and priority classes stay true; the predictor's GPU-routing docs (#117) name both mechanisms, state `gpu-memory` in MB, and never call the `podSpecPatch` optional |
 
 Both are the executable form of spec scenarios — `per-batch-pipeline` and
 `cluster-access-docs` name them. When a change adds a file either suite reads, update this table.
