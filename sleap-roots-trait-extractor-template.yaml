@@ -58,10 +58,12 @@ spec:
         # with predict's past-window image (sleap-roots-predict#50) or before it, never after:
         # predict-first runs GPU inference on past-window scans that then fail here with exit 3.
         # Bumped 2026-10-04 (#118 step 4, #119, sleap-roots#277): `pipeline_selection.yaml` gains
-        # wheat (cylinder 5–14, OlderMonocotPipeline, crown traits only) and sorghum (cylinder
-        # 3–14, DicotPipeline) rows. Only #277 changed vs. sha-426ad4d, and it only appends rows,
-        # so every other species + mode selects the same pipeline. Still contracts a9, so no Bloom
-        # gate. The new traits_code_sha still forces a full recompute. Deploy this BEFORE
+        # wheat (cylinder 5–14, OlderMonocotPipeline, from crown points only) and sorghum (cylinder
+        # 3–14, DicotPipeline) rows. Only #277 changed vs. sha-426ad4d (two rows and a comment).
+        # Neither species had a row before, and both selection and the past-window clamp match on
+        # species + mode, so every other species + mode selects the same pipeline. (A new row for
+        # an EXISTING species would not be this safe: an overlap raises "Ambiguous pipeline
+        # selection", and a higher window moves its clamp.) Still contracts a9, so no Bloom gate. The new traits_code_sha still forces a full recompute. Deploy this BEFORE
         # sleap-roots-training#72 links the wheat/sorghum cards to `production`: cards live first
         # would run GPU inference on those scans that then fail here with `No pipeline matches`.
         # Rollback (updated 2026-10-04, #119): once #118's wheat/sorghum cards are linked to
@@ -70,8 +72,8 @@ spec:
         # Then re-pin this to sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8
         # (tag, digest and SRT_TRAITS_CONTAINER_DIGEST together). Rolling back bloom#971 phase 1
         # further (#113): roll predict back to sha-9a6f20c FIRST, then re-pin this to
-        # sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4.
-        # Rolling back predict alone is not enough: clamped predictions stay on disk and a
+        # sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4
+        # (again all three together; each rollback costs another recompute). Rolling back predict alone is not enough: clamped predictions stay on disk and a
         # past-window traits image would still turn them into traits.
         # Verified against GHCR: resolves to org.opencontainers.image.revision e45b6bf…
         image: ghcr.io/talmolab/sleap-roots-trait-extractor:sha-e45b6bf@sha256:ba5693fc1dec229b1cd3f673a5df2196af283610b7f8d7e40915fd00fd439313

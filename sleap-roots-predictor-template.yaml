@@ -198,17 +198,17 @@ spec:
         # GPU pass), but traits' scan-grain guard still rejects multi-plant scans (sleap-roots#252).
         # Predict's window maxima come from the live registry, traits' from its YAML; they agree
         # for every live context today, but nothing checks that they stay in step.
-        # Deploy order: together with traits' past-window image (sha-426ad4d, #112) or after it,
+        # Deploy order: together with traits' past-window image (sha-426ad4d, #112, or later) or after it,
         # NEVER before it -- predict-first runs GPU inference on past-window scans that then fail in
         # trait-extractor (exit 3, retried twice).
-        # Rollback: roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
+        # Rollback: once #118's wheat/sorghum cards are linked to `production`, unlink them FIRST:
+        # neither traits rollback image (sha-426ad4d, sha-e373b0f) has wheat/sorghum rows (#119; see
+        # the trait-extractor template). Then roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
         # digest AND SRP_PREDICT_CONTAINER_DIGEST together; it is the floor -- nothing below it on
         # its own, see above), then traits to sha-e373b0f...@sha256:2cbbe602.... Predict alone does
         # not stop past-window results: clamped {scan_key}.predictions.json stay on disk and a
         # clamping traits image still reads them. Predict goes first so traits is never non-clamping
-        # while predict clamps. Each rollback costs another recompute. Once #118's wheat/sorghum
-        # cards are linked to `production`, unlink them first: neither traits rollback image
-        # (sha-426ad4d, sha-e373b0f) has wheat/sorghum rows (#119; see the trait-extractor template).
+        # while predict clamps. Each rollback costs another recompute.
         # Verified against GHCR: resolves to org.opencontainers.image.revision 79939ee...
         image: ghcr.io/talmolab/sleap-roots-predict:sha-79939eec33e3d8331d6502545dcf94efbf487c3b@sha256:d45c971e64bc8c47294e6680baa3d4f8a1d5840ea99e0a7b4f603819530bc932
         imagePullPolicy: Always
