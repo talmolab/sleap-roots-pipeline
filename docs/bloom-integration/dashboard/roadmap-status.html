@@ -251,7 +251,7 @@
     <div class="cell"><span class="num">1</span><span class="label">tier live in production (A4, since 2026-10-04)</span></div>
     <div class="cell"><span class="num">3</span><span class="label">tiers fully done (A0, A1, B1)</span></div>
     <div class="cell"><span class="num">2</span><span class="label">tiers in progress (A2, A3)</span></div>
-    <div class="cell"><span class="num">4</span><span class="label">changes in flight right now</span></div>
+    <div class="cell"><span class="num">3</span><span class="label">changes in flight right now</span></div>
     <div class="cell"><span class="num">3</span><span class="label">open risks, none blocking</span></div>
   </div>
 
@@ -286,7 +286,7 @@
             <td class="tier">A3</td>
             <td>Producers: predict / traits / training / params</td>
             <td><span class="pill progress">in progress</span></td>
-            <td class="note">Predict (sleap-nn runtime, <code>sha-79939ee</code>), traits (<code>sha-426ad4d</code>) and params are live, including the past-window rule (bloom #971 phase 1, deployed 2026-10-02). In progress: wheat and sorghum models (<code>#118</code>). The native sleap-nn retraining (<code>#13</code>) is post-v1.</td>
+            <td class="note">Predict (sleap-nn runtime, <code>sha-79939ee</code>), traits (<code>sha-e45b6bf</code>, which knows wheat and sorghum, deployed 2026-10-04) and params are live, including the past-window rule (bloom #971 phase 1, deployed 2026-10-02). In progress: wheat and sorghum models (<code>#118</code>). The native sleap-nn retraining (<code>#13</code>) is post-v1.</td>
           </tr>
           <tr>
             <td class="tier">A4</td>
@@ -334,7 +334,7 @@
           <tr><td>images-downloader</td><td><span class="pill done">done</span></td><td class="note">Batch stage-in, on bloomctl <code>sha-5b709d0</code>.</td></tr>
           <tr><td>workflow template</td><td><span class="pill done">done</span></td><td class="note">Five tasks, ending in an exit-gate that tells a partial batch from a crash (<code>#60</code>). The concurrency gate caps the predictor at 8 and stage-in at 5 across both environments (<code>#102</code>).</td></tr>
           <tr><td>predict wiring</td><td><span class="pill done">done</span></td><td class="note">Runs on the GPU again since 2026-10-04 (<a href="https://github.com/talmolab/sleap-roots-pipeline/pull/124"><code>#124</code></a>). Run:ai 2.22.64 gives the GPU slice to the pod's first container, so a <code>podSpecPatch</code> puts <code>main</code> first. Runs from 2026-08-05 until then had most likely used the CPU.</td></tr>
-          <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Reads the per-run manifest (contracts a9). Live pin <code>sha-426ad4d</code>; the wheat/sorghum re-pin (<code>#133</code>) is merged but not deployed.</td></tr>
+          <tr><td>traits wiring</td><td><span class="pill done">done</span></td><td class="note">Reads the per-run manifest (contracts a9). Live pin <code>sha-e45b6bf</code> since 2026-10-04 (<code>#133</code>, adds the wheat and sorghum rows).</td></tr>
           <tr><td>write-back</td><td><span class="pill done">done</span></td><td class="note">Writes each scan's results to Bloom and uploads its <code>.slp</code> predictions to the <code>cyl-intermediates</code> bucket (S3 on MinIO; Box is out of v1 scope). Since 2026-10-04, a retried write-back marks its scans <code>written</code> (bloomctl <code>sha-5b709d0</code>, bloom #1034).</td></tr>
           <tr><td>notification</td><td><span class="pill done">decided</span></td><td class="note">The Realtime run panel in the Bloom UI is v1's notification; <code>#18</code> was closed 2026-10-04. Nobody is alerted on a failure: the panel shows it.</td></tr>
           <tr><td>Bloom UI: trigger + progress panel</td><td><span class="pill done">done</span></td><td class="note">UI v1 is on Bloom <code>main</code>, with prod's trigger switched on (bloom #1016). The confirm dialog warns about scans past their model's age window (bloom #1028, on prod since 2026-10-04).</td></tr>
@@ -344,18 +344,12 @@
   </section>
 
   <section>
-    <h2>Right now <span class="idx">4 in flight</span></h2>
+    <h2>Right now <span class="idx">3 in flight</span></h2>
     <div class="cards">
-      <div class="card">
-        <span class="repo">sleap-roots-pipeline</span>
-        <h3>Deploy the wheat/sorghum traits image</h3>
-        <p>The trait-extractor re-pin to <code>sha-e45b6bf</code> is merged but not deployed; the drift check flags it as expected. Waiting on an <code>argo template update</code>, run only when no Workflow is running in either environment.</p>
-        <span class="idnum">#133 · merged, awaiting deploy</span>
-      </div>
       <div class="card">
         <span class="repo">training · predict · pipeline</span>
         <h3>Wheat and sorghum in production</h3>
-        <p>Cards are published under the <code>candidate</code> alias, and the traits rows are done. Next: parity on the candidates, the trait check, and only then the <code>production</code> link, which reaches staging and live prod at once.</p>
+        <p>Cards are published under the <code>candidate</code> alias, and the traits image that knows both species is deployed (<code>#133</code>, 2026-10-04). Next: parity on the candidates, the trait check, and only then the <code>production</code> link, which reaches staging and live prod at once.</p>
         <span class="idnum">#118 · predict#51 · #120 · training#72</span>
       </div>
       <div class="card">
@@ -375,7 +369,7 @@
 
   <section>
     <h2>Open &amp; blocked</h2>
-    <p class="lede">Nothing blocks the live pipeline today. The red items are risks that grow now that prod users can start runs; the amber ones need a call from Elizabeth.</p>
+    <p class="lede">Nothing blocks the live pipeline today. The red items are risks that grow now that prod users can start runs; the amber one needs a call from Elizabeth.</p>
     <div class="blockers">
       <div class="blocker">
         <span class="idnum">#106</span>
@@ -396,13 +390,6 @@
         <div>
           <p class="what">There's no production runbook yet.</p>
           <p class="why">Rollback orders, the drift check and the operator rules are scattered across the roadmap and issues. The issue was filed 2026-10-04 and nobody has started it.</p>
-        </div>
-      </div>
-      <div class="blocker decision">
-        <span class="idnum">#133</span>
-        <div>
-          <p class="what">When to deploy the wheat/sorghum traits image.</p>
-          <p class="why">It has to go live before the cards are linked to <code>production</code>, and the update reaches staging and prod at once.</p>
         </div>
       </div>
       <div class="blocker decision">
