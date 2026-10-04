@@ -287,8 +287,8 @@ operational-continuity risk rather than a documentation gap, and has a real dead
 Per-*environment* directories are the fix for one environment reusing another's staged inputs,
 predictions, traits and `run_manifest.json` entries for the same numeric scan id (the two
 databases' scan ids are unrelated). That holds for runs dispatched under the per-environment
-config; whether any prod run before the 2026-10-04 worker restart staged under `a4_poc` has not
-been checked. The prod tree is also under `users/eberrigan`, so #63's personal-path risk now
+config, and every prod run so far has used the prod tree, including those before the 2026-10-04
+worker restart (owner, 2026-10-04). The prod tree is also under `users/eberrigan`, so #63's personal-path risk now
 covers both roots. Per-*run* directories are
 still **not** a fix: the cluster-side skip-if-done dedup this program depends on only works because
 the paths are shared within an environment (see

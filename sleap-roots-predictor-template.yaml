@@ -221,7 +221,8 @@ spec:
           # identity: it selects run_manifest.<name>.json ahead of the legacy file, makes a missing
           # manifest exit 1 instead of scanning everything, and triggers the "legacy manifest names
           # another run" warning. The stage directories are fixed, shared hostPaths, and the legacy
-          # run_manifest.json accumulates scan_keys across every run (and every environment)
+          # run_manifest.json accumulates scan_keys across every run in that environment (Bloom
+          # gives staging and prod their own stage roots since bloom#988)
           # writing into them, so without this identity predict cannot tell its own scope from
           # another run's. Removing it reverts predict to legacy-only reads (and to unscoped discovery
           # when run_manifest.json is absent) -- silently until the writer flip; after it, predict
