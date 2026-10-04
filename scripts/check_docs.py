@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 IDENTITIES = "docs/cluster-identities.md"
 README = "README.md"
+ROADMAP = "docs/bloom-integration/roadmap.md"
 SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
 
@@ -149,6 +150,52 @@ def main() -> int:
         "only `argo-user` can open a shell" in ident,
         False,
     )
+    # --- Per-environment dispatch (bloom#988/#863): retracted prod claims do not reappear ------
+    # Bloom rewrites the stage hostPaths and the `bloom-credentials` secretName per environment,
+    # and prod's trigger is on, so "prod mounts the staging Secret / has no account / is dormant"
+    # are false. The roadmap is read here only for these claims.
+    roadmap = norm(read(ROADMAP))
+    check(
+        "cluster-identities: does not claim prod mounts the staging credential",
+        "mounts the **staging** Bloom credential" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: does not claim the prod account was never created",
+        "has never been created" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: does not claim nothing drives prod",
+        "nothing drives prod" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: names the prod pipeline Secret",
+        "genericsecret-bloom-prod-pipeline-credentials" in ident,
+        True,
+    )
+    check(
+        "README: does not claim one a4_poc tree is shared by prod/staging/manual",
+        "shared by prod/staging/manual" in readme,
+        False,
+    )
+    check(
+        "roadmap: does not claim production promotion is still not next",
+        "Production promotion is still NOT next" in roadmap,
+        False,
+    )
+    check(
+        "cluster-identities: does not claim Bloom fixes are on prod since 2026-10-02",
+        "on Bloom prod since 2026-10-02" in ident,
+        False,
+    )
+    check(
+        "cluster-identities: states that switching dispatch off fails claimed batches",
+        "switching off is a rollback, not a pause" in ident,
+        True,
+    )
+
     check(
         "cluster-identities: states that nobody can exec",
         bool(re.search(r"[Nn]obody can (open a shell|exec)", ident)),

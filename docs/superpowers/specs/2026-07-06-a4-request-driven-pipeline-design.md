@@ -278,7 +278,7 @@ or a truncated manifest is skipped as done.)
   - **The pre-check** reports how many scans already have pipeline results, not "N will run". Skipping is decided per stage on the cluster, and there's no dry run ([bloom#898](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/898)).
   - **The runs panel** shows "you" or "another member", not a name: `phenotypers` isn't visible to `bloom_user`.
   - **The results** link to the existing traits page at the run's wave and day. `.slp`/Box links are deferred ([bloom#899](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/899)).
-  - **Run actions** are switched off in the prod web app (`CYL_PIPELINE_TRIGGER_ENABLED=false`) until [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863). On bloom `main` the Workflows service itself is not gated yet ([bloom#983](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/983)); [bloom#988](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/988), on staging since 2026-10-01, makes it refuse too.
+  - **Run actions** are switched off in the prod web app (`CYL_PIPELINE_TRIGGER_ENABLED=false`) until [bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863). On bloom `main` the Workflows service itself is not gated yet ([bloom#983](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/983)); [bloom#988](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/988), on staging since 2026-10-01, makes it refuse too. *[Updated 2026-10-04: prod's switch is on (bloom #1016, on `main` 2026-10-02), #988 is on `main`, and bloom#863/#983 are closed; prod runs are live.]*
 
 ## 11. Cross-repo decomposition (one design → per-repo OpenSpec changes)
 

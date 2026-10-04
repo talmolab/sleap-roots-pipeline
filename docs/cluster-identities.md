@@ -152,13 +152,17 @@ asset name you typed. Creating them is **self-service** once you have console ac
 cluster-admin round-trip — but it does need your own RunAI SSO login, so see
 [Two auth planes](#two-auth-planes) first.
 
-Secrets are a fourth hand-made precondition, alongside the three directories below, and they fail
+Secrets are a fourth hand-made precondition, alongside each environment's three directories below, and they fail
 the same way: a missing Secret leaves the pod `Pending` (or in `CreateContainerConfigError`), never
-`Failed`, so the Workflow hangs rather than erroring. Note also that
-`sleap-roots-pipeline.yaml` hardcodes `genericsecret-bloom-staging-pipeline-credentials`, so a
-*production*-dispatched Workflow mounts the **staging** Bloom credential — the prod account has
-never been created ([#17](https://github.com/talmolab/sleap-roots-pipeline/issues/17)). Dormant
-today because nothing drives prod, not because it is correct.
+`Failed`, so the Workflow hangs rather than erroring. `sleap-roots-pipeline.yaml` still names
+`genericsecret-bloom-staging-pipeline-credentials`, but that value now governs only hand-run
+`argo submit`: since bloom#988, Bloom overrides the `bloom-credentials` volume's `secretName` at
+dispatch from `WORKFLOWS_K8S_PIPELINE_SECRET_NAME`. Staging mounts
+`genericsecret-bloom-staging-pipeline-credentials` and production mounts
+`genericsecret-bloom-prod-pipeline-credentials` (verified on prod run 3, `sleap-roots-pipeline-cqc5b`, 2026-10-04: it mounted only the prod
+Secret and `…/bloom_cyl_pipeline/prod/{input,predictions,traits}`, labelled `environment=prod`;
+[bloom#863](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/863)). Each
+environment's Secret is its own precondition.
 
 **If you need a new Kubernetes identity**, `bloom-pipeline-serviceaccount.yaml` is the precedent to
 copy — a ServiceAccount plus a namespace-scoped Role and RoleBinding — and the cluster admin applies
@@ -176,17 +180,19 @@ Nothing here is reachable off the Salk VPN.
 
 ## Namespace facts that bite
 
-**`runai-busch-lab` is shared by Bloom staging *and* production**, distinguished only by an
-environment label stamped on each submitted Workflow, and a production dispatch deployment is live
-in it — `bloom_v2_prod-cyl-pipeline-worker-1` and `bloom_v2_prod-cyl-status-poller-1`, last
-confirmed running on `bloom-dev.salk.edu` on 2026-09-15 alongside the staging pair. ("Live" means
-the dispatcher process is running, not that anything is driving it — no frontend targets prod
-yet. *Updated 2026-10-01:* Bloom's UI is on bloom `main` with its prod trigger switched off, but
-the Workflows service can still start prod runs (bloom#983). Until bloom#988 reaches `main`, those
-runs mount staging's Supabase Secret and the same `a4_poc` trees as staging and hand-submitted runs
-(bloom#863). On bloom staging since #988, the environments also differ by stage root and Secret. The
-`sleap-roots-*` WorkflowTemplates stay shared by both environments either way.) An `argo template update` therefore affects both environments' future
-dispatches, not just your next run. Don't update the `sleap-roots-*` templates unless you mean to.
+**`runai-busch-lab` is shared by Bloom staging *and* production.** The two dispatch deployments
+(`bloom_v2_{staging,prod}-cyl-pipeline-worker-1` and `-cyl-status-poller-1` on `bloom-dev.salk.edu`)
+submit into the same namespace. Since bloom#988 (on Bloom `main` since 2026-10-02; the prod worker was recreated with it at the
+2026-10-04 deploy, bloom #1043) each environment's
+Workflows differ by an `environment` label, by stage root and by Secret (below). Production runs
+are live: prod's trigger is switched on (bloom#1016), and the dispatch worker itself refuses work
+while that switch is off ([bloom#983](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/983)).
+Refusing means *failing*: with the switch off, every batch the worker claims is failed at once and
+nothing is submitted, so switching off is a rollback, not a pause. The worker reads the switch once,
+at startup, so changing it takes a container restart.
+The `sleap-roots-*` WorkflowTemplates stay shared by both environments, so an `argo template
+update` affects both environments' future dispatches, not just your next run. Don't update the
+`sleap-roots-*` templates unless you mean to.
 
 **You share the submitter identity.** Anything Bloom dispatches arrives as `bloom-pipeline`, so
 labels are the only way to tell workloads apart. `build_workflow_body` already stamps
@@ -259,8 +265,15 @@ template registrations away from the namespace the Workflow still runs in.
 `WORKFLOWS_K8S_NAMESPACE` and then *overwrites* `body["metadata"]["namespace"]` itself, because the
 Kubernetes API rejects a body whose namespace disagrees with the URL's namespace segment. So for
 Bloom-dispatched runs the manifest's value is inert; for hand-run `argo submit` it is decisive.
+The same holds for storage and the credential: `build_workflow_body` rewrites the three stage
+volumes' `hostPath.path` to `<WORKFLOWS_K8S_PIPELINE_HOSTPATH_ROOT>/{input,predictions,traits}` and
+the `bloom-credentials` volume's `secretName` to `WORKFLOWS_K8S_PIPELINE_SECRET_NAME` (bloom#988).
+The manifest's `a4_poc` paths and staging Secret apply only to hand-run `argo submit`.
 
-**Storage is three hand-made directories, and a missing one hangs the run rather than failing it.**
+**Storage is three hand-made directories per environment, and a missing one hangs the run rather
+than failing it.** Bloom staging (and hand-run `argo submit`) use
+`/hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/{input,predictions,traits}`;
+Bloom production uses `/hpi/hpi_dev/users/eberrigan/bloom_cyl_pipeline/prod/{input,predictions,traits}`.
 All three `hostPath` volumes use `type: Directory`, which requires the path to pre-exist —
 deliberately, so a down NFS mount cannot silently write to a node's local disk instead.
 Nothing in this repo creates them. The operationally important part for anyone debugging: a pod that
@@ -270,9 +283,15 @@ step ever starting, check `kubectl describe pod` for mount events before looking
 
 That these directories exist at all is a standing precondition nothing enforces — tracked as
 [#63](https://github.com/talmolab/sleap-roots-pipeline/issues/63), which is an
-operational-continuity risk rather than a documentation gap, and has a real deadline attached. Note
-that per-run directories are **not** the fix: the cluster-side skip-if-done dedup this program
-depends on only works because the paths are shared (see
+operational-continuity risk rather than a documentation gap, and has a real deadline attached.
+Per-*environment* directories are the fix for one environment reusing another's staged inputs,
+predictions, traits and `run_manifest.json` entries for the same numeric scan id (the two
+databases' scan ids are unrelated). That holds for runs dispatched under the per-environment
+config; whether any prod run before the 2026-10-04 worker restart staged under `a4_poc` has not
+been checked. The prod tree is also under `users/eberrigan`, so #63's personal-path risk now
+covers both roots. Per-*run* directories are
+still **not** a fix: the cluster-side skip-if-done dedup this program depends on only works because
+the paths are shared within an environment (see
 [#37](https://github.com/talmolab/sleap-roots-pipeline/issues/37)).
 
 ## Related

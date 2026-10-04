@@ -60,7 +60,10 @@ spec:
     # left that DirectoryOrCreate was protecting (the permission-on-a-truly-fresh-path risk this
     # comment used to flag was separately live-tested for the predictor's own output path in
     # PR #41 — write succeeded — but that test is now moot here since these paths are pre-existing).
-    # These a4_poc paths are the PoC reference scan, shared across every run — deliberately, not a
+    # These a4_poc paths govern hand-run `argo submit` and Bloom staging. Bloom rewrites the three
+    # stage hostPaths per environment at dispatch (bloom#988), so Bloom prod uses its own
+    # .../bloom_cyl_pipeline/prod tree; see docs/cluster-identities.md. Within an environment the
+    # paths are shared across every run — deliberately, not a
     # gap to "fix" by parameterizing them per-run/per-pipeline_run_id. Cluster-side skip-if-done
     # dedup (sleap-roots-predict's batch.py) only works because this path IS shared: it's how a
     # scan already processed in one run gets skipped in the next. Bloom's own trigger-route dedup
@@ -83,11 +86,13 @@ spec:
         path: /hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/traits
         type: Directory
     - name: bloom-credentials
-      # Provisioned via the RunAI console (Credentials → Generic secret, Project scope
-      # talmo-lab), same as WANDB_API_KEY — RunAI prefixes the asset name with `genericsecret-`
-      # in the resulting k8s Secret. Named with an explicit -staging suffix (not just
+      # Provisioned via the RunAI console (Credentials → Generic secret, Project scope busch-lab,
+      # i.e. the Workflow's own namespace runai-busch-lab), same as WANDB_API_KEY — RunAI prefixes
+      # the asset name with `genericsecret-` in the resulting k8s Secret. Named with an explicit -staging suffix (not just
       # bloom-pipeline-credentials) so a later production credential gets its own distinct name
-      # instead of colliding with/overwriting this one in the same namespace.
+      # instead of colliding with/overwriting this one in the same namespace. Bloom overrides this
+      # secretName per environment at dispatch (bloom#988; prod mounts
+      # genericsecret-bloom-prod-pipeline-credentials), so this value governs hand-run submits only.
       secret:
         secretName: genericsecret-bloom-staging-pipeline-credentials
   templates:
