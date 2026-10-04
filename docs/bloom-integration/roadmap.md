@@ -350,7 +350,8 @@ read-path ✅ → `bloom cyl` CLI → D re-pin (a2→a3, #393) → backfill**. A
 **Next (true frontier, as of 2026-10-02):** every #71 consumer is on a9 and the Bloom-dispatched
 acceptance test passed (2026-09-30, Bloom runs 12/13: `Ingested 1/1`, `3/3`); Bloom UI v1 is on
 bloom `main`, switched off in prod (2026-10-01); the concurrency gate is live
-([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98), 2026-10-01). Remaining, in
+([#98](https://github.com/talmolab/sleap-roots-pipeline/issues/98), 2026-10-01); and the predictor runs on GPU again
+([#117](https://github.com/talmolab/sleap-roots-pipeline/issues/117), deployed 2026-10-04; see the status log). Remaining, in
 order:
 
 1. **#98 follow-ups:** [#106](https://github.com/talmolab/sleap-roots-pipeline/issues/106)
@@ -864,6 +865,37 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-10-04** — **The predictor runs on GPU again
+  ([#117](https://github.com/talmolab/sleap-roots-pipeline/issues/117), fixed by
+  [#124](https://github.com/talmolab/sleap-roots-pipeline/pull/124), deployed 2026-10-04 03:06
+  UTC). Every Argo predictor run since #25's fix (PR #41, 2026-08-05) had most likely run on CPU.**
+  - **Cause.** The cluster runs Run:ai **2.22.64** (`runai cluster list`), which gives a pod's
+    fractional GPU to `spec.containers[0]`. In an Argo pod that is the `wait` sidecar, so `main`
+    got `NVIDIA_VISIBLE_DEVICES=void` and predict fell back to CPU: about 2 fps (prod run x68sv,
+    2026-10-02). The GPU slice and its `pipeline-gpu` slot were held for nothing. #25's
+    "live-cluster validated" check confirmed scheduling, never the GPU inside the container (see
+    the correction on the 2026-08-05 entry).
+  - **Fix.** A template-level `podSpecPatch` (`$setElementOrder`) puts `main` first.
+    `gpu-fraction-container-name: "main"` is also kept: Run:ai documents it "from cluster v2.24
+    onward", and a probe showed 2.22 ignores it. No pin or idempotency-key input changed, so
+    nothing recomputes. Scans already predicted on CPU keep their CPU results, and each result
+    records its `device`.
+  - **Verified live.**
+    - Pre-merge probes, all deleted afterwards: the reorder, a crash then retry, a real predict
+      driven by `templateRef` at 22–30 fps, two pods on one GPU, and all 8 catalog models resident
+      at a 4,350 MiB peak against 7,488 MiB usable.
+    - First prod run after the deploy: `sleap-roots-pipeline-cqc5b` (Bloom cyl-pipeline run 3).
+      `main` was first and held the slice, both models loaded with `device=cuda`, 3/3 scans ok,
+      every stage exited 0, and each 72-frame pass took 3.2–6.2 s (against 15–35 s on CPU).
+  - **Units.** `gpu-memory: "8192"` is applied in MB of 10^6 bytes: 8,192,000,000 bytes, about
+    7,813 MiB.
+  - **Follow-ups:** [sleap-roots-predict#52](https://github.com/talmolab/sleap-roots-predict/issues/52)
+    (warn on silent CPU fallback); [#127](https://github.com/talmolab/sleap-roots-pipeline/issues/127)
+    (re-verify the reorder after any Argo or Run:ai upgrade, and drop it once on Run:ai ≥ 2.24);
+    [#128](https://github.com/talmolab/sleap-roots-pipeline/issues/128) (PowerShell
+    `check_manifests`). The cluster admins were asked (2026-10-04) about upgrading to Run:ai ≥ 2.24
+    and about the reorder. OpenSpec change `fix-predictor-gpu-container-target` is archived in this
+    PR.
 - **2026-10-02 (wheat + sorghum)** — **New A3 change set: wheat and sorghum models for production
   ([#118](https://github.com/talmolab/sleap-roots-pipeline/issues/118)). The owner decided the spec; per-change issues are filed; and a 4-lens
   roadmap review reshaped the plan before it was committed.**
@@ -1029,7 +1061,8 @@ Adversarial 4-lens review. Resolutions:
     needs. Two caveats:
     - Nothing checks that the two stay in step. predict#50 proposes a follow-up check, not filed
       yet.
-    - Arabidopsis multiplant past day 14 now gets a GPU pass, but traits still rejects multi-plant
+    - Arabidopsis multiplant past day 14 now gets a GPU pass *(on CPU until #117's fix,
+      2026-10-04)*, but traits still rejects multi-plant
       scans (sleap-roots#252), as it does in-window.
   - **Order.** Deploy together with traits' `sha-426ad4d` (#112) or after it, never before it.
   - **Rollback: both images, predict first.** Re-pin predict to `sha-9a6f20c` (the floor), then
@@ -1289,7 +1322,8 @@ Adversarial 4-lens review. Resolutions:
     13 flat cards as non-conforming. The CPU cross-check at 15:27 UTC saw 0 skips. The same 8
     selector cards were evaluated both times, so the result stands for the post-6.3 registry.
     Rows 3 and 4 record 6.3 as done (see the 6.3 entry below).
-  - **For future parity runs.** The 2026-08-04 baseline was almost certainly produced on CPU;
+  - **For future parity runs.** The 2026-08-04 baseline was almost certainly produced on CPU,
+    and so was every A4 cluster predict run before 2026-10-04 (#117);
     the bit-exact reproduction strongly indicates it, but the device was never recorded. A GPU
     run is not bit-comparable to it, so a run meant to isolate registry or model changes
     should use the `cpu` extra. predict's README now says so.
@@ -2564,7 +2598,7 @@ Adversarial 4-lens review. Resolutions:
   cross-repo, in progress in parallel, not blocking. **Still open, pending Bryan's side**: creating
   `bloom-workflow`, the `ClusterWorkflowTemplate` for busch-lab, and generating/handing back the
   token + CA cert + API URL.
-- **2026-08-05** — **RunAI GPU fractions ✅ fixed — closes [#25](https://github.com/talmolab/sleap-roots-pipeline/issues/25).** The predictor's `gpu-fraction: "0.5"` annotation sat on the `WorkflowTemplate` object's own `metadata` — Argo never copies that onto the pod, so `resources.limits.nvidia.com/gpu: 1` was the only thing that actually took effect, and every predictor pod claimed a whole GPU regardless. Fixed by moving a `gpu-memory: "8192"` annotation (absolute MiB, not the relative `gpu-fraction` — sized from a real measured VRAM trace, ~4,676 MiB peak, and RunAI's own docs recommend the absolute form for precision) to the pod-level `spec.templates[predictor].metadata.annotations`, and removing `resources.limits.nvidia.com/gpu: 1`. Also dropped `privileged: true`/`runAsUser: 0` from `securityContext` — confirmed unnecessary via live testing (this entry also said cluster admission "now rejects `privileged` outright regardless" — **corrected 2026-09-16 (#70): overbroad.** That rejection is scoped to `runai workspace submit`, the CLI path, not Argo-created pods; the trait-extractor still runs `privileged: true` successfully in `runai-busch-lab`). Motivated by `runai-busch-lab`'s real 2-GPU quota, too small for useful concurrency under whole-GPU-per-pod allocation. Live-cluster validated, not just linted: a real submitted pod's `annotations`/`resources`/`schedulerName` all confirmed correct via `kubectl get pod -o yaml` (`schedulerName` is now also set explicitly in the manifest, not just relied on as automatic); two concurrent predictor pods confirmed sharing the **identical `runai-gpu-group` UUID** — strong evidence of real single-physical-GPU co-scheduling, not just same-node, though no RunAI doc is cited defining exactly what that field encodes, so this is corroborating evidence rather than a documented guarantee; both a cold-path permission test (fresh, never-before-written `DirectoryOrCreate` hostPath) and a warm-path test (forced a real write into a pre-existing, previously root-owned directory by clearing one scan's files first) confirmed the non-root write succeeds on this cluster's actual NFS mount for both permission-risk classes. PR: [#41](https://github.com/talmolab/sleap-roots-pipeline/pull/41). Full design: [`2026-08-04-gpu-fraction-sizing-design.md`](../superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md); OpenSpec change: `enable-predictor-gpu-fractions`.
+- **2026-08-05** — **RunAI GPU fractions ✅ fixed — closes [#25](https://github.com/talmolab/sleap-roots-pipeline/issues/25).** The predictor's `gpu-fraction: "0.5"` annotation sat on the `WorkflowTemplate` object's own `metadata` — Argo never copies that onto the pod, so `resources.limits.nvidia.com/gpu: 1` was the only thing that actually took effect, and every predictor pod claimed a whole GPU regardless. Fixed by moving a `gpu-memory: "8192"` annotation (absolute MiB, not the relative `gpu-fraction` — sized from a real measured VRAM trace, ~4,676 MiB peak, and RunAI's own docs recommend the absolute form for precision) to the pod-level `spec.templates[predictor].metadata.annotations`, and removing `resources.limits.nvidia.com/gpu: 1`. Also dropped `privileged: true`/`runAsUser: 0` from `securityContext` — confirmed unnecessary via live testing (this entry also said cluster admission "now rejects `privileged` outright regardless" — **corrected 2026-09-16 (#70): overbroad.** That rejection is scoped to `runai workspace submit`, the CLI path, not Argo-created pods; the trait-extractor still runs `privileged: true` successfully in `runai-busch-lab`). Motivated by `runai-busch-lab`'s real 2-GPU quota, too small for useful concurrency under whole-GPU-per-pod allocation. Live-cluster validated, not just linted **[corrected 2026-10-04 (#117): this checked scheduling, not the GPU inside the container. With `nvidia.com/gpu` removed, Run:ai 2.22 gave the slice to Argo's `wait` sidecar, and `main` ran on CPU until #124. See the 2026-10-04 entry.]**: a real submitted pod's `annotations`/`resources`/`schedulerName` all confirmed correct via `kubectl get pod -o yaml` (`schedulerName` is now also set explicitly in the manifest, not just relied on as automatic); two concurrent predictor pods confirmed sharing the **identical `runai-gpu-group` UUID** — strong evidence of real single-physical-GPU co-scheduling, not just same-node, though no RunAI doc is cited defining exactly what that field encodes, so this is corroborating evidence rather than a documented guarantee; both a cold-path permission test (fresh, never-before-written `DirectoryOrCreate` hostPath) and a warm-path test (forced a real write into a pre-existing, previously root-owned directory by clearing one scan's files first) confirmed the non-root write succeeds on this cluster's actual NFS mount for both permission-risk classes. PR: [#41](https://github.com/talmolab/sleap-roots-pipeline/pull/41). Full design: [`2026-08-04-gpu-fraction-sizing-design.md`](../superpowers/specs/2026-08-04-gpu-fraction-sizing-design.md); OpenSpec change: `enable-predictor-gpu-fractions`.
 - **2026-08-04** — **This repo's own gap in the #37 chain identified and filed: [#38](https://github.com/talmolab/sleap-roots-pipeline/issues/38).** Reviewed `sleap-roots-contracts`' shipped `RunManifest` design (see the entry directly below) and its own flagged gap #3 ("`bloomctl` has no `pipeline_run_id` source"). Confirmed directly — neither `sleap-roots-images-downloader-template.yaml` nor `sleap-roots-write-back-template.yaml` carries any workflow-identity value in their `env:` blocks today. Filed #38: add `ARGO_WORKFLOW_NAME` (sourced from Argo's built-in `{{workflow.name}}`) to both templates, so the upcoming `bloomctl` session has something to populate `RunManifest.pipeline_run_id` with, rather than leaving it to guess or coordinate blind (the same lesson as the earlier bloomctl-CLI-shape mismatch, 2026-07-27). Also flagged, not resolved: `write-back`'s template doesn't mount `images-input-dir`, so it can't see the manifest without either an extra mount or (recommended) copying it forward at each stage like `predict`'s sidecar. Handoff written for a new session to implement #38 via `/new-feature`, in an isolated worktree (concurrent work is in progress elsewhere in this repo).
 - **2026-08-04** — **`sleap-roots-contracts` ships the run-manifest shape — [`v0.1.0a7`](https://github.com/talmolab/sleap-roots-contracts/releases/tag/v0.1.0a7)** ([PR #30](https://github.com/talmolab/sleap-roots-contracts/pull/30)), closing step 1 of #37's 4-repo chain. `RunManifest` (`pipeline_run_id: str` + `scan_keys: list[str]`, validated non-empty/no-duplicates/no-blank) + `RUN_MANIFEST_FILENAME`. Resolves this issue's own open design question: **file-based, not a CLI arg** (confirmed predict's/traits' argparse hard-fails on a 3rd positional arg; `scan-ids` wired only to `images-downloader` today — this repo needs zero template changes). `scan_keys` is deliberately `list[str]`, matching what predict's `discover_scans` actually reads, not Bloom's internal int `scan_id` — avoids reintroducing the bloom#555 int/str mismatch class of bug at this boundary. Three gaps found during contracts' 3-round adversarial review are deliberately deferred, not solved: a concurrent-run race on the manifest's fixed filename (assumed-safe only because runs are sequential today); `write-back`'s `discover_envelopes()` has the identical unscoped-glob vulnerability predict's `discover_scans` had and is a newly-identified **5th step** for this chain; and `bloomctl` has no existing `pipeline_run_id` source to populate the field with. Commented on #37 with full detail. Next: `bloomctl` (`salk-bloom`) writes the manifest during `images-downloader`.
 - **2026-08-04** — **A3-predict parity gate closed — sleap-roots-pipeline#15 resolved.**
