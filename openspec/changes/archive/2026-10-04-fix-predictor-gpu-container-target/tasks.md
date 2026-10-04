@@ -1,10 +1,8 @@
 # Tasks: fix-predictor-gpu-container-target
 
-**Status (2026-10-03).** Implementation (§1, §2, §2R, §4), live verification (§3, results in
-§3R) and the pre-merge sweep (§5) are done. Remaining:
-
-- 6.1–6.5: deploy, first-run check, rollback if needed, then PR B;
-- 7.1–7.4: follow-ups (predict guard, admin note, post-upgrade issue, PowerShell checks issue).
+**Status (2026-10-04).** Complete. PR #124 merged as `1615d5a`; the template was deployed
+2026-10-04 03:06 UTC; the first prod run passed (6.3); follow-ups are filed (§7). This file is
+archived by PR B.
 
 **History.** §1–§2 and 3.1 implemented and tested the original annotation-only design. 3.1 showed
 the annotation is ignored on this cluster (Run:ai 2.22.64), so §2R added the `podSpecPatch`
@@ -536,14 +534,21 @@ go in one commit with it.
 
 ## 6. Deploy (needs explicit user approval)
 
-- [ ] 6.1 **Before merging PR A**, record the rollback ref.
+- [x] 6.1 **Before merging PR A**, record the rollback ref.
   - Run `git fetch` and note `origin/main`'s sha.
   - From a worktree checked out at that sha, run `wsl -e bash scripts/check_cluster_drift.sh`.
   - Write "rollback ref: `<sha>`" in PR A's body.
 
   Validate: the drift check reports every template IN SYNC, which proves the live cluster equals
   the rollback ref.
-- [ ] 6.2 **After merge**, from merged `main`:
+
+  Recorded: rollback ref `7ba5b65`, the merge-base, written in PR #124's body. The drift check was
+  **not** run from a `7ba5b65` worktree before merge. Instead, it ran from merged `main`
+  (`1615d5a`) just before 6.2, and reported only `sleap-roots-predictor-template` as DRIFT. Its
+  diff was exactly the annotation and `podSpecPatch` lines; the other four templates and the
+  semaphore ConfigMap were IN SYNC. Since `1615d5a` changes only that template from `7ba5b65`, the
+  live cluster matched the rollback ref.
+- [x] 6.2 **After merge**, from merged `main`:
   1. run `check_cluster_drift.sh`, and expect only the predictor to show DRIFT;
   2. register only this template:
      `wsl -e bash -c 'export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml; argo template update /mnt/c/repos/sleap-roots-pipeline/sleap-roots-predictor-template.yaml -n runai-busch-lab'`.
@@ -552,7 +557,11 @@ go in one commit with it.
 
   Workflows already running keep their stored template, so no drain is needed.
   Validate: `check_cluster_drift.sh` reports everything IN SYNC.
-- [ ] 6.3 On the first Bloom Workflow **submitted after 6.2** that predicts at least one scan,
+
+  Recorded: registered 2026-10-04 03:06 UTC from `main` `1615d5a`, as `argo-user`. Afterwards the
+  drift check printed `cluster is IN SYNC with the repo`, and `argo template get` showed
+  `gpu-fraction-container-name: main`, `gpu-memory: "8192"` and the `podSpecPatch`.
+- [x] 6.3 On the first Bloom Workflow **submitted after 6.2** that predicts at least one scan,
   record in #117:
   - the Workflow name;
   - that the pod's `spec.containers[0].name` is `main`;
@@ -565,7 +574,19 @@ go in one commit with it.
 
   Validate: the #117 comment shows `main` first, a `configMapKeyRef` for `main`, and `device=cuda`
   for every model. If any of those is missing, go to 6.4.
-- [ ] 6.4 **Rollback.**
+
+  Recorded: PASS on `sleap-roots-pipeline-cqc5b`, Bloom cyl-pipeline run 3, submitted 2026-10-04
+  ~17:13 UTC. Posted to #117 (issuecomment-5982615497).
+  - The predictor pod ran on `gpu-node7` with `received-resource-type: Fraction`.
+  - `spec.containers[0]` was `main`, with `NVIDIA_VISIBLE_DEVICES` from
+    `sleap-roots-pipeline-cqc5b-wztb7ss-runai-sh-gpu-0`; `wait` and `init` had `void`.
+  - `runai-allocated-gpu-memory` read `0` on the completed pod; it was not captured while Running.
+  - Two models, `nodes=4` and `nodes=6`, both `device=cuda`. These are the same two models x68sv
+    ran on CPU. Species are not recorded here.
+  - `Batch complete: 3 ok, 0 skipped, 0 failed`; no CUDA out-of-memory error; no retries.
+  - Each 72-frame pass took 3.2–6.2 s.
+  - All five stages Succeeded with `exitCode=0`, the exit gate included.
+- [x] 6.4 **Rollback.**
   - Roll back when any of these happens:
     - predict hits a CUDA out-of-memory error;
     - predictor nodes Error with "Error applying PodSpecPatch", or never create a pod;
@@ -582,7 +603,9 @@ go in one commit with it.
   Validate: `argo template get sleap-roots-predictor-template -n runai-busch-lab -o yaml | grep -E 'gpu-fraction-container-name|podSpecPatch'`
   returns nothing. The drift check shows the predictor as DRIFT until a revert PR lands. If the
   rollback isn't needed, mark this task N/A.
-- [ ] 6.5 **PR B**, only if 6.4 did not fire, titled
+
+  N/A: 6.3 passed and no trigger fired.
+- [x] 6.5 **PR B**, only if 6.4 did not fire, titled
   `docs: record #117 deploy and roadmap; archive fix-predictor-gpu-container-target`. It contains:
   - the evidence from 6.1–6.4 in this file;
   - 7.1's issue URL;
@@ -595,17 +618,33 @@ go in one commit with it.
   `grep -c '\- \[ \]' openspec/changes/archive/*fix-predictor-gpu-container-target/tasks.md`
   returns 0.
 
+  Done on branch `docs/roadmap-117-deployed`:
+  - a 2026-10-04 status-log entry and a clause in the frontier paragraph;
+  - a dated correction on the #25 entry's "Live-cluster validated";
+  - markers on the 2026-10-02 "now gets a GPU pass" sentence and on the parity-run note, which
+    were observed-behavior claims that ran on CPU at the time.
+
+  Left unchanged by 4.5's rule, because they describe design intent or hazards that are true once
+  the fix is live: "past-window scans run GPU inference" (an ordering hazard) and "uninterruptible
+  GPU inference" (SIGTERM design). The line numbers in this task predate #122 and #125.
+
 ## 7. Follow-up (before 6.5)
 
-- [ ] 7.1 File the CPU-fallback guard in `sleap-roots-predict`: warn, or fail behind a flag, when
+- [x] 7.1 File the CPU-fallback guard in `sleap-roots-predict`: warn, or fail behind a flag, when
   `device="auto"` resolves to `cpu` while `NVIDIA_VISIBLE_DEVICES` is set and is not `void`. Link
   it from #117.
   Validate: record the issue URL here.
-- [ ] 7.2 Send the cluster admins the drafted note. It covers the cluster version (2.22.64), the
+
+  Filed: https://github.com/talmolab/sleap-roots-predict/issues/52
+- [x] 7.2 Send the cluster admins the drafted note. It covers the cluster version (2.22.64), the
   probe results, the reorder now in use, a request for the timeline to upgrade to Run:ai ≥ 2.24,
   and whether they object to the reorder.
   Validate: record the date sent and the reply here.
-- [ ] 7.3 File a follow-up issue covering upgrades:
+
+  Sent 2026-10-04 by the repo owner. It includes the corrected `init` + `spec.containers` wording
+  and the first prod run. The reply is pending and will be tracked on #127, which owns the
+  post-upgrade decision.
+- [x] 7.3 File a follow-up issue covering upgrades:
   - after any Argo or Run:ai upgrade, re-run the reorder probe from §3R (and, for Argo ≥ 4.1,
     confirm the init-less `supervisor` layout is off);
   - once the cluster runs Run:ai ≥ 2.24, re-run it with the reorder removed to confirm the
@@ -613,7 +652,11 @@ go in one commit with it.
   - re-run 3.7 whenever a model is added to the registry.
 
   Validate: record the issue URL here.
-- [ ] 7.4 File an issue: under PowerShell, `check_manifests.py` picks the WSL `bash.exe` launcher
+
+  Filed: https://github.com/talmolab/sleap-roots-pipeline/issues/127
+- [x] 7.4 File an issue: under PowerShell, `check_manifests.py` picks the WSL `bash.exe` launcher
   (`shutil.which`). The fix is to prefer Git-for-Windows bash, or to fail loudly on a `System32`
   path.
   Validate: record the issue URL here.
+
+  Filed: https://github.com/talmolab/sleap-roots-pipeline/issues/128
