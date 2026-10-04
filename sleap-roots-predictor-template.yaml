@@ -206,7 +206,9 @@ spec:
         # its own, see above), then traits to sha-e373b0f...@sha256:2cbbe602.... Predict alone does
         # not stop past-window results: clamped {scan_key}.predictions.json stay on disk and a
         # clamping traits image still reads them. Predict goes first so traits is never non-clamping
-        # while predict clamps. Each rollback costs another recompute.
+        # while predict clamps. Each rollback costs another recompute. Once #118's wheat/sorghum
+        # cards are linked to `production`, unlink them first: neither traits rollback image
+        # (sha-426ad4d, sha-e373b0f) has wheat/sorghum rows (#119; see the trait-extractor template).
         # Verified against GHCR: resolves to org.opencontainers.image.revision 79939ee...
         image: ghcr.io/talmolab/sleap-roots-predict:sha-79939eec33e3d8331d6502545dcf94efbf487c3b@sha256:d45c971e64bc8c47294e6680baa3d4f8a1d5840ea99e0a7b4f603819530bc932
         imagePullPolicy: Always
