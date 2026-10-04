@@ -103,7 +103,7 @@ clean up manually) rather than `runai training` (auto-terminates on completion).
 |---|---|
 | GPU (whole) | `--gpu-devices-request 1` |
 | GPU (fractional, relative) | `--gpu-portion-request 0.5` (fraction of a GPU, 0-1) |
-| GPU (fractional, absolute) | `--gpu-memory-request 8192M` (absolute amount, e.g. `1G`/`500M` — the predictor template annotates the pod-level `gpu-memory: "8192"` (MiB); using `8192M` here rather than `8G` since a bare `G` suffix may mean decimal `10^9` bytes elsewhere in this CLI, ~7% less than `8192` MiB/`8Gi` — this hasn't been exercised live to confirm which convention `--gpu-memory-request` actually follows, so `M` avoids the ambiguity rather than resolving it) |
+| GPU (fractional, absolute) | `--gpu-memory-request 8192M` (absolute amount, e.g. `1G`/`500M` — the predictor template annotates the pod-level `gpu-memory: "8192"`, which Run:ai applies in MB of 10^6 bytes: probe pods got `RUNAI_GPU_MEMORY_LIMIT=8192000000`, about 7,813 MiB, #117. Whether `--gpu-memory-request 8192M` follows the same decimal convention hasn't been checked live) |
 | CPU cores | `--cpu-core-request 12` |
 | Memory | `--cpu-memory-request 32G` |
 | Always re-pull image | `--image-pull-policy Always` |
@@ -116,7 +116,9 @@ Only the **predictor** stage needs a GPU; every other stage — `images-download
 inert *object-level* `gpu-fraction: "0.5"` annotation alongside a hard `nvidia.com/gpu: 1`, which
 silently claimed a whole GPU regardless of the annotation). Annotation placement matters: only
 `spec.templates[].metadata.annotations` (pod-level) is copied onto the pod by Argo — the
-WorkflowTemplate object's own `metadata.annotations` (top of the file) never is.
+WorkflowTemplate object's own `metadata.annotations` (top of the file) never is. The predictor
+sets a `podSpecPatch` (plus `gpu-fraction-container-name`, used from Run:ai ≥ 2.24) so the slice
+reaches `main`, not Argo's `wait` sidecar (#117); see the comments in the template.
 
 ## 5. Stage images
 
@@ -217,6 +219,7 @@ set the priority class:
 |---|---|
 | Auth error / token expired | `runai login remote-browser` (then `runai whoami`) |
 | Job stuck `Pending` | check cluster capacity + resource requests (`runai workspace describe`); if `NonPreemptibleOverQuota`, see §7; an Argo node `Pending` with **no pod** and a `Waiting for … sleap-roots-pipeline-semaphores/<key> lock` message is the #98 concurrency limit, not RunAI (see `.claude/commands/ci-debug.md`) |
+| Predictor slow / suspected CPU inference | `kubectl logs <pod> -n runai-busch-lab -c main 2>&1 \| grep device=` under the `bloom-pipeline` kubeconfig. `device=cpu` on a GPU pod means `main` got no GPU: check its `NVIDIA_VISIBLE_DEVICES` in `kubectl get pod -o yaml` (`void` = the slice went to another container: check the template's `podSpecPatch` reorder, #117) |
 | Mount error at startup | verify `--host-path` syntax and that the `/hpi/hpi_dev/...` directory exists on the node |
 | `ImagePullBackOff` | confirm the `ghcr.io/...` reference resolves; test `docker pull` of the exact string in `image:`, digest included |
 | `gh` returns HTTP 403 | `unset GITHUB_TOKEN` first (long-lived fine-grained tokens are blocked by the `talmolab` org) |
