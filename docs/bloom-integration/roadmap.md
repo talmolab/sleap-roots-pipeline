@@ -445,7 +445,7 @@ order:
    - **Progress (2026-10-04):** the candidate publish ✅ (training#73) and the traits rows ✅
      (sleap-roots#277, `e45b6bf`). The re-pin (#119) is merged as #133 and **deployed
      2026-10-04** (live `sha-e45b6bf`). ✅ **Parity passed** 2026-10-04 (predict#51 closed; 3/3, wheat crown
-     marginal, `bf2baf9`). ✅ **Trait check run** 2026-10-04 (#120 part 1, PR #136): wheat passes;
+     marginal, `bf2baf9`). ✅ **Trait check run** 2026-10-04 (#120 part 1, PR #138): wheat passes;
      sorghum missed the frozen gate and the **owner accepted the miss with reasons on record**;
      see the 2026-10-04 (trait check) entry. **Next: the `production` link** (training#72).
    - **Since prod is live,** the "no workflow Running or Pending" check before training#72's `production` link (as
@@ -1006,7 +1006,7 @@ Adversarial 4-lens review. Resolutions:
 - **2026-10-04 (trait check)** — **#120 part 1 ran on the deployed images after predict#51 passed.
   Wheat passes the frozen gate. Sorghum misses it, and the owner accepted the miss with the reasons
   below, so the `production` link (#118 step 6) may proceed for both species.** Record:
-  [PR #136](https://github.com/talmolab/sleap-roots-pipeline/pull/136),
+  [PR #138](https://github.com/talmolab/sleap-roots-pipeline/pull/138),
   `docs/superpowers/verification/120-trait-check/` (`run-2026-10-04/RESULTS.md`).
   - **Gate, frozen before the run** (owner-approved `gate_spec.json`): 5 wheat and 6 sorghum
     `*_median` traits against each past run's `traits_summary.csv`. Per trait: Spearman ρ ≥ 0.9
