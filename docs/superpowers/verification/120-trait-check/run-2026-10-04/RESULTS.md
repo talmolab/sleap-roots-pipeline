@@ -1,8 +1,24 @@
 # #120 part 1 trait check: results (run 2026-10-04)
 
 **Verdict: FAIL** under the frozen gate (`../gate_spec.json`, owner-approved before the run).
-**Wheat passes** all 5 traits. **Sorghum misses on two counts.** It goes to the owner before
-any `production` link. There were no selective re-runs and no adjustments.
+**Wheat passes** all 5 traits. **Sorghum misses on two counts.** There were no selective
+re-runs and no adjustments.
+
+**Owner decision (2026-10-04): the sorghum miss is accepted, so the link may proceed for both
+species.** The gate and its result are unchanged; this is an accepted exception, not a looser
+tolerance. The reasons on record:
+
+1. **The missing envelope (`scan_7704274`) is not evidence against the sorghum models.** The
+   tube is empty. Both the old and the new models found no roots, and the trait-extractor then
+   crashes on any species' empty scan. The cause is sleap-nn predict writing 0 labeled frames
+   where classic SLEAP wrote 72 empty ones, and `Pipeline.compute_plant_traits` popping
+   `plant_name` from an empty frame. It is filed as
+   [sleap-roots#280](https://github.com/talmolab/sleap-roots/issues/280) and is not a link gate.
+   The gate rule "a missing envelope fails the species" was written to catch model failures and
+   caught this instead.
+2. **The angle miss (`primary_angle_proximal_median`, ρ 0.832) comes from 2 of 22 scans.** The
+   other 20 agree within 3.1° (17 within 0.6°), the median per-scan error is 0, and the other 10
+   sorghum traits pass with ρ ≥ 0.997. Not investigated: why scans 7728682 and 7703698 differ.
 
 ## Setup
 
