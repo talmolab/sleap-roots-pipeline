@@ -1033,7 +1033,9 @@ Adversarial 4-lens review. Resolutions:
     - **Inside the passing rows,** the new sorghum models found less root than the old run on 4
       scans: no primary on 7723930 and 9495756 (day 5), no laterals on 9495756 and 12415924, and an
       8 px vs 50 px primary on 7728682, which goes with its angle outlier. Wheat has no such case.
-  - **Owner decision:** accept the sorghum miss. The reasons on record: the empty-scan failure is
+  - **Owner decision:** accept the sorghum miss. The owner inspected the images of all six flagged
+    sorghum scans (the four below, plus 7703698 and 7704274): **none has roots, only a seed or
+    mold**, so every sorghum difference comes from scoring a rootless scan. Further reasons on record: the empty-scan failure is
     a species-agnostic traits behaviour, not model evidence; the angle miss comes from 2 of 22
     scans while the other 5 sorghum traits pass. The gate is unchanged; this is an exception,
     not a looser tolerance.

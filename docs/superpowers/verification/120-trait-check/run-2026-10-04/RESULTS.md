@@ -8,6 +8,12 @@ re-runs and no adjustments.
 species.** The gate and its result are unchanged; this is an accepted exception, not a looser
 tolerance. The reasons on record:
 
+0. **Owner inspection of the images (2026-10-04, after review): none of the six flagged sorghum
+   scans has roots; each shows only a seed or mold.** The six are 7728682, 7723930, 9495756,
+   7703698, 7704274 and 12415924, i.e. every scan behind the two misses and the detection
+   differences below. Where the old models drew roots on these, the new models mostly report
+   nothing, so the differences are not evidence against the new models.
+
 1. **The missing envelope (`scan_7704274`) is not evidence against the sorghum models.** The
    tube is empty. Both the old and the new models found no roots, and the trait-extractor then
    crashes on any species' empty scan. The cause is sleap-nn predict writing 0 labeled frames
@@ -106,7 +112,8 @@ rows stay passes, but these scans are why the median, not the mean, is near zero
 
 7728682's short primary goes with its 33° angle outlier, which points to a detection difference,
 not an angle computation difference. Wheat has no such case (no one-sided NaN in any wheat
-trait).
+trait). The owner later inspected all of these scans: none has roots, only a seed or mold
+(reason 0 above).
 
 ## Also confirmed
 
