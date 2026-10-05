@@ -1034,8 +1034,9 @@ Adversarial 4-lens review. Resolutions:
       scans: no primary on 7723930 and 9495756 (day 5), no laterals on 9495756 and 12415924, and an
       8 px vs 50 px primary on 7728682, which goes with its angle outlier. Wheat has no such case.
   - **Owner decision:** accept the sorghum miss. The owner inspected the images of all six flagged
-    sorghum scans (the four below, plus 7703698 and 7704274): **none has roots, only a seed or
-    mold**, so every sorghum difference comes from scoring a rootless scan. Further reasons on record: the empty-scan failure is
+    sorghum scans (the four above, plus 7703698 and 7704274): **none has roots, only a seed or
+    mold**, so every sorghum difference comes from scoring a rootless scan. Further reasons on
+    record: the empty-scan failure is
     a species-agnostic traits behaviour, not model evidence; the angle miss comes from 2 of 22
     scans while the other 5 sorghum traits pass. The gate is unchanged; this is an exception,
     not a looser tolerance.
@@ -1045,9 +1046,13 @@ Adversarial 4-lens review. Resolutions:
     `No pipeline matches`); every envelope carries the real age; both logs show
     `past-window age: … age=17 matched as age=14` for the wheat copy and all 5 SbTx430 scans.
   - **Next:** the `production` link (training#72: `--only` the 3 ids, `--promote`, default alias,
-    no workflow Running or Pending), then #120 part 2. Before the link, read Bloom's live
-    `species_name` values for wheat and sorghum scans: bloomctl lowercases them through
-    `resolve_params`, so they must lowercase to exactly `wheat` / `sorghum`.
+    no workflow Running or Pending), then #120 part 2.
+  - **Bloom's species names, checked 2026-10-04** (`bloomctl cyl experiments list --json`,
+    read-only; the field is `species.common_name`, which `download-for-predict` passes through
+    `resolve_params`): prod has `Wheat` (1 experiment, EDPIE) and `Sorghum` (17), staging `Wheat`
+    (1) and `Sorghum` (12), with no other spelling. Both lowercase to exactly `wheat` / `sorghum`,
+    so the #118 species-string check passes. The three past runs' experiment ids (10199192,
+    7676986, 12356133) are prod experiments.
 - **2026-10-04 (traits deploy)** — **Traits `sha-e45b6bf` is deployed (#118 step 4, closes
   [#119](https://github.com/talmolab/sleap-roots-pipeline/issues/119)). Traits now knows wheat and sorghum; their cards are still
   `candidate` only, so nothing user-visible changes until the `production` link.**
