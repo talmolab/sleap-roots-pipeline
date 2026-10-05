@@ -1025,13 +1025,17 @@ Adversarial 4-lens review. Resolutions:
     - `scan_7704274` (an empty tube) has no envelope. The sleap-nn predict writes 0 labeled
       frames where classic SLEAP wrote 72 empty ones, and `Pipeline.compute_plant_traits` raises
       `KeyError: 'plant_name'`. That hits an empty scan of **any** species on the deployed
-      images: the scan ends `failed` in Bloom instead of `written` with NaN traits. Filed as
+      images: in a pipeline run the scan would end `failed` in Bloom instead of `written` with NaN
+      traits (inferred from the exit-3 path; this run made no Bloom write). Filed as
       [sleap-roots#280](https://github.com/talmolab/sleap-roots/issues/280).
     - `primary_angle_proximal_median` ρ 0.832. 20 of 22 scans agree within 3.1°; two (7728682,
       7703698) differ by 33° and 12°. Not investigated.
+    - **Inside the passing rows,** the new sorghum models found less root than the old run on 4
+      scans: no primary on 7723930 and 9495756 (day 5), no laterals on 9495756 and 12415924, and an
+      8 px vs 50 px primary on 7728682, which goes with its angle outlier. Wheat has no such case.
   - **Owner decision:** accept the sorghum miss. The reasons on record: the empty-scan failure is
     a species-agnostic traits behaviour, not model evidence; the angle miss comes from 2 of 22
-    scans while the other 10 sorghum traits pass. The gate is unchanged; this is an exception,
+    scans while the other 5 sorghum traits pass. The gate is unchanged; this is an exception,
     not a looser tolerance.
   - **Also confirmed:** predict picks crown only for wheat and primary + lateral for sorghum
     (the `candidate` `v0` cards); traits picks `OlderMonocotPipeline` / `DicotPipeline` (envelope

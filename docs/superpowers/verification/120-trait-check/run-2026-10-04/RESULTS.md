@@ -17,8 +17,10 @@ tolerance. The reasons on record:
    The gate rule "a missing envelope fails the species" was written to catch model failures and
    caught this instead.
 2. **The angle miss (`primary_angle_proximal_median`, ρ 0.832) comes from 2 of 22 scans.** The
-   other 20 agree within 3.1° (17 within 0.6°), the median per-scan error is 0, and the other 10
+   other 20 agree within 3.1° (17 within 0.6°), the median per-scan error is 0, and the other 5
    sorghum traits pass with ρ ≥ 0.997. Not investigated: why scans 7728682 and 7703698 differ.
+   The detection differences below were added to the record after review, before the owner
+   re-confirmed.
 
 ## Setup
 
@@ -73,7 +75,9 @@ tolerance.
   such a scan fails at traits rather than writing NaNs. That is a trait-extractor robustness
   gap, separate from the models.
 - **Scoring:** the gate rule makes a missing envelope a species fail. In the per-trait rows,
-  that scan counts as missing on both sides.
+  a missing envelope reads as NaN: the scan is left out as "both NaN" for the 4 traits whose
+  reference is NaN, and counts as a one-sided NaN (error inf) for `lateral_count_median`
+  (reference 1) and `network_length_median` (reference 0).
 
 ### Sorghum miss 2: `primary_angle_proximal_median`, ρ = 0.832
 
@@ -85,6 +89,24 @@ within 3.1° (17 within 0.6°). The outliers:
 | 7728682 | 5 | 7.03° | 40.06° | 33.0° |
 | 7703698 | 10 | 14.69° | 26.47° | 11.8° |
 | 9495756 | 5 | NaN | 0.36° | one-sided NaN |
+
+### Sorghum detection differences (inside the passing rows)
+
+The new sorghum models found less root than the old run on 4 of the 25 sorghum scans. The gate
+counts the empty cases as one-sided NaNs (error inf) and leaves them out of ρ, so the passing
+rows stay passes, but these scans are why the median, not the mean, is near zero:
+
+| scan | age | trait | new | ref |
+|---|---|---|---|---|
+| 7723930 | 5 | `primary_length_median` | NaN | 24.2 px |
+| 9495756 | 5 | `primary_length_median` | NaN | 104.1 px |
+| 9495756 | 5 | `lateral_lengths_mean_median` | NaN | 40.8 px |
+| 12415924 | 17 | `lateral_lengths_mean_median` | NaN | 48.0 px |
+| 7728682 | 5 | `primary_length_median` | 8.3 px | 50.4 px |
+
+7728682's short primary goes with its 33° angle outlier, which points to a detection difference,
+not an angle computation difference. Wheat has no such case (no one-sided NaN in any wheat
+trait).
 
 ## Also confirmed
 
@@ -106,6 +128,11 @@ within 3.1° (17 within 0.6°). The outliers:
   `e45b6bf`, both container digests set, `pipeline_run_id` null.
 
 ## Notes
+
+- **Known limits of `compare_traits.py`** (found in review, not changed after the run): a scan
+  with no envelope is read as NaN for every trait, so per-trait rows can't distinguish it from a
+  real NaN (the species-level check catches it); a selected scan missing from a reference CSV
+  would raise an uncaught `KeyError` (didn't happen).
 
 - **Re-run of the comparison script only:** the first `compare_traits.py` run crashed printing
   its report (the Windows cp1252 console can't encode `Δ`) before writing any result. It was

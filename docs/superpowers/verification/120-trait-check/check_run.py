@@ -8,7 +8,8 @@
   trait-name fingerprint (crown_* only vs primary_* + lateral_*);
 - every envelope's `provenance.params.values.age` is the sidecar's age (the real age for the
   selected scans);
-- one past-window case per species is matched at 14, in both logs.
+- every scan older than 14 (the wheat copy and each sorghum day-17 scan) is matched at 14, in
+  both logs.
 
 Usage:  python check_run.py --scratch <scratch>     (expects input/, pred/, traits/,
         predict.log, traits.log). Exit 0 all hold, 2 otherwise. Stdlib only.
