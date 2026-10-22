@@ -48,6 +48,7 @@ OPS_SECTIONS = [
     "Standing operator rules",
 ]
 LAUNCHER = "runai_run_pipeline.sh"
+PER_BATCH_SPEC = "openspec/specs/per-batch-pipeline/spec.md"
 PER_RUN_SPEC = "docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
@@ -544,11 +545,11 @@ def main() -> int:
     )
     # Since contracts a9 each run has its own manifest; the legacy file no longer accumulates.
     cumulative = re.compile(
-        r"cumulative[\s#]+across[\s#]+every[\s#]+run|accumulates[\s#]+scan_keys[\s#]+across[\s#]+every[\s#]+run"
+        r"cumulative[\s#]+across[\s#]+every[\s#]+run|accumulates[\s#]+`?scan_keys`?[\s#]+across[\s#]+every[\s#]+run"
     )
     check(
         "no doc calls the legacy manifest cumulative",
-        [n for n in (README, PREDICTOR) if cumulative.search(norm(read(n)))],
+        [n for n in (README, PREDICTOR, PER_BATCH_SPEC) if cumulative.search(norm(read(n)))],
         [],
     )
     # Environments differ by label, stage root and Secret since bloom#988, not by label alone.
