@@ -33,7 +33,8 @@ README = "README.md"
 ROADMAP = "docs/bloom-integration/roadmap.md"
 SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
-PER_RUN_SPEC = "docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
+CI_DEBUG = ".claude/commands/ci-debug.md"
+PER_RUN_SPEC ="docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
 _failures: list[str] = []
@@ -446,6 +447,29 @@ def main() -> int:
     check(
         "runai SKILL §6 links the roadmap rule",
         "](../../../docs/bloom-integration/roadmap.md" in skill_6,
+        True,
+    )
+
+    # A missing hostPath directory leaves the pod Pending and the Workflow hung; it never fails
+    # startup (cluster-identities, "Storage is three hand-made directories"). Both word orders.
+    startup_fail = re.compile(r"fails? (pod )?startup|fails at startup|startup fails", re.IGNORECASE)
+    startup_docs = ["openspec/project.md", README, CI_DEBUG]
+    check(
+        "no doc says a missing hostPath fails pod startup",
+        [n for n in startup_docs if startup_fail.search(norm(read(n)))],
+        [],
+    )
+    pending_rows = [ln for ln in read(CI_DEBUG).splitlines() if "stuck `Pending` (any stage)" in ln]
+    check("ci-debug: Pending row anchor appears once", len(pending_rows), 1)
+    pending_row = pending_rows[0] if pending_rows else ""
+    check(
+        "ci-debug: Pending row does not recommend retryStrategy",
+        "add `retryStrategy`" in pending_row,
+        False,
+    )
+    check(
+        "ci-debug: Pending row links cluster-identities",
+        "cluster-identities.md" in pending_row,
         True,
     )
 

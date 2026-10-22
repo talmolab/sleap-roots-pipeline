@@ -65,7 +65,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 2. A missing hostPath hangs Pending (cluster-access-docs Req 2: A missing hostPath is described as Pending)
 
-- [ ] 2.1 Add the assertions:
+- [x] 2.1 Add the assertions:
   - **Startup-failure claims:** check over the files `[PROJECT, README, CI_DEBUG]` for normalised
     text matching `fails? (pod )?startup|fails at startup|startup fails` (case-insensitive). Want
     `[]`. Section 5 adds the runbook to this list.
@@ -77,7 +77,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
     'README.md', '.claude/commands/ci-debug.md'], expected []`
   - `FAIL  ci-debug: Pending row does not recommend retryStrategy: got True, expected False`
   - `FAIL  ci-debug: Pending row links cluster-identities: got False, expected True`
-- [ ] 2.2 Rewrite each statement as "the pod stays `Pending` and the Workflow hangs", in:
+- [x] 2.2 Rewrite each statement as "the pod stays `Pending` and the Workflow hangs", in:
   - `openspec/project.md:97`;
   - `openspec/project.md:207` (the Important Constraints bullet);
   - `README.md:240`;

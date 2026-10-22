@@ -237,7 +237,9 @@ volumes:
       type: Directory
 ```
 
-> ⚠️ Kubernetes will fail pod startup if a `hostPath` volume with `type: Directory` does not already exist.
+> ⚠️ A `hostPath` volume with `type: Directory` must already exist. If it doesn't, the pod stays
+> `Pending` and the Workflow hangs rather than failing (see
+> [Cluster identities](docs/cluster-identities.md)).
 
 ---
 
