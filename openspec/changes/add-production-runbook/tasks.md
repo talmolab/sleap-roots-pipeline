@@ -91,7 +91,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 3. Failure evidence, access, manifests, environments (cluster-access-docs Req 2: Failure evidence, access and manifests are stated as observed; per-batch-pipeline MODIFIED)
 
-- [ ] 3.1 Add the assertions:
+- [x] 3.1 Add the assertions:
   - **cluster-identities pod-log paragraph:** in the raw text, slice from `**Pod logs need the
     \`bloom-pipeline\` kubeconfig` to the next `\n\n`. It contains `WORKFLOWS_K8S_TTL_SECONDS` or
     `issues/137`.
@@ -115,7 +115,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
     'sleap-roots-predictor-template.yaml'], expected []`
   - `FAIL  runai_run_pipeline.sh: environments not 'distinguished only by an environment label':
     got True, expected False`
-- [ ] 3.2 Make the doc and comment edits:
+- [x] 3.2 Make the doc and comment edits:
   - **TTL window:** add it, as "at most `WORKFLOWS_K8S_TTL_SECONDS` after completion; pods may go
     sooner; [#137]", to the cluster-identities pod-log paragraph, ci-debug §A and the top of
     README Troubleshooting.

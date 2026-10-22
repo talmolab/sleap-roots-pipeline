@@ -24,6 +24,11 @@ kubeconfig (`.claude/skills/runai/SKILL.md` §1a). Which identity can do what is
 `docs/cluster-identities.md`: the operator `argo-user` kubeconfig can list/get/describe but
 **cannot read pod logs** — use the `bloom-pipeline` kubeconfig for `logs`.
 
+A Bloom-dispatched Workflow is deleted at most `WORKFLOWS_K8S_TTL_SECONDS` (default 3600) after it
+completes, and its pods and logs may go sooner
+([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)). After that, the evidence
+left is the Bloom run's per-scan results and the files on the environment's stage tree.
+
 ### Step 1: Find the failing workflow and node
 
 ```bash

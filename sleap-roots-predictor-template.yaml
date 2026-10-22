@@ -153,6 +153,7 @@ spec:
         # catalog-load exit 1 above, it fires BEFORE the forward-copy: continueOn still runs
         # traits/write-back, scoped by whatever predictions/run_manifest.json an earlier run left,
         # and the exit gate then fails the run (the old image had the same downstream exposure).
+        # [That clause is pre-a9: the legacy files were deleted 2026-09-29, see below.]
         # Corrected 2026-09-30 (#98): this exit is now REACHABLE. Since the bloomctl writer flip
         # (sha-1bc3056, 2026-09-29) the downloader writes only run_manifest.<ARGO_WORKFLOW_NAME>.json,
         # and the legacy files were deleted the same day, so a run whose images-downloader wrote no
@@ -220,11 +221,11 @@ spec:
           # NOT inert. predict reads it through contracts' pipeline_run_id_from_env() as the run
           # identity: it selects run_manifest.<name>.json ahead of the legacy file, makes a missing
           # manifest exit 1 instead of scanning everything, and triggers the "legacy manifest names
-          # another run" warning. The stage directories are fixed, shared hostPaths, and the legacy
-          # run_manifest.json accumulates scan_keys across every run in that environment (Bloom
-          # gives staging and prod their own stage roots since bloom#988)
-          # writing into them, so without this identity predict cannot tell its own scope from
-          # another run's. Removing it reverts predict to legacy-only reads (and to unscoped discovery
+          # another run" warning. The stage directories are fixed hostPaths shared by every run in
+          # an environment (Bloom gives staging and prod their own stage roots since bloom#988).
+          # Before a9 one legacy run_manifest.json accumulated scan_keys across those runs; since
+          # a9 each run writes its own run_manifest.<name>.json, and only this identity tells
+          # predict which one is its own scope. Removing it reverts predict to legacy-only reads (and to unscoped discovery
           # when run_manifest.json is absent) -- silently until the writer flip; after it, predict
           # at least warns that per-run manifests are present but unread.
           - name: ARGO_WORKFLOW_NAME

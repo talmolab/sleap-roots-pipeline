@@ -34,6 +34,8 @@ ROADMAP = "docs/bloom-integration/roadmap.md"
 SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
 CI_DEBUG = ".claude/commands/ci-debug.md"
+PREDICTOR = "sleap-roots-predictor-template.yaml"
+LAUNCHER = "runai_run_pipeline.sh"
 PER_RUN_SPEC ="docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
@@ -471,6 +473,46 @@ def main() -> int:
         "ci-debug: Pending row links cluster-identities",
         "cluster-identities.md" in pending_row,
         True,
+    )
+
+    # Failure evidence: Bloom stamps ttlStrategy from WORKFLOWS_K8S_TTL_SECONDS on every cyl
+    # Workflow, so its pods and logs are gone within that window (#137). Every place that sends
+    # a reader to pod logs says so.
+    ttl_named = re.compile(r"WORKFLOWS_K8S_TTL_SECONDS|issues/137(?!\d)")
+    ident_raw = read(IDENTITIES)
+    p = ident_raw.find("**Pod logs need the `bloom-pipeline` kubeconfig")
+    check("cluster-identities: pod-log paragraph anchor found", p != -1, True)
+    pod_log_para = ident_raw[p : ident_raw.find("\n\n", p)] if p != -1 else ""
+    check(
+        "cluster-identities: pod-log paragraph names the TTL window",
+        bool(ttl_named.search(pod_log_para)),
+        True,
+    )
+    ci_a = between("ci-debug §A", read(CI_DEBUG), "## A.", "## B.")
+    check("ci-debug §A: links #137", "issues/137" in ci_a, True)
+    readme_raw = read(README)
+    troubleshooting = between("README Troubleshooting", readme_raw, "## 🐛 Troubleshooting", "\n## ")
+    check("README Troubleshooting: links #137", "issues/137" in troubleshooting, True)
+    argo_rows = [ln for ln in ident_raw.splitlines() if ln.startswith("| **`argo-user`**")]
+    check("cluster-identities: argo-user row appears once", len(argo_rows), 1)
+    argo_can = argo_rows[0].strip("|").split("|")[2] if argo_rows else ""
+    check(
+        "cluster-identities: argo-user Can cell lists get/list/watch workflows",
+        "`get`/`list`/`watch workflows`" in argo_can,
+        True,
+    )
+    # Since contracts a9 each run has its own manifest; the legacy file no longer accumulates.
+    cumulative = re.compile(r"cumulative across every run|accumulates scan_keys[\s#]+across every run")
+    check(
+        "no doc calls the legacy manifest cumulative",
+        [n for n in (README, PREDICTOR) if cumulative.search(read(n))],
+        [],
+    )
+    # Environments differ by label, stage root and Secret since bloom#988, not by label alone.
+    check(
+        "runai_run_pipeline.sh: environments not 'distinguished only by an environment label'",
+        bool(re.search(r"distinguished only[\s#]+by an environment label", read(LAUNCHER))),
+        False,
     )
 
     if _failures:

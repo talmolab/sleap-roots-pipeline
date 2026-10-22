@@ -18,9 +18,10 @@ set -euo pipefail
 # that does not exist yet. Register it BEFORE submitting any five-task DAG, or submission fails
 # on an unresolvable templateRef.
 #
-# NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch, distinguished only
-# by an environment label stamped on each submitted Workflow. An `argo template update` here
-# therefore affects both environments' future dispatches, not just your own next run.
+# NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch. Since bloom#988
+# each environment's Workflows differ by an `environment` label, by stage root and by Secret, but
+# both use the same WorkflowTemplates. An `argo template update` here therefore affects both
+# environments' future dispatches, not just your own next run.
 
 # Color output
 YELLOW='\033[1;33m'
