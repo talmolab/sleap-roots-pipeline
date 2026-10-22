@@ -176,7 +176,9 @@ You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed
 >
 > ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
 > `argo template create`/`update` here affects both environments' future runs — see
-> [Cluster identities](docs/cluster-identities.md).
+> [Cluster identities](docs/cluster-identities.md). Before any `argo template update`, follow the
+> guard in the [production runbook](docs/bloom-integration/operations.md), one template at a time.
+> `runai_run_pipeline.sh` is not a deploy path (below).
 
 ### ▶️ One-Time Setup
 
@@ -193,6 +195,11 @@ semaphore ConfigMap; in WSL, `export PATH=$HOME/bin:$PATH`).
 ```bash
 ./runai_run_pipeline.sh
 ```
+
+It is not a deploy path. It updates all five templates at once, in a fixed order, with no idle
+check between them. Run it only when `scripts/check_cluster_drift.sh` reports `IN SYNC`, so the
+updates change nothing; deploy changes by the guard in the
+[production runbook](docs/bloom-integration/operations.md).
 
 This script will:
 - Create the `sleap-roots-pipeline-semaphores` ConfigMap if absent (never updates it; aborts if it
@@ -237,7 +244,9 @@ volumes:
       type: Directory
 ```
 
-> ⚠️ Kubernetes will fail pod startup if a `hostPath` volume with `type: Directory` does not already exist.
+> ⚠️ A `hostPath` volume with `type: Directory` must already exist. If it doesn't, the pod stays
+> `Pending` and the Workflow hangs rather than failing (see
+> [Cluster identities](docs/cluster-identities.md)).
 
 ---
 
@@ -300,6 +309,12 @@ argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 ---
 
 ## 🐛 Troubleshooting
+
+> A Bloom-dispatched Workflow is deleted at most `WORKFLOWS_K8S_TTL_SECONDS` (default 3600) after
+> it completes, and its pods and logs may go sooner
+> ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)). The commands below work
+> only inside that window; hand-submitted Workflows carry no TTL. For a Bloom-dispatched run, start
+> at the [production runbook's "When a run fails"](docs/bloom-integration/operations.md#when-a-run-fails).
 
 ```bash
 argo list -n runai-busch-lab
@@ -428,7 +443,7 @@ Argo’s `DAG` execution has these key properties:
   - Producers signal this with a distinct exit code: **`0`** = every scan succeeded, **`3`** = the batch ran to completion but some scans isolated-failed. Anything else (`1` crash, `2` usage error, `143` SIGTERM) is crash-class.
   - The terminal **`exit-gate`** task re-derives the Workflow's final phase from those real exit codes: it passes only if every producer reported `0` or `3`, and fails the Workflow otherwise. This is what stops `continueOn` from silently reporting an exhausted-retry crash as success — `continueOn` keys only on a node's *phase*, not its exit code.
   - A stage whose pod is **deleted out from under Argo** (preemption — `markNodeError`, "pod deleted") produces an `Error` node, which `continueOn` deliberately does **not** cover, so the DAG stops there and the Workflow ends `Failed`. A pod that **never starts** is a different and worse case: at v3.6.7 `assessNodeStatus` maps `PodPending` unconditionally to `NodePending`, so `ImagePullBackOff` or a failed `hostPath` mount stays `Pending` — not `Error`, not `Failed` — and neither `retryStrategy` nor `continueOn` applies, so the workflow **hangs** rather than failing. The `exit-gate` template carries a `timeout` for exactly this reason, since as the DAG's only leaf it is where such a hang would strand an otherwise-complete batch; the four stage templates do not, so a `Pending` producer still hangs indefinitely.
-- **A crash does not stop the DAG either.** `continueOn` keys on node phase, not exit code, so a crashed images-downloader still schedules the GPU predictor, trait-extraction and write-back before the gate concludes. Downstream stages are scoped by `run_manifest.json`, which is **cumulative across every run that shares the stage directories** — so on a crash path they may act on a previous run's scan set, and write-back may record per-scan outcomes, before the Workflow is declared `Failed`. A `Failed` Workflow therefore does not imply nothing was written.
+- **A crash does not stop the DAG either.** `continueOn` keys on node phase, not exit code, so a crashed images-downloader still schedules the GPU predictor, trait-extraction and write-back before the gate concludes. Since contracts a9, downstream stages are scoped by this run's own `run_manifest.<ARGO_WORKFLOW_NAME>.json`. If images-downloader wrote no manifest for this run (it crashed before its final write, or no scan staged) and no legacy `run_manifest.json` is present, predict exits 1 and spends its retries holding a `pipeline-gpu` slot (see the predictor template's comments). Readers still honour a legacy file under `allow_legacy=True`, which is why no-run-id runs must stay off the shared trees (roadmap, "Step 7 … is hardening"). Write-back may still record per-scan outcomes before the Workflow is declared `Failed`, so a `Failed` Workflow does not imply nothing was written.
 - ⚠️ **A green Workflow does not mean every scan succeeded.** A partial run is `Succeeded` by design. Check `cyl_pipeline_runs.done_count` / `failed_count` for the real per-scan outcome. (The run's own status reads `complete` rather than `partial` until [bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857) lands.) The gate reports whether the machinery ran, not whether any scan was processed: it mounts no volumes, so it cannot observe whether output landed. The outcome for a zero-scan or zero-staged batch depends on what is already present in the shared input directory and is **not yet characterised** — do not rely on it either way until it is measured.
 - If write-back fails, or the gate rejects a crash-class exit:
   - The **entire workflow fails**.

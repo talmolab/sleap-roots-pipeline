@@ -113,11 +113,11 @@ production dispatch, so **never register a template from an unmerged branch** �
 2. **Pre-merge (optional, recommended for GPU/scheduling changes).** Submit a **throwaway
    Workflow with the edited template inlined** (a `templates:` entry, no `templateRef`) — nothing
    registered, nothing shared changed — and run the same observation.
-3. **After merge, from `main`.** Save a rollback copy of what is live
-   (`kubectl get workflowtemplate <name> -n runai-busch-lab -o yaml > <name>.pre.yaml`), run
-   `wsl -e bash scripts/check_cluster_drift.sh`, register (`argo template update`, or `create`
-   for a new template), re-run the drift check, then re-run the **same** observation on the first
-   real run and record it green next to the baseline.
+3. **After merge, from `main`.** Register (`argo template update`, or `create` for a new
+   template) by following the guard in the
+   [production runbook](../../docs/bloom-integration/operations.md) ("Before any change to the
+   cluster": idle check, rollback copy, drift check before and after, read-back). Then re-run the
+   **same** observation on the first real run and record it green next to the baseline.
 
 ## Testing patterns that transfer
 

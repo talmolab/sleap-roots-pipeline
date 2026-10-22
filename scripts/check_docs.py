@@ -33,6 +33,22 @@ README = "README.md"
 ROADMAP = "docs/bloom-integration/roadmap.md"
 SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
+CI_DEBUG = ".claude/commands/ci-debug.md"
+PREDICTOR = "sleap-roots-predictor-template.yaml"
+TRAIT_EXTRACTOR = "sleap-roots-trait-extractor-template.yaml"
+IMAGES_DL = "sleap-roots-images-downloader-template.yaml"
+TDD = ".claude/commands/tdd.md"
+OPS = "docs/bloom-integration/operations.md"
+OPS_SECTIONS = [
+    "Before any change to the cluster",
+    "Switching production off is not a pause",
+    "Rollback",
+    "Preconditions nothing enforces",
+    "When a run fails",
+    "Standing operator rules",
+]
+LAUNCHER = "runai_run_pipeline.sh"
+PER_RUN_SPEC = "docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
 _failures: list[str] = []
@@ -55,6 +71,52 @@ def read(name: str) -> str:
 def norm(text: str) -> str:
     """Collapse whitespace so assertions survive line-wrapping in prose."""
     return re.sub(r"\s+", " ", text)
+
+
+def text_or_empty(name: str) -> str:
+    """read(), but "" for a missing file, so a check on a not-yet-written doc FAILs, not crashes."""
+    path = ROOT / name
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def between(label: str, text: str, start: str, end: str) -> str:
+    """The slice of `text` from `start` up to `end`, after checking both anchors are present.
+
+    Anchored on text, not line numbers, so an unrelated insertion above cannot move it.
+    """
+    i = text.find(start)
+    j = text.find(end, i + len(start)) if i != -1 else -1
+    check(f"{label}: anchors found", i != -1 and j != -1, True)
+    return text[i:j] if i != -1 and j != -1 else ""
+
+
+def md_section(page: str, heading: str) -> str:
+    """A `## heading` section of a markdown page, up to the next `## ` heading of any kind.
+
+    Ending at *any* heading, not the next expected one, keeps a reordered page from bleeding one
+    section into another: the order check fails alone.
+    """
+    i = page.find(f"## {heading}\n")
+    if i == -1:
+        return ""
+    j = page.find("\n## ", i + 1)
+    return page[i:] if j == -1 else page[i:j]
+
+
+def comment_block(name: str, anchor: str) -> str:
+    """The `#` comment lines from the one containing `anchor` up to the first non-comment line,
+    with the `#` stripped and whitespace collapsed, so a phrase survives comment wrapping."""
+    lines = read(name).splitlines()
+    start = next((i for i, ln in enumerate(lines) if anchor in ln), None)
+    check(f"{name}: comment anchor {anchor!r} found", start is not None, True)
+    if start is None:
+        return ""
+    block = []
+    for ln in lines[start:]:
+        if not ln.lstrip().startswith("#"):
+            break
+        block.append(ln.lstrip()[1:])
+    return norm(" ".join(block))
 
 
 def registered_templates() -> list[str]:
@@ -388,6 +450,438 @@ def main() -> int:
             if stale_checklist.search(norm(p.read_text(encoding="utf-8")))
         ],
         [],
+    )
+
+    # --- Production runbook and the operating facts it relies on (add-production-runbook) -----
+    # Claim-wide: each fact is checked in every doc that states it, not only the one first found.
+    roadmap = norm(read(ROADMAP))
+
+    # Shared-tree hazards. The no-run-id rule and the pre-a9 rollback hazard apply to both
+    # environments' trees: a4_poc (staging) and bloom_cyl_pipeline/prod (prod, since bloom#988).
+    check(
+        "roadmap: no-run-id rule anchor appears once",
+        roadmap.count("never point a no-run-id"),
+        1,
+    )
+    rule = between("roadmap no-run-id rule", roadmap, "never point a no-run-id", "use a scratch tree")
+    check("roadmap: no-run-id rule names staging's shared tree", "a4_poc" in rule, True)
+    check(
+        "roadmap: no-run-id rule names prod's shared tree",
+        "bloom_cyl_pipeline/prod" in rule,
+        True,
+    )
+    deliberate = between(
+        "roadmap Deliberate bullet", roadmap, "**Deliberate:** a bloomctl rollback", "- **Covered:**"
+    )
+    check(
+        "roadmap: Deliberate rollback bullet names bloom_cyl_pipeline/prod",
+        "bloom_cyl_pipeline/prod" in deliberate,
+        True,
+    )
+    a4_only = re.compile(r"shared `a4_poc` trees?(?![^.]*bloom_cyl_pipeline/prod)")
+    a4_only_docs = [ROADMAP, PER_RUN_SPEC, SKILL]
+    check(
+        "no doc limits the no-run-id rule to a4_poc",
+        [n for n in a4_only_docs if a4_only.search(norm(read(n)))],
+        [],
+    )
+    skill_6 = between("runai SKILL §6", read(SKILL), "## 6.", "## 7.")
+    check("runai SKILL §6 names the no-run-id rule", "no-run-id" in skill_6, True)
+    check(
+        "runai SKILL §6 links the roadmap rule",
+        "](../../../docs/bloom-integration/roadmap.md" in skill_6,
+        True,
+    )
+
+    # A missing hostPath directory leaves the pod Pending and the Workflow hung; it never fails
+    # startup (cluster-identities, "Storage is three hand-made directories"). Both word orders.
+    startup_fail = re.compile(r"fails? (pod )?startup|fails at startup|startup fails", re.IGNORECASE)
+    startup_docs = ["openspec/project.md", README, CI_DEBUG]
+    check(
+        "no doc says a missing hostPath fails pod startup",
+        [n for n in startup_docs if startup_fail.search(norm(read(n)))],
+        [],
+    )
+    pending_rows = [ln for ln in read(CI_DEBUG).splitlines() if "stuck `Pending` (any stage)" in ln]
+    check("ci-debug: Pending row anchor appears once", len(pending_rows), 1)
+    pending_row = pending_rows[0] if pending_rows else ""
+    check(
+        "ci-debug: Pending row does not recommend retryStrategy",
+        "add `retryStrategy`" in pending_row,
+        False,
+    )
+    check(
+        "ci-debug: Pending row links cluster-identities",
+        "cluster-identities.md" in pending_row,
+        True,
+    )
+
+    # Failure evidence: Bloom stamps ttlStrategy from WORKFLOWS_K8S_TTL_SECONDS on every cyl
+    # Workflow, so its pods and logs are gone within that window (#137). Every place that sends
+    # a reader to pod logs says so.
+    ttl_named = re.compile(r"WORKFLOWS_K8S_TTL_SECONDS|issues/137(?!\d)")
+    ident_raw = read(IDENTITIES)
+    p = ident_raw.find("**Pod logs need the `bloom-pipeline` kubeconfig")
+    check("cluster-identities: pod-log paragraph anchor found", p != -1, True)
+    pod_log_para = ident_raw[p : ident_raw.find("\n\n", p)] if p != -1 else ""
+    check(
+        "cluster-identities: pod-log paragraph names the TTL window",
+        bool(ttl_named.search(pod_log_para)),
+        True,
+    )
+    ci_a = between("ci-debug §A", read(CI_DEBUG), "## A.", "## B.")
+    check("ci-debug §A: links #137", "issues/137" in ci_a, True)
+    readme_raw = read(README)
+    troubleshooting = between("README Troubleshooting", readme_raw, "## 🐛 Troubleshooting", "\n## ")
+    check("README Troubleshooting: links #137", "issues/137" in troubleshooting, True)
+    argo_rows = [ln for ln in ident_raw.splitlines() if ln.startswith("| **`argo-user`**")]
+    check("cluster-identities: argo-user row appears once", len(argo_rows), 1)
+    argo_can = argo_rows[0].strip("|").split("|")[2] if argo_rows else ""
+    check(
+        "cluster-identities: argo-user Can cell lists get/list/watch workflows",
+        "`get`/`list`/`watch workflows`" in argo_can,
+        True,
+    )
+    # Since contracts a9 each run has its own manifest; the legacy file no longer accumulates.
+    cumulative = re.compile(
+        r"cumulative[\s#]+across[\s#]+every[\s#]+run|accumulates[\s#]+scan_keys[\s#]+across[\s#]+every[\s#]+run"
+    )
+    check(
+        "no doc calls the legacy manifest cumulative",
+        [n for n in (README, PREDICTOR) if cumulative.search(norm(read(n)))],
+        [],
+    )
+    # Environments differ by label, stage root and Secret since bloom#988, not by label alone.
+    check(
+        "runai_run_pipeline.sh: environments not 'distinguished only by an environment label'",
+        bool(re.search(r"distinguished only[\s#]+by an environment label", read(LAUNCHER))),
+        False,
+    )
+
+    # The wheat/sorghum rollback starts with unlink(), which also drops `candidate` and `latest`
+    # (training#72; roadmap, 2026-10-05 entry). The template comment owns that procedure.
+    trait_rollback = comment_block(TRAIT_EXTRACTOR, "Rollback (updated 2026-10-04, #119)")
+    check(
+        "trait-extractor rollback comment names unlink's candidate side effect",
+        bool(re.search(r"unlink\(\)[^.]*candidate", trait_rollback)),
+        True,
+    )
+
+    # --- The production runbook (#132) --------------------------------------------------------
+    # One page; the guard procedure lives here and everything else is linked, not copied.
+    ops_raw = text_or_empty(OPS)
+    check("operations.md exists", (ROOT / OPS).exists(), True)
+    check(
+        "operations.md: the six #132 sections, in order",
+        re.findall(r"^## (.+)$", ops_raw, re.MULTILINE),
+        OPS_SECTIONS,
+    )
+    before, pause, rollback, precond, failing, standing = (
+        md_section(ops_raw, h) for h in OPS_SECTIONS
+    )
+    for token in (
+        ".status.phase",
+        "scripts/check_cluster_drift.sh",
+        "runai_run_pipeline.sh",
+        "SRP_PREDICT_CONTAINER_DIGEST",
+        "SRT_TRAITS_CONTAINER_DIGEST",
+    ):
+        check(f"operations.md 'Before any change': names {token}", token in before, True)
+    check(
+        "operations.md 'not a pause': names CYL_PIPELINE_TRIGGER_ENABLED",
+        "CYL_PIPELINE_TRIGGER_ENABLED" in pause,
+        True,
+    )
+    check(
+        "operations.md 'not a pause': links cluster-identities",
+        "](../cluster-identities.md" in pause,
+        True,
+    )
+    for template in (TRAIT_EXTRACTOR, PREDICTOR, "sleap-roots-images-downloader-template.yaml"):
+        check(f"operations.md 'Rollback': links {template}", f"](../../{template}" in rollback, True)
+    check(
+        "operations.md 'Preconditions': links the semaphore ConfigMap header",
+        "](../../sleap-roots-pipeline-semaphores.yaml" in precond,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': names WORKFLOWS_K8S_TTL_SECONDS",
+        "WORKFLOWS_K8S_TTL_SECONDS" in failing,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': links ci-debug",
+        "](../../.claude/commands/ci-debug.md" in failing,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': links the exit-gate template",
+        "](../../sleap-roots-exit-gate-template.yaml" in failing,
+        True,
+    )
+    check(
+        "operations.md 'Standing rules': names prod's shared tree",
+        "bloom_cyl_pipeline/prod" in standing,
+        True,
+    )
+    # These issues are the rules' sources at time of writing; closing one means updating this.
+    check(
+        "operations.md links its repo issues",
+        [
+            n
+            for n in (63, 106, 109, 127, 128, 137)
+            if not re.search(rf"github\.com/talmolab/sleap-roots-pipeline/issues/{n}(?!\d)", ops_raw)
+        ],
+        [],
+    )
+    check(
+        "operations.md links its Bloom issues",
+        [
+            n
+            for n in (857, 859, 939, 1042)
+            if not re.search(
+                rf"github\.com/Salk-Harnessing-Plants-Initiative/bloom/issues/{n}(?!\d)", ops_raw
+            )
+        ],
+        [],
+    )
+    ops_dir = (ROOT / OPS).parent
+    check(
+        "operations.md: every relative link resolves",
+        [
+            t
+            for t in re.findall(r"\]\(([^)\s]+)\)", ops_raw)
+            if not t.startswith(("http://", "https://", "#"))
+            and not (ops_dir / t.split("#")[0]).exists()
+        ],
+        [],
+    )
+    # Live pins drift by the week; the page re-derives them with the drift check instead.
+    check(
+        "operations.md hard-codes no image tag, digest or commit SHA",
+        re.findall(
+            r"\bsha-[0-9a-f]{7,}|sha256:[0-9a-f]{6,}"
+            r"|(?<![\w/#.-])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}(?!\w)",
+            ops_raw,
+        ),
+        [],
+    )
+    # The runbook joins the claim-wide scans above.
+    check("operations.md does not limit the no-run-id rule to a4_poc", bool(a4_only.search(norm(ops_raw))), False)
+    check("operations.md does not say a missing hostPath fails startup", bool(startup_fail.search(norm(ops_raw))), False)
+
+    # Inbound links, from where a reader is when they need the page.
+    callout = []
+    lines = readme_raw.splitlines()
+    k = next((i for i, ln in enumerate(lines) if ln.startswith("> ⚠️ This namespace is shared by Bloom's staging")), None)
+    check("README: shared-namespace callout anchor found", k is not None, True)
+    if k is not None:
+        for ln in lines[k:]:
+            if not ln.startswith(">"):
+                break
+            callout.append(ln)
+    check(
+        "README: shared-namespace callout links the runbook",
+        "](docs/bloom-integration/operations.md" in "\n".join(callout),
+        True,
+    )
+    check(
+        "README Troubleshooting: links the runbook",
+        "](docs/bloom-integration/operations.md" in troubleshooting,
+        True,
+    )
+    # The idle condition, in any phrasing, belongs on the runbook only.
+    idle_restated = re.compile(
+        r"(?:Running|Pending)\W+(?:(?:or|and)\W+)?(?:Running|Pending)|\.status\.phase|no phase", re.IGNORECASE
+    )
+    hard = between("roadmap hard constraint", roadmap, "**Shared templates, production live", "- **Argo stays**")
+    check("roadmap hard constraint: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", hard)), True)
+    check("roadmap hard constraint: no idle restatement", bool(idle_restated.search(hard)), False)
+    item10 = between(
+        "roadmap item 10",
+        roadmap,
+        "10. **Production hardening backlog**",
+        "**Closed since the 2026-10-01 review**",
+    )
+    check("roadmap item 10: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", item10)), True)
+    check("roadmap item 10: no 'No prod runbook exists'", "No prod runbook exists" in item10, False)
+    check(
+        "cluster-identities: links the runbook",
+        "](bloom-integration/operations.md" in ident_raw,
+        True,
+    )
+    tdd_live = between("tdd Live acceptance tests", read(TDD), "## Live acceptance tests", "\n## ")
+    check(
+        "tdd Live acceptance tests: links the runbook",
+        "](../../docs/bloom-integration/operations.md" in tdd_live,
+        True,
+    )
+    check("tdd Live acceptance tests: no idle restatement", bool(idle_restated.search(tdd_live)), False)
+    project_live = between(
+        "project.md Live acceptance", norm(read("openspec/project.md")), "**Live acceptance**", "(A4, later)"
+    )
+    check(
+        "project.md Live acceptance: links the runbook",
+        "](../docs/bloom-integration/operations.md" in project_live,
+        True,
+    )
+    check("project.md Live acceptance: no idle restatement", bool(idle_restated.search(project_live)), False)
+
+    # The guard itself (PR #140 review). Its safety properties, not only its tokens: it fails
+    # closed, counts a Workflow with no phase as in flight, sees hand-submitted runs on the same
+    # templates (matched by templateRef, not only by name), and chains into each update.
+    # Function-scoped where it matters (review round 2): a property stated only in prose, or a
+    # clause moved outside srp_idle's body, does not count.
+    fn = between("srp_idle body", before, "srp_idle() (", "\n   )\n")
+    guard_props = {
+        "is a subshell function, not an exit-ing paste": "srp_idle() (" in before,
+        "runs under pipefail": "set -o pipefail" in fn,
+        "fails closed on a failed list": bool(re.search(r'\|\|\s*\{ echo "could not list workflows[^}]*return 1', fn)),
+        "fails closed on a failed filter": bool(re.search(r'\|\|\s*\{ echo "filter failed[^}]*return 1', fn)),
+        "counts a Workflow with no phase as in flight": '$2==""' in fn,
+        "lists DAG templateRefs": ".dag.tasks[*].templateRef.name}" in fn,
+        "lists steps templateRefs": ".steps[*][*].templateRef.name}" in fn,
+        "lists a workflowTemplateRef": "{.spec.workflowTemplateRef.name}" in fn,
+        "matches hand-submitted runs by templateRef": "$3 ~ /(^| )sleap-roots-/" in fn,
+        "chains into each update": "srp_idle && argo template update" in before,
+        "verifies an up-to-date clean main": "git rev-parse origin/main" in before,
+        "copies each template in one loop": "for n in" in before,
+        "rollback copy fails closed and removes an empty file": bool(
+            re.search(r'\|\|\s*\{ echo "ROLLBACK COPY FAILED[^}]*rm -f', before)
+        ),
+        "gives the digest read-back command": "env[?(@.name==" in before,
+        "says the launcher is not a deploy path": "**`runai_run_pipeline.sh` is not a deploy path.**" in before,
+        "a registry link takes steps 2 and 8": "steps 2 and 8" in before,
+        "separates an emergency restore from a planned re-pin": "emergency" in before and "revert PR" in before,
+    }
+    check(
+        "operations.md guard: properties missing",
+        [k for k, ok in guard_props.items() if not ok],
+        [],
+    )
+    launcher_note = comment_block(LAUNCHER, "NOTE: `runai-busch-lab`")
+    check("runai_run_pipeline.sh header: says it is not a deploy path", "not a deploy path" in launcher_note, True)
+    # Rollback links its owner instead of restating the layers.
+    # Step 2 defers to the trait-extractor comment: no nested list of layers, kept short.
+    step2 = between("Rollback step 2", rollback, "For the predictor and trait-extractor", "3. **For bloomctl")
+    check("operations.md 'Rollback' step 2: does not list the layers", bool(re.search(r"\n\s+- ", step2)), False)
+    check("operations.md 'Rollback' step 2: stays a pointer (< 700 chars)", len(step2) < 700, True)
+    check("operations.md 'Rollback': bloomctl goes to the last Rollback target", "**last** `Rollback target:`" in rollback, True)
+    check("operations.md 'Rollback': bloomctl reverts in the reverse of the deploy order", "reverse order" in rollback, True)
+    check(
+        "operations.md 'Rollback': the below-a9-floor rollback is retired",
+        bool(re.search(r"Never go below the a9 floor\.\*\* That rollback was retired on 2026-10-22", norm(rollback))),
+        True,
+    )
+    # Only bloomctl creates a run manifest; predict and traits forward one that is present
+    # (sleap-roots-predict run_manifest.copy_run_manifest_forward), else run unscoped.
+    predict_writes = re.compile(
+        r"\b(?:predict|traits)\b[^.]{0,40}\b(?:writes|creates|starts)\b[^.]{0,30}\b(?:legacy|run_manifest)"
+        r"|Such a run writes the legacy"
+        r"|predict or traits run \*\*outside Argo\*\* has no run identity, so it writes"
+        r"|runs outside Argo still write `run_manifest\.json`",
+        re.IGNORECASE,
+    )
+    check(
+        "no doc says predict or traits writes the legacy manifest",
+        [n for n in (SKILL, OPS, ROADMAP, PER_RUN_SPEC) if predict_writes.search(norm(text_or_empty(n)))],
+        [],
+    )
+    # bloom#1042's fix (bloom#1048) is on Bloom main; the issue is open for verification only.
+    check("operations.md 'When a run fails': cites bloom#1042's fix", "bloom/pull/1048" in failing, True)
+    # The predictor's rollback comment scopes predict-first to undoing bloom#971 phase 1.
+    predictor_rollback = comment_block(PREDICTOR, "Rollback: #118's wheat/sorghum")
+    check(
+        "predictor rollback comment: predict-first only to undo bloom#971 phase 1",
+        "only to undo bloom#971 phase 1" in predictor_rollback,
+        True,
+    )
+    check(
+        "trait-extractor rollback comment: starts with the idle check",
+        bool(re.search(r"\(0\)[^.]*in flight", trait_rollback)),
+        True,
+    )
+    check(
+        "trait-extractor rollback comment names unlink's latest side effect",
+        bool(re.search(r"unlink\(\)[^.]*latest", trait_rollback)),
+        True,
+    )
+
+    # The below-a9-floor rollback (bloomctl back to sha-28034f6, reversing row 6) was retired by
+    # the owner on 2026-10-22: since prod went live it would start a cumulative legacy manifest in
+    # prod's tree too, with no snapshot. Every standing text that offered it carries the marker;
+    # dated status-log entries are history and are not checked.
+    retire = re.compile(r"retired 2026-10-22", re.IGNORECASE)
+    retired_sites = {
+        "roadmap step 6 restore note": between(
+            "roadmap step 6 restore note",
+            roadmap,
+            "Restore them from there on any rollback to `sha-28034f6`",
+            "While `allow_legacy=True`",
+        ),
+        "roadmap Deliberate bullet": deliberate,
+        "images-downloader header restore line": between(
+            "images-downloader restore line",
+            comment_block(IMAGES_DL, "RESTORE them from there on any rollback to sha-28034f6"),
+            "RESTORE them",
+            "Bumped 2026-10-02",
+        ),
+        "predictor below-floor sentence": between(
+            "predictor below-floor sentence",
+            comment_block(PREDICTOR, "registry restore is needed to stay on it"),
+            "Going below it is valid only",
+            "Bumped 2026-10-02",
+        ),
+    }
+    retired_sites["predictor 2026-09-24 below-floor re-pin"] = between(
+        "predictor 2026-09-24 below-floor re-pin",
+        comment_block(PREDICTOR, "Corrected 2026-10-01: 6.3 ran"),
+        "e025e309 (like 9ac819fb)",
+        "Bumped 2026-09-25",
+    )
+    retired_sites["roadmap A3 'live risk' pointer"] = between(
+        "roadmap A3 live-risk pointer",
+        roadmap,
+        "The live risk is now a rollback below predict's",
+        "**`bloomctl` could not adopt a9",
+    )
+    retired_sites["roadmap row 6 revert order"] = between(
+        "roadmap row 6", roadmap, "| 6 | **bloomctl template pin bumps", "| 7 |"
+    )
+    check(
+        "below-a9-floor rollback marked retired everywhere it was offered",
+        [site for site, text in retired_sites.items() if not retire.search(text)],
+        [],
+    )
+
+    # PR #140 review round 2. The launcher is not a deploy path anywhere it is described: its own
+    # header recipe and README's callout and "Run the Pipeline" section, not only the page.
+    launcher_raw = read(LAUNCHER)
+    check(
+        "runai_run_pipeline.sh header: no batch template-update recipe",
+        re.findall(r"^#\s+argo template (?:update|create) \S+", launcher_raw, re.MULTILINE),
+        [],
+    )
+    readme_callout = "\n".join(callout)
+    check(
+        "README callout: does not endorse the launcher's template update",
+        "including\n> the one `runai_run_pipeline.sh` runs" in readme_callout
+        or "including the one `runai_run_pipeline.sh` runs" in norm(readme_callout),
+        False,
+    )
+    run_section = between("README Run the Pipeline", readme_raw, "### ▶️ Run the Pipeline", "\n## ")
+    check("README Run the Pipeline: says the launcher is not a deploy path", "not a deploy path" in run_section, True)
+    # Frontier item 3's rollback bullet: predict-first only to undo bloom#971 phase 1, and the
+    # unlink drops `latest` too.
+    item3 = between("roadmap item 3", roadmap, "3. **[bloom#971]", "4. **UI v1 residue:**")
+    check("roadmap item 3: rollback not 'both images, predict first' unscoped", "**Rollback:** both images, predict first" in item3, False)
+    check("roadmap item 3: unlink names `latest`", bool(re.search(r"unlink[^.]*`latest`", item3)), True)
+    # bloom#1042's fix (bloom#1045 + #1048) is deployed in both environments.
+    check("operations.md: bloom#1042's fix cites both PRs", "bloom/pull/1045" in failing and "bloom/pull/1048" in failing, True)
+    check(
+        "operations.md: bloom#1042's fix is stated as deployed, not to be checked",
+        "check whether your environment has" not in norm(failing) and "deployed" in norm(failing),
+        True,
     )
 
     if _failures:

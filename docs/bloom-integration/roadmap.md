@@ -98,10 +98,10 @@ Track B — Bloom trait export (B3): export jobs and routes [bloom #996](https:/
 - **Shared templates, production live (2026-10-04).** Bloom staging and prod dispatch through the
   same `sleap-roots-*` WorkflowTemplates, semaphore ConfigMap and model registry. Every
   `argo template update` (deploy *or* rollback) and every registry `production` link reaches both
-  at once. Before each one, confirm no `sleap-roots-*` Workflow is Running or Pending (by
-  `.status.phase`), and run `check_cluster_drift.sh` before and after. The idle check is
-  point-in-time now that prod users can start runs. Switching prod's trigger off is not a pause:
+  at once. Before each one, follow the guard in the [production runbook](operations.md)
+  (its "Before any change to the cluster" section). Switching prod's trigger off is not a pause:
   it fails every batch the worker claims and takes a container restart (`docs/cluster-identities.md`).
+  *[Updated 2026-10-22: the guard steps moved to the runbook (#132).]*
 - **Argo stays** — orchestration remains declarative YAML.
 - **Warm predict worker + stateless traits jobs** — avoid per-scan model reload.
 
@@ -399,8 +399,10 @@ order:
      several windows (e.g. rice's 2–5 and 6–10) wasn't exercised; the run predicted on CPU (before
      #117's fix); and the dialog warning reached prod only on 2026-10-04, after this run. Window
      parity between `pipeline_selection.yaml` and the registry: [sleap-roots#274](https://github.com/talmolab/sleap-roots/issues/274) (open).
-   - **Rollback:** both images, predict first (see the 2026-10-02 entries). **[⚠️ item 6's wheat and sorghum cards are linked to `production` (since 2026-10-05), so unlink
-     them first (which also drops their `candidate` alias; see the 2026-10-05 entry): the traits rollback
+   - **Rollback:** to undo this phase, both images, predict first (see the 2026-10-02 entries);
+     undoing only the later traits deploy moves traits alone (trait-extractor template comment). *[Scoped
+     2026-10-22.]* **[⚠️ item 6's wheat and sorghum cards are linked to `production` (since 2026-10-05), so unlink
+     them first (which also drops their `candidate` and `latest` aliases; see the 2026-10-05 entry): the traits rollback
      targets `sha-426ad4d` (the image #119 replaced on 2026-10-04) and `sha-e373b0f` have no rows for them, so their scans would run GPU inference and then
      fail `No pipeline matches`.]**
    - ✅ **Last: the Bloom dialog warning** — bloom #1028 (verified on staging 2026-10-03, archived
@@ -507,11 +509,13 @@ order:
     - **Re-baseline the A4 "0 GPU pods" oracle** on the current SHAs, after the first real run
       following the 2026-10-04 traits `sha-e45b6bf` deploy (carried from the 2026-10-02 deploy
       entry's "Still to do"; any earlier baseline is stale; no completion is recorded).
-    - **No prod runbook exists:** [#132](https://github.com/talmolab/sleap-roots-pipeline/issues/132)
-      (filed 2026-10-04) proposes `docs/bloom-integration/operations.md`, collecting the rollback
-      orders (item 3: predict first; item 6: unlink first), the drift check,
-      the #106/#127/#128 operator rules, item 5's stage-root precondition, and who watches failed
-      runs (with #18 closed, nobody is alerted on failure; the run panel shows it).
+    - **The prod runbook:** [operations.md](operations.md)
+      ([#132](https://github.com/talmolab/sleap-roots-pipeline/issues/132)). It holds the guard
+      for any change to the shared templates or registry, and links the rest: the rollback
+      orders (the trait-extractor comment says when predict goes first), the stage-root and Secret
+      preconditions, the #106/#127/#128 rules, and where a failed run's evidence lives. With #18
+      closed, nobody is alerted, and a Bloom run's Workflow and logs are deleted at most
+      `WORKFLOWS_K8S_TTL_SECONDS` after it completes ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)).
 
 **Closed since the 2026-10-01 review** (owner's calls and the bloom#900 fix, all 2026-10-01):
 
@@ -591,7 +595,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans as of 2026-09-24, 0 after 6.3 (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24; 6.3 done 2026-09-29 (see 4); `update-model-card-selectors` archived 2026-09-30 ([sleap-roots-training#71](https://github.com/talmolab/sleap-roots-training/pull/71)) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); ✅ **training 6.3 done** 2026-09-29: `production` unlinked from the 13 flat collections, none deleted; full `--verify` shows 0 orphans, 0 legacy ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68), merged 2026-09-30) — see the Status log for the rollback |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), closed 2026-10-01 after 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; ✅ **deployed** 2026-09-29 by row 6 |
-| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
+| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order *[retired 2026-10-22 (owner): reverting row 6 is no longer offered; see "Step 7 … is hardening"]*. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | ⛔ **closed as won't-fix 2026-10-01** — not needed for correctness after step 6's deletion; see below |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
@@ -682,7 +686,9 @@ The same shape applies to alias manipulation generally, and training 6.3 removes
 13 collections. **[⚠️ superseded 2026-09-29 — 6.3 ran: 8 selector-shaped `production` cards, and
 none of the 13 flat collections is linked to `production` (all 13 kept, unlinked), so a premature
 bump is moot. The live risk is now a rollback below predict's `sha-9a6f20c`
-floor; see the 2026-09-29 row-4 entry for the rollback order.]**
+floor; see the 2026-09-29 row-4 entry for the rollback order.]** *[Retired 2026-10-22 (owner): a
+rollback below that floor is no longer offered; see the "Deliberate" bullet under "Step 7 … is
+hardening".]*
 
 **`bloomctl` could not adopt a9 by accident** (corrected 2026-09-29; this used to warn that its
 unbounded `>=0.1.0a7` pin let any incidental image rebuild perform step 5 unintentionally). `bloomcli/uv.lock` held
@@ -697,6 +703,9 @@ guarantee real — not step 7** (corrected 2026-09-24, verified against the rele
 identical SHA-256), snapshotted to
 `/hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/_stale-manifests-2026-09-29/` with
 hashes verified, then deleted. Restore them from there on any rollback to `sha-28034f6`.
+*[Retired 2026-10-22 (owner): that rollback is no longer offered, so the snapshot is evidence of
+the A4-period runs only, not a restore source; see the "Deliberate" bullet below and the
+[production runbook](operations.md).]*
 While `allow_legacy=True`, a reader that cannot find its own `run_manifest.<id>.json` falls back to
 `run_manifest.json`. With the stale file present, that fallback silently scopes to whatever run
 last rewrote it (`hpdpf`'s 12 keys on 2026-09-22, `rr4zj`'s 15 by the deletion). With it **deleted**, the fallback finds nothing and the reader raises
@@ -722,15 +731,28 @@ won't-fix 2026-10-01 — each path back to a legacy file is covered, deliberate,
 - **Deliberate:** a bloomctl rollback to `sha-28034f6` reverses row 6 and restores the
   snapshotted legacy files on purpose. They are `rr4zj`'s 15-key union, so this knowingly brings
   #71's union back. Any predict re-pin below its `sha-9a6f20c` floor is valid only as part of that.
+  *[Added 2026-10-22: the templates are shared, so since bloom#988 that rollback also runs the
+  pre-a9 writer against prod's tree, `bloom_cyl_pipeline/prod`. That tree never held a legacy
+  `run_manifest.json`, so the writer would start a new cumulative one there, with no snapshot to
+  restore.]* *[Retired 2026-10-22 (owner): for that reason this rollback, and the predict re-pin
+  below `sha-9a6f20c` tied to it, are no longer offered. Recover from a broken a9-era image by
+  rolling back to an earlier a9 target or fixing forward
+  ([production runbook](operations.md#rollback)). With this path gone, a legacy file has one fewer
+  way back, which strengthens #82's won't-fix.]*
 - **Covered:** the `local-WSL2-*` workflow YAMLs never mount `a4_poc` and are being removed (#61).
   A re-registered old template image is *detected*, not prevented, the next time
   `check_cluster_drift.sh` is run. Digest pins stop a re-pushed tag.
-- **Accepted:** any bloomctl, predict or traits run **outside Argo** has no run identity, so it
-  writes `run_manifest.json` by design (§2.9; bloomctl `download_for_predict.py:598`). A
+- **Accepted:** any bloomctl, predict or traits run **outside Argo** has no run identity. bloomctl
+  then writes `run_manifest.json` by design (§2.9; bloomctl `download_for_predict.py:598`); predict
+  and traits forward one that is present, and otherwise run unscoped over the input tree
+  (sleap-roots-predict `copy_run_manifest_forward`). *[Corrected 2026-10-22: this said all three
+  write it.]* A
   hand-submitted Workflow carrying an inline pre-a9 bloomctl image is invisible to the drift
   check.
-- **Operator rule:** never point a no-run-id bloomctl, predict or traits run at the shared
-  `a4_poc` trees; use a scratch tree. Reopen #82 if a `run_manifest.json` appears there.
+- **Operator rule:** never point a no-run-id bloomctl, predict or traits run at either
+  environment's shared trees, `a4_poc` (staging) or `bloom_cyl_pipeline/prod` (prod, since
+  bloom#988); use a scratch tree. Reopen #82 if a `run_manifest.json` appears in either.
+  *[Widened 2026-10-22: this rule said `a4_poc` only.]*
 
 The flip's cost isn't worth the residual risk: three consumer releases, four pin bumps, and each
 scan recomputing when next requested.

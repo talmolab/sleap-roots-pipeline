@@ -123,7 +123,8 @@ spec:
         # scan in the (accumulated) run manifest fully recomputes once, and every per-root .slp is
         # renamed once (the model slug embeds registry_id). Re-baseline the A4 "re-run a done batch
         # -> 0 GPU pods" oracle AFTER that run, never across it.
-        # (Rollback from THIS pin; the current rollback target is in the 2026-09-25 entry below.)
+        # (Rollback from THIS pin. The current rollback target is the 2026-10-02 entry's Rollback
+        # below, sha-9a6f20c; the 2026-09-25 entry's 9ac819fb is below the floor.)
         # Rollback BEFORE training 6.3 retires the 13 flat collections: re-pin sha-e025e309...
         # @sha256:4d4064c6... (tag, digest AND SRP_PREDICT_CONTAINER_DIGEST together). AFTER 6.3 an
         # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
@@ -136,6 +137,8 @@ spec:
         # go that far, restore `production` FIRST with sleap-roots-training
         # docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute
         # (never without --rollback; it re-links each recorded source v0), not from dc216c7.
+        # [RETIRED 2026-10-22 (owner): a re-pin below the 9a6f20c floor, like reversing row 6, is
+        # no longer offered; see docs/bloom-integration/operations.md, Rollback.]
         # Bumped 2026-09-25 (predict#47, #71's predict reader): sha-9ac819fb... -> sha-9a6f20c0...
         # (predict main; code-identical to the #47 squash 9f39691 -- 9a6f20c only archives the
         # OpenSpec change). Predict now resolves its scope through contracts'
@@ -153,6 +156,7 @@ spec:
         # catalog-load exit 1 above, it fires BEFORE the forward-copy: continueOn still runs
         # traits/write-back, scoped by whatever predictions/run_manifest.json an earlier run left,
         # and the exit gate then fails the run (the old image had the same downstream exposure).
+        # [That clause is pre-a9: the legacy files were deleted 2026-09-29, see below.]
         # Corrected 2026-09-30 (#98): this exit is now REACHABLE. Since the bloomctl writer flip
         # (sha-1bc3056, 2026-09-29) the downloader writes only run_manifest.<ARGO_WORKFLOW_NAME>.json,
         # and the legacy files were deleted the same day, so a run whose images-downloader wrote no
@@ -180,7 +184,9 @@ spec:
         # registry restore is needed to stay on it. Going below it is valid only together with
         # reversing row 6: bloomctl back to sha-28034f6 (revert order: images-downloader before
         # write-back) and the three run_manifest.json restored from
-        # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note).
+        # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note). [RETIRED 2026-10-22
+        # (owner): going below the floor is no longer offered; see docs/bloom-integration/operations.md,
+        # Rollback.]
         # Bumped 2026-10-02 (bloom#971 phase 1, sleap-roots-predict#50): sha-9a6f20c0... ->
         # sha-79939eec... A cyl scan older than every model window for its species + mode now
         # selects models at that species + mode's window maximum (no upper limit) instead of
@@ -201,9 +207,12 @@ spec:
         # Deploy order: together with traits' past-window image (sha-426ad4d, #112, or later) or after it,
         # NEVER before it -- predict-first runs GPU inference on past-window scans that then fail in
         # trait-extractor (exit 3, retried twice).
-        # Rollback: once #118's wheat/sorghum cards are linked to `production`, unlink them FIRST:
+        # Rollback: #118's wheat/sorghum cards are linked to `production` (since 2026-10-05), so
+        # unlink them FIRST, by the trait-extractor template's procedure (unlink() also drops
+        # `candidate` and `latest`):
         # neither traits rollback image (sha-426ad4d, sha-e373b0f) has wheat/sorghum rows (#119; see
-        # the trait-extractor template). Then roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
+        # the trait-extractor template). Undoing the latest traits deploy moves traits alone. Then,
+        # only to undo bloom#971 phase 1, roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
         # digest AND SRP_PREDICT_CONTAINER_DIGEST together; it is the floor -- nothing below it on
         # its own, see above), then traits to sha-e373b0f...@sha256:2cbbe602.... Predict alone does
         # not stop past-window results: clamped {scan_key}.predictions.json stay on disk and a
@@ -220,11 +229,11 @@ spec:
           # NOT inert. predict reads it through contracts' pipeline_run_id_from_env() as the run
           # identity: it selects run_manifest.<name>.json ahead of the legacy file, makes a missing
           # manifest exit 1 instead of scanning everything, and triggers the "legacy manifest names
-          # another run" warning. The stage directories are fixed, shared hostPaths, and the legacy
-          # run_manifest.json accumulates scan_keys across every run in that environment (Bloom
-          # gives staging and prod their own stage roots since bloom#988)
-          # writing into them, so without this identity predict cannot tell its own scope from
-          # another run's. Removing it reverts predict to legacy-only reads (and to unscoped discovery
+          # another run" warning. The stage directories are fixed hostPaths shared by every run in
+          # an environment (Bloom gives staging and prod their own stage roots since bloom#988).
+          # Before a9 one legacy run_manifest.json accumulated scan_keys across those runs; since
+          # a9 each run writes its own run_manifest.<name>.json, and only this identity tells
+          # predict which one is its own scope. Removing it reverts predict to legacy-only reads (and to unscoped discovery
           # when run_manifest.json is absent) -- silently until the writer flip; after it, predict
           # at least warns that per-run manifests are present but unread.
           - name: ARGO_WORKFLOW_NAME

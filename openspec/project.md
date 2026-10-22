@@ -94,7 +94,8 @@ are YAML manifests and shell scripts.
 - **Storage is mount-based**: model input, image input, and outputs are passed between
   stages via `hostPath type: Directory` volumes on **both** cluster and local — the cluster
   mounts the NFS-backed `/hpi/hpi_dev/...` tree, local-WSL2 mounts `/run/desktop/mnt/host/wsl/...`.
-  A missing `hostPath` directory fails pod startup — paths must exist first. (PV/PVC appears
+  A missing `hostPath` directory leaves the pod `Pending` and the Workflow hung (not `Failed`), so
+  paths must exist first; see `docs/cluster-identities.md`. (PV/PVC appears
   only in the `local-workflow-test.yaml` smoke test, not the production pipeline.)
 - **Preemptibility is set by `priorityClassName`, not the `preemptible: "true"` annotation**
   the templates carry (that annotation is a UI/convention breadcrumb only). Run:ai treats
@@ -143,8 +144,9 @@ The checks:
   the red baseline (live pod spec, events, or log) before the fix. `runai-busch-lab` is shared by
   Bloom staging and production, so **never register a template from an unmerged branch**:
   pre-merge, probe with a throwaway Workflow that inlines the edited template; after merge,
-  register from `main` (drift check before/after) and re-run the same observation. `/tdd` has
-  the steps.
+  register from `main` by the guard in the
+  [production runbook](../docs/bloom-integration/operations.md) and re-run the same observation.
+  `/tdd` has the steps.
 - (A4, later) end-to-end on a reference scan: idempotent re-delivery + notification on
   success **and** failure.
 
@@ -204,8 +206,8 @@ run, no build, no coverage tool, no formatter config, and no CI.
   constraint).
 - GPU support under the **WSL2 Kubernetes backend is not available** — local testing is
   CPU-only; GPU paths are exercised only on the RunAI cluster.
-- `hostPath` volumes with `type: Directory` must already exist on the node or pod startup
-  fails.
+- `hostPath` volumes with `type: Directory` must already exist on the node. A missing one leaves
+  the pod `Pending` and the Workflow hung, not `Failed`.
 
 ## External Dependencies
 

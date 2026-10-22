@@ -169,6 +169,11 @@ runai workspace submit srp-predict-test \
 `sleep infinity` keeps the pod alive after the run so you can `runai workspace exec` in to
 inspect outputs. **Delete it when done** (`runai workspace delete srp-predict-test -p busch-lab`).
 
+This is a no-run-id run (no `ARGO_WORKFLOW_NAME`). predict then forwards any legacy
+`run_manifest.json` it finds, and otherwise predicts every scan in the input tree, unscoped. Point
+it at a scratch tree, never at either environment's shared stage tree
+(see the roadmap's [no-run-id operator rule](../../../docs/bloom-integration/roadmap.md)).
+
 ## 7. Preemptibility & GPU over-quota
 
 **Preemptibility is set by `priorityClassName`, NOT by the `preemptible: "true"` annotation**
