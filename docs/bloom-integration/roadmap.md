@@ -699,6 +699,9 @@ guarantee real — not step 7** (corrected 2026-09-24, verified against the rele
 identical SHA-256), snapshotted to
 `/hpi/hpi_dev/users/eberrigan/pipeline_orchestration_tests/a4_poc/_stale-manifests-2026-09-29/` with
 hashes verified, then deleted. Restore them from there on any rollback to `sha-28034f6`.
+*[Retired 2026-10-22 (owner): that rollback is no longer offered, so the snapshot is evidence of
+the A4-period runs only, not a restore source; see the "Deliberate" bullet below and the
+[production runbook](operations.md).]*
 While `allow_legacy=True`, a reader that cannot find its own `run_manifest.<id>.json` falls back to
 `run_manifest.json`. With the stale file present, that fallback silently scopes to whatever run
 last rewrote it (`hpdpf`'s 12 keys on 2026-09-22, `rr4zj`'s 15 by the deletion). With it **deleted**, the fallback finds nothing and the reader raises
@@ -727,7 +730,11 @@ won't-fix 2026-10-01 — each path back to a legacy file is covered, deliberate,
   *[Added 2026-10-22: the templates are shared, so since bloom#988 that rollback also runs the
   pre-a9 writer against prod's tree, `bloom_cyl_pipeline/prod`. That tree never held a legacy
   `run_manifest.json`, so the writer would start a new cumulative one there, with no snapshot to
-  restore.]*
+  restore.]* *[Retired 2026-10-22 (owner): for that reason this rollback, and the predict re-pin
+  below `sha-9a6f20c` tied to it, are no longer offered. Recover from a broken a9-era image by
+  rolling back to an earlier a9 target or fixing forward
+  ([production runbook](operations.md#rollback)). With this path gone, a legacy file has one fewer
+  way back, which strengthens #82's won't-fix.]*
 - **Covered:** the `local-WSL2-*` workflow YAMLs never mount `a4_poc` and are being removed (#61).
   A re-registered old template image is *detected*, not prevented, the next time
   `check_cluster_drift.sh` is run. Digest pins stop a re-pushed tag.

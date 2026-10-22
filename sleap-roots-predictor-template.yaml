@@ -181,7 +181,9 @@ spec:
         # registry restore is needed to stay on it. Going below it is valid only together with
         # reversing row 6: bloomctl back to sha-28034f6 (revert order: images-downloader before
         # write-back) and the three run_manifest.json restored from
-        # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note).
+        # a4_poc/_stale-manifests-2026-09-29/ (roadmap step 6's MANDATORY note). [RETIRED 2026-10-22
+        # (owner): going below the floor is no longer offered; see docs/bloom-integration/operations.md,
+        # Rollback.]
         # Bumped 2026-10-02 (bloom#971 phase 1, sleap-roots-predict#50): sha-9a6f20c0... ->
         # sha-79939eec... A cyl scan older than every model window for its species + mode now
         # selects models at that species + mode's window maximum (no upper limit) instead of

@@ -70,7 +70,8 @@ the page.
 correction, roadmap 2026-10-05 entry). That fact goes into the comment, since the comment owns the
 procedure.
 
-**Below the a9 floor.** That is not offered as a rollback. It reverses row 6, and its pre-a9 writer
+**Below the a9 floor.** Retired by the owner on 2026-10-22, after the PR #140 review found that
+the sources still offered it. That is not offered as a rollback. It reverses row 6, and its pre-a9 writer
 would start a new cumulative legacy manifest in `bloom_cyl_pipeline/prod`, which never had one, so
 there is nothing to restore.
 

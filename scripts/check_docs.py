@@ -36,6 +36,7 @@ DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace
 CI_DEBUG = ".claude/commands/ci-debug.md"
 PREDICTOR = "sleap-roots-predictor-template.yaml"
 TRAIT_EXTRACTOR = "sleap-roots-trait-extractor-template.yaml"
+IMAGES_DL = "sleap-roots-images-downloader-template.yaml"
 TDD = ".claude/commands/tdd.md"
 OPS = "docs/bloom-integration/operations.md"
 OPS_SECTIONS = [
@@ -785,6 +786,38 @@ def main() -> int:
         "trait-extractor rollback comment names unlink's latest side effect",
         bool(re.search(r"unlink\(\)[^.]*latest", trait_rollback)),
         True,
+    )
+
+    # The below-a9-floor rollback (bloomctl back to sha-28034f6, reversing row 6) was retired by
+    # the owner on 2026-10-22: since prod went live it would start a cumulative legacy manifest in
+    # prod's tree too, with no snapshot. Every standing text that offered it carries the marker;
+    # dated status-log entries are history and are not checked.
+    retire = re.compile(r"retired 2026-10-22", re.IGNORECASE)
+    retired_sites = {
+        "roadmap step 6 restore note": between(
+            "roadmap step 6 restore note",
+            roadmap,
+            "Restore them from there on any rollback to `sha-28034f6`",
+            "While `allow_legacy=True`",
+        ),
+        "roadmap Deliberate bullet": deliberate,
+        "images-downloader header restore line": between(
+            "images-downloader restore line",
+            comment_block(IMAGES_DL, "RESTORE them from there on any rollback to sha-28034f6"),
+            "RESTORE them",
+            "Bumped 2026-10-02",
+        ),
+        "predictor below-floor sentence": between(
+            "predictor below-floor sentence",
+            comment_block(PREDICTOR, "registry restore is needed to stay on it"),
+            "Going below it is valid only",
+            "Bumped 2026-10-02",
+        ),
+    }
+    check(
+        "below-a9-floor rollback marked retired everywhere it was offered",
+        [site for site, text in retired_sites.items() if not retire.search(text)],
+        [],
     )
 
     if _failures:

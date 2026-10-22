@@ -298,5 +298,5 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
   - **Spec, design, roadmap item 10:** wording aligned.
 - [x] 8.3 Mutation-prove the new checks. Each mutation produced exactly one FAIL on its target,
   after two vacuous checks found this way were tightened.
-- [ ] 8.4 Retire the below-a9-floor rollback (owner decision (b), 2026-10-22), red first (next
+- [x] 8.4 Retire the below-a9-floor rollback (owner decision (b), 2026-10-22), red first (next
   commit).

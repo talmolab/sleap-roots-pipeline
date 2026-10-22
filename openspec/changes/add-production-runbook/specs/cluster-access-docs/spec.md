@@ -110,6 +110,9 @@ environment a rule that applies to both.
 - **Run manifests.** Since contracts a9, run manifests are per run. The legacy `run_manifest.json`
   no longer accumulates scan keys.
 - **Environments.** They differ by label, stage root and Secret, not by label alone.
+- **The a9 floor.** A bloomctl rollback below the a9 floor (reversing row 6), and the predict
+  re-pin below its floor tied to it, are retired (owner, 2026-10-22). Text that offered them
+  carries a "retired 2026-10-22" marker.
 
 #### Scenario: The no-run-id rule covers both shared trees
 
@@ -137,6 +140,12 @@ environment a rule that applies to both.
 - **AND** neither README nor the predictor template describes the legacy `run_manifest.json` as
   accumulating across every run
 - **AND** `runai_run_pipeline.sh` does not say the environments are distinguished only by a label
+
+#### Scenario: The retired below-floor rollback is marked wherever it was offered
+
+- **WHEN** `scripts/check_docs.py` reads the roadmap's step-6 restore note and "Deliberate" bullet,
+  the images-downloader header's restore line and the predictor's below-floor sentence
+- **THEN** each carries the "retired 2026-10-22" marker
 
 #### Scenario: The unlink procedure names its side effect
 
