@@ -202,7 +202,9 @@ spec:
         # Deploy order: together with traits' past-window image (sha-426ad4d, #112, or later) or after it,
         # NEVER before it -- predict-first runs GPU inference on past-window scans that then fail in
         # trait-extractor (exit 3, retried twice).
-        # Rollback: once #118's wheat/sorghum cards are linked to `production`, unlink them FIRST:
+        # Rollback: #118's wheat/sorghum cards are linked to `production` (since 2026-10-05), so
+        # unlink them FIRST, by the trait-extractor template's procedure (unlink() also drops
+        # `candidate`):
         # neither traits rollback image (sha-426ad4d, sha-e373b0f) has wheat/sorghum rows (#119; see
         # the trait-extractor template). Then roll back BOTH, predict first. Re-pin sha-9a6f20c...@sha256:afc8da82... (tag,
         # digest AND SRP_PREDICT_CONTAINER_DIGEST together; it is the floor -- nothing below it on

@@ -66,10 +66,13 @@ spec:
         # selection", and a higher window moves its clamp.) Still contracts a9, so no Bloom gate. The new traits_code_sha still forces a full recompute. Deploy this BEFORE
         # sleap-roots-training#72 links the wheat/sorghum cards to `production`: cards live first
         # would run GPU inference on those scans that then fail here with `No pipeline matches`.
-        # Rollback (updated 2026-10-04, #119): once #118's wheat/sorghum cards are linked to
-        # `production`, UNLINK THEM FIRST (sleap-roots-training#72's procedure: fetch the link,
-        # assert `is_link`, `unlink()`, never `save()`) — no older image has the wheat/sorghum rows.
-        # Then re-pin this to sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8
+        # Rollback (updated 2026-10-04, #119): #118's wheat/sorghum cards are linked to
+        # `production` (since 2026-10-05), so UNLINK THEM FIRST — no older image has the
+        # wheat/sorghum rows. Order (roadmap, 2026-10-05 entry; sleap-roots-training#72):
+        # (1) fetch each link, assert `is_link`, call `unlink()`, never `save()`; `unlink()` also
+        # drops `candidate` and `latest`, so the collection ends up empty; (2) re-run the candidate
+        # publish to restore `candidate`; (3) with a fresh `wandb.Api()`, confirm `:production` is
+        # gone and `list_cards()` returns 8. Then re-pin this to sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8
         # (tag, digest and SRT_TRAITS_CONTAINER_DIGEST together). Rolling back bloom#971 phase 1
         # further (#113): roll predict back to sha-9a6f20c FIRST, then re-pin this to
         # sha-e373b0f@sha256:2cbbe602b7d397b89c4eab326d00f410f367f8c1b7fba46a927a369fcf6fc9a4

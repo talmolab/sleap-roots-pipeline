@@ -35,6 +35,7 @@ SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
 CI_DEBUG = ".claude/commands/ci-debug.md"
 PREDICTOR = "sleap-roots-predictor-template.yaml"
+TRAIT_EXTRACTOR = "sleap-roots-trait-extractor-template.yaml"
 LAUNCHER = "runai_run_pipeline.sh"
 PER_RUN_SPEC ="docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
@@ -76,6 +77,22 @@ def between(label: str, text: str, start: str, end: str) -> str:
     j = text.find(end, i + len(start)) if i != -1 else -1
     check(f"{label}: anchors found", i != -1 and j != -1, True)
     return text[i:j] if i != -1 and j != -1 else ""
+
+
+def comment_block(name: str, anchor: str) -> str:
+    """The `#` comment lines from the one containing `anchor` up to the first non-comment line,
+    with the `#` stripped and whitespace collapsed, so a phrase survives comment wrapping."""
+    lines = read(name).splitlines()
+    start = next((i for i, ln in enumerate(lines) if anchor in ln), None)
+    check(f"{name}: comment anchor {anchor!r} found", start is not None, True)
+    if start is None:
+        return ""
+    block = []
+    for ln in lines[start:]:
+        if not ln.lstrip().startswith("#"):
+            break
+        block.append(ln.lstrip()[1:])
+    return norm(" ".join(block))
 
 
 def registered_templates() -> list[str]:
@@ -513,6 +530,15 @@ def main() -> int:
         "runai_run_pipeline.sh: environments not 'distinguished only by an environment label'",
         bool(re.search(r"distinguished only[\s#]+by an environment label", read(LAUNCHER))),
         False,
+    )
+
+    # The wheat/sorghum rollback starts with unlink(), which also drops `candidate` and `latest`
+    # (training#72; roadmap, 2026-10-05 entry). The template comment owns that procedure.
+    trait_rollback = comment_block(TRAIT_EXTRACTOR, "Rollback (updated 2026-10-04, #119)")
+    check(
+        "trait-extractor rollback comment names unlink's candidate side effect",
+        bool(re.search(r"unlink\(\)[^.]*candidate", trait_rollback)),
+        True,
     )
 
     if _failures:

@@ -144,12 +144,12 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 4. The unlink procedure (cluster-access-docs Req 2: The unlink procedure names its side effect)
 
-- [ ] 4.1 Add the assertion: `comment_block(TRAIT_TEMPLATE, "Rollback (updated 2026-10-04, #119)")`
+- [x] 4.1 Add the assertion: `comment_block(TRAIT_TEMPLATE, "Rollback (updated 2026-10-04, #119)")`
   matches `unlink\(\)[^.]*candidate`.
 
   Validate (red): `FAIL  trait-extractor rollback comment names unlink's candidate side effect:
   got False, expected True`.
-- [ ] 4.2 Edit comments only. Keep the substring `Rollback (updated 2026-10-04, #119)` unchanged.
+- [x] 4.2 Edit comments only. Keep the substring `Rollback (updated 2026-10-04, #119)` unchanged.
   - **Trait-extractor comment:** the cards are linked (2026-10-05). The order follows the roadmap's
     2026-10-05 entry:
     1. `unlink()`, which also drops `candidate` and `latest`;
