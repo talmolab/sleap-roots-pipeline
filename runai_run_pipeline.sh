@@ -21,8 +21,10 @@ set -euo pipefail
 # NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch. Since bloom#988
 # each environment's Workflows differ by an `environment` label, by stage root and by Secret, but
 # both use the same WorkflowTemplates. An `argo template update` here therefore affects both
-# environments' future dispatches, not just your own next run. Run this only from `main`, after
-# the guard in docs/bloom-integration/operations.md ("Before any change to the cluster").
+# environments' future dispatches, not just your own next run. This script is not a deploy path:
+# it updates all five templates in a fixed order with no idle re-check between them, then submits
+# a hand run. Deploy one template at a time by the guard in docs/bloom-integration/operations.md
+# ("Before any change to the cluster"); use this script only when the drift check is IN SYNC.
 
 # Color output
 YELLOW='\033[1;33m'

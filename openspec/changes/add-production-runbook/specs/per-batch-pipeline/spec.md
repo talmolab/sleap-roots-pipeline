@@ -14,7 +14,8 @@ traits resolves `run_manifest.<ARGO_WORKFLOW_NAME>.json` ahead of the legacy fil
 The variable is required because the stage directories are fixed `hostPath`s shared by every run
 in an environment. Before contracts a9, the single legacy `run_manifest.json` accumulated
 `scan_keys` across those runs, so the manifest a stage was scoped by could belong to a different
-run. Since a9, each run writes and reads its own `run_manifest.<ARGO_WORKFLOW_NAME>.json`. That
+run. Since a9, each run writes and reads its own `run_manifest.<ARGO_WORKFLOW_NAME>.json`;
+readers still fall back to a legacy `run_manifest.json` while `allow_legacy=True`. That
 scoping exists only because each stage knows its own workflow identity, so carrying the variable
 remains the prerequisite for any run-scope validation. A stage that runs with no run id falls back
 to the legacy name, which is why such runs must not be pointed at a shared tree.

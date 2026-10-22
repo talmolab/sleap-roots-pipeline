@@ -512,8 +512,8 @@ order:
       for any change to the shared templates or registry, and links the rest: the rollback
       orders (the trait-extractor comment says when predict goes first), the stage-root and Secret
       preconditions, the #106/#127/#128 rules, and where a failed run's evidence lives. With #18
-      closed, nobody is alerted, and a Bloom run's Workflow and logs are gone within
-      `WORKFLOWS_K8S_TTL_SECONDS` ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)).
+      closed, nobody is alerted, and a Bloom run's Workflow and logs are deleted at most
+      `WORKFLOWS_K8S_TTL_SECONDS` after it completes ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)).
 
 **Closed since the 2026-10-01 review** (owner's calls and the bloom#900 fix, all 2026-10-01):
 
@@ -731,8 +731,11 @@ won't-fix 2026-10-01 — each path back to a legacy file is covered, deliberate,
 - **Covered:** the `local-WSL2-*` workflow YAMLs never mount `a4_poc` and are being removed (#61).
   A re-registered old template image is *detected*, not prevented, the next time
   `check_cluster_drift.sh` is run. Digest pins stop a re-pushed tag.
-- **Accepted:** any bloomctl, predict or traits run **outside Argo** has no run identity, so it
-  writes `run_manifest.json` by design (§2.9; bloomctl `download_for_predict.py:598`). A
+- **Accepted:** any bloomctl, predict or traits run **outside Argo** has no run identity. bloomctl
+  then writes `run_manifest.json` by design (§2.9; bloomctl `download_for_predict.py:598`); predict
+  and traits forward one that is present, and otherwise run unscoped over the input tree
+  (sleap-roots-predict `copy_run_manifest_forward`). *[Corrected 2026-10-22: this said all three
+  write it.]* A
   hand-submitted Workflow carrying an inline pre-a9 bloomctl image is invisible to the drift
   check.
 - **Operator rule:** never point a no-run-id bloomctl, predict or traits run at either

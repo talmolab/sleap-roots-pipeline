@@ -57,7 +57,11 @@ capability's rule against parity claims.
   `SRP_PREDICT_CONTAINER_DIGEST` and `SRT_TRAITS_CONTAINER_DIGEST`
 - **AND** the roadmap's hard constraint, `tdd.md`'s "Live acceptance tests" section and
   `openspec/project.md`'s "Live acceptance" bullet each link to the page
-- **AND** the roadmap's hard constraint no longer contains "Running or Pending"
+- **AND** the guard is a function that fails closed when the Workflow list or its filter fails,
+  counts a Workflow with no phase as in flight, and matches hand-submitted runs by `templateRef`
+- **AND** it says `runai_run_pipeline.sh` is not a deploy path
+- **AND** the roadmap's hard constraint, `tdd.md` and `openspec/project.md` don't restate the idle
+  condition in any phrasing
 
 #### Scenario: Switching production off is not presented as a pause
 
@@ -101,6 +105,8 @@ environment a rule that applies to both.
 - **No-run-id runs.** A run with no run id must not be pointed at either environment's shared stage
   tree: `a4_poc` for staging, `bloom_cyl_pipeline/prod` for prod.
 - **Unlinking.** Unlinking a registry card also removes its `candidate` and `latest` aliases.
+- **Manifest writers.** Only bloomctl creates a run manifest. predict and traits forward one that is
+  present, and otherwise run unscoped.
 - **Run manifests.** Since contracts a9, run manifests are per run. The legacy `run_manifest.json`
   no longer accumulates scan keys.
 - **Environments.** They differ by label, stage root and Secret, not by label alone.

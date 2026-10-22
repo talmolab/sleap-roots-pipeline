@@ -274,5 +274,29 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 - [ ] 7.1 A post-merge PR adds the roadmap status-log entry, archives the change, and applies both
   deltas to the specs (#129 pattern).
 - [ ] 7.2 After #136 merges, refresh the dashboard's #132 card.
-- [ ] 7.3 `tdd.md` and `ci-debug.md` are rendered from the vault's canonical command templates.
+- [ ] 7.3 `tdd.md`, `ci-debug.md` and `test.md` are rendered from the vault's canonical command templates.
   Port the repo-specific edits there, or confirm the re-render keeps them.
+
+## 8. PR #140 review fixes (in this PR, before merge)
+
+- [x] 8.1 Assert the guard's safety properties and the review's claim fixes. Red before the edits:
+  the guard property list (9 missing), the launcher header, the Rollback layer restatement,
+  "predict writes the legacy manifest" (SKILL, page, roadmap), bloom#1042's fix, and the
+  predictor and trait-extractor rollback comments. Also widen the idle-restatement check from the
+  literal "Running or Pending", and normalise the cumulative-manifest scan.
+- [x] 8.2 Make the fixes:
+  - **Guard:** `srp_idle` is a function under `pipefail`. It fails closed on the list and on the
+    filter, matches by `templateRef`, counts a Workflow with no phase as in flight, and chains as
+    `srp_idle && argo template update`.
+  - **Steps 3 and 6:** a safe rollback copy and a read-back command.
+  - **Launcher:** "not a deploy path", on the page and in its header.
+  - **Rollback:** links the trait-extractor comment instead of restating the layers; bloomctl
+    goes to the last target.
+  - **Claims:** predict and traits forward manifests and don't write them; bloom#1042's fix is
+    #1048; the predictor comment scopes predict-first to bloom#971 phase 1; the trait comment adds
+    step (0).
+  - **Spec, design, roadmap item 10:** wording aligned.
+- [x] 8.3 Mutation-prove the new checks. Each mutation produced exactly one FAIL on its target,
+  after two vacuous checks found this way were tightened.
+- [ ] 8.4 Retire the below-a9-floor rollback (owner decision (b), 2026-10-22), red first (next
+  commit).

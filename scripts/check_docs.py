@@ -47,7 +47,7 @@ OPS_SECTIONS = [
     "Standing operator rules",
 ]
 LAUNCHER = "runai_run_pipeline.sh"
-PER_RUN_SPEC ="docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
+PER_RUN_SPEC = "docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
 _failures: list[str] = []
@@ -542,10 +542,12 @@ def main() -> int:
         True,
     )
     # Since contracts a9 each run has its own manifest; the legacy file no longer accumulates.
-    cumulative = re.compile(r"cumulative across every run|accumulates scan_keys[\s#]+across every run")
+    cumulative = re.compile(
+        r"cumulative[\s#]+across[\s#]+every[\s#]+run|accumulates[\s#]+scan_keys[\s#]+across[\s#]+every[\s#]+run"
+    )
     check(
         "no doc calls the legacy manifest cumulative",
-        [n for n in (README, PREDICTOR) if cumulative.search(read(n))],
+        [n for n in (README, PREDICTOR) if cumulative.search(norm(read(n)))],
         [],
     )
     # Environments differ by label, stage root and Secret since bloom#988, not by label alone.
@@ -687,9 +689,11 @@ def main() -> int:
         "](docs/bloom-integration/operations.md" in troubleshooting,
         True,
     )
+    # The idle condition, in any phrasing, belongs on the runbook only.
+    idle_restated = re.compile(r"Running\W+(?:or\W+)?Pending|\.status\.phase|no phase", re.IGNORECASE)
     hard = between("roadmap hard constraint", roadmap, "**Shared templates, production live", "- **Argo stays**")
     check("roadmap hard constraint: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", hard)), True)
-    check("roadmap hard constraint: no idle restatement", "Running or Pending" in hard, False)
+    check("roadmap hard constraint: no idle restatement", bool(idle_restated.search(hard)), False)
     item10 = between(
         "roadmap item 10",
         roadmap,
@@ -709,7 +713,7 @@ def main() -> int:
         "](../../docs/bloom-integration/operations.md" in tdd_live,
         True,
     )
-    check("tdd Live acceptance tests: no idle restatement", "Running or Pending" in tdd_live, False)
+    check("tdd Live acceptance tests: no idle restatement", bool(idle_restated.search(tdd_live)), False)
     project_live = between(
         "project.md Live acceptance", norm(read("openspec/project.md")), "**Live acceptance**", "(A4, later)"
     )
@@ -718,7 +722,70 @@ def main() -> int:
         "](../docs/bloom-integration/operations.md" in project_live,
         True,
     )
-    check("project.md Live acceptance: no idle restatement", "Running or Pending" in project_live, False)
+    check("project.md Live acceptance: no idle restatement", bool(idle_restated.search(project_live)), False)
+
+    # The guard itself (PR #140 review). Its safety properties, not only its tokens: it fails
+    # closed, counts a Workflow with no phase as in flight, sees hand-submitted runs on the same
+    # templates (matched by templateRef, not only by name), and chains into each update.
+    guard_props = {
+        "is a function, not an exit-ing paste": "srp_idle()" in before,
+        "runs under pipefail": "set -o pipefail" in before,
+        "fails closed on a failed list": bool(
+            re.search(r'\|\|\s*\{ echo "could not list workflows[^}]*return 1', before)
+        ),
+        "fails closed on a failed filter": bool(re.search(r'\|\|\s*\{ echo "filter failed[^}]*return 1', before)),
+        "counts a Workflow with no phase as in flight": '$2==""' in before,
+        "lists each Workflow's templateRefs": ".dag.tasks[*].templateRef.name}" in before,
+        "matches hand-submitted runs by templateRef": "$3 ~ /(^| )sleap-roots-/" in before,
+        "chains into each update": "srp_idle && argo template update" in before,
+        "checks the rollback copy is non-empty": "[ -s " in before,
+        "gives the digest read-back command": "env[?(@.name==" in before,
+        "says the launcher is not a deploy path": "not a deploy path" in before,
+        "a registry link takes steps 2 and 8": "steps 2 and 8" in before,
+    }
+    check(
+        "operations.md guard: properties missing",
+        [k for k, ok in guard_props.items() if not ok],
+        [],
+    )
+    launcher_note = comment_block(LAUNCHER, "NOTE: `runai-busch-lab`")
+    check("runai_run_pipeline.sh header: says it is not a deploy path", "not a deploy path" in launcher_note, True)
+    # Rollback links its owner instead of restating the layers.
+    check(
+        "operations.md 'Rollback': does not restate the rollback layers",
+        bool(re.search(r"traits alone|predict first", rollback)),
+        False,
+    )
+    # Only bloomctl creates a run manifest; predict and traits forward one that is present
+    # (sleap-roots-predict run_manifest.copy_run_manifest_forward), else run unscoped.
+    predict_writes = re.compile(
+        r"predict writes the legacy|Such a run writes the legacy"
+        r"|predict or traits run \*\*outside Argo\*\* has no run identity, so it writes"
+    )
+    check(
+        "no doc says predict or traits writes the legacy manifest",
+        [n for n in (SKILL, OPS, ROADMAP) if predict_writes.search(norm(text_or_empty(n)))],
+        [],
+    )
+    # bloom#1042's fix (bloom#1048) is on Bloom main; the issue is open for verification only.
+    check("operations.md 'When a run fails': cites bloom#1042's fix", "bloom/pull/1048" in failing, True)
+    # The predictor's rollback comment scopes predict-first to undoing bloom#971 phase 1.
+    predictor_rollback = comment_block(PREDICTOR, "Rollback: #118's wheat/sorghum")
+    check(
+        "predictor rollback comment: predict-first only to undo bloom#971 phase 1",
+        "only to undo bloom#971 phase 1" in predictor_rollback,
+        True,
+    )
+    check(
+        "trait-extractor rollback comment: starts with the idle check",
+        bool(re.search(r"\(0\)[^.]*in flight", trait_rollback)),
+        True,
+    )
+    check(
+        "trait-extractor rollback comment names unlink's latest side effect",
+        bool(re.search(r"unlink\(\)[^.]*latest", trait_rollback)),
+        True,
+    )
 
     if _failures:
         print(f"\n=== {len(_failures)} FAILED, {_passes} passed ===")

@@ -69,7 +69,8 @@ spec:
         # Rollback (updated 2026-10-04, #119): #118's wheat/sorghum cards are linked to
         # `production` (since 2026-10-05), so UNLINK THEM FIRST — no older image has the
         # wheat/sorghum rows. Order (roadmap, 2026-10-05 entry; sleap-roots-training#72):
-        # (1) fetch each link, assert `is_link`, call `unlink()`, never `save()`; `unlink()` also
+        # (0) confirm no sleap-roots Workflow is in flight (docs/bloom-integration/operations.md,
+        # the guard's steps 2 and 8, before and after); (1) fetch each link, assert `is_link`, call `unlink()`, never `save()`; `unlink()` also
         # drops `candidate` and `latest`, so the collection ends up empty; (2) re-run the candidate
         # publish to restore `candidate`; (3) with a fresh `wandb.Api()`, confirm `:production` is
         # gone and `list_cards()` returns 8. Then re-pin this to sha-426ad4d@sha256:7d5bdaf94dcaf1b695b0bfb2390bfb4dd687c0c18cb4720b25ce5bd43ed4b7e8

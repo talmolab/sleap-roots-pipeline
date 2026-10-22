@@ -80,8 +80,7 @@ Verified read-only:
 
 - **Bloom `main`.** `k8s_client.build_workflow_body`, which is called only from the cyl dispatch
   worker, sets `ttlStrategy.secondsAfterCompletion` from `WORKFLOWS_K8S_TTL_SECONDS`. The default
-  is 3600 in both `.env.*.defaults`. Bloom keeps no cyl pod logs; `get_pod_log`'s only caller is
-  scRNA. No line numbers are cited, because they drift (#137's `:347` is already `:352`).
+  is 3600 in both `.env.*.defaults`. Bloom keeps no cyl pod logs; `get_pod_log` has no non-test caller. No line numbers are cited, because they drift (#137's `:347` is already `:352`).
 - **Live, 2026-10-16.** Four `environment: prod` Workflows carry `secondsAfterCompletion: 3600`.
   Hand-submitted Workflows carry none.
 - **Unreadable.** The controller's podGC default can't be read, so pods may go sooner.

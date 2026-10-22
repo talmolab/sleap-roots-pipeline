@@ -6,64 +6,104 @@ section. For everything else it gives the rule in a sentence or two and links th
 the detail. Follow the link rather than a copy: the sources are kept current, and this page
 deliberately holds no image tags, digests or commit SHAs.
 
-Commands run in WSL with the `argo-user` kubeconfig unless a step says otherwise. The invocation
-pattern is in [the runai skill, §1](../../.claude/skills/runai/SKILL.md).
+**Where to run the commands.** Use an interactive WSL shell under the `argo-user` kubeconfig:
+
+```bash
+export PATH=$HOME/bin:$PATH KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
+cd /mnt/c/repos/sleap-roots-pipeline   # an up-to-date main checkout
+```
+
+Don't paste the snippets through `wsl -e bash -c "…"` from PowerShell. PowerShell expands the `$`s
+first, and the idle check would then silently pass. Where the CLIs live is in
+[the runai skill, §1a](../../.claude/skills/runai/SKILL.md).
 
 ## Before any change to the cluster
 
 Bloom staging and prod run on the same `sleap-roots-*` WorkflowTemplates, the same semaphore
 ConfigMap and the same model registry (see
 [Cluster identities → Namespace facts that bite](../cluster-identities.md#namespace-facts-that-bite)).
-So the following each reach **both** environments at once:
+So two kinds of change reach **both** environments at once:
 
-- every `argo template update`, whether a deploy or a rollback;
-- `runai_run_pipeline.sh`, which updates all five templates from whatever branch is checked out;
-- every registry `production` link or unlink.
+- **Template updates.** Every `argo template update`, whether a deploy or a rollback.
+- **Registry links.** Every registry `production` link or unlink.
 
 Retuning the semaphore limits is separate; its procedure is in the
 [ConfigMap header](../../sleap-roots-pipeline-semaphores.yaml).
 
+**`runai_run_pipeline.sh` is not a deploy path.** It updates all five templates at once, in a
+fixed order that ignores the order the template comments require. It can't re-check idle between
+updates. It then submits its own hand-run Workflow on the staging tree. Use it for a hand run only
+when the drift check already reports `IN SYNC`.
+
 The guard:
 
-1. **Work from `main`.** Never register a template from an unmerged branch. Run
-   `runai_run_pipeline.sh` only from an up-to-date `main`, and only after this guard.
-2. **Confirm nothing is in flight.** Prod users can dispatch at any time, so the check has to fail
-   closed and has to read each Workflow's `.status.phase`. Count a Workflow with no phase as in
-   flight. Don't line-count `argo list -o name`: it prints `No workflows found` when there are
+1. **Work from `main`.** Never register a template from an unmerged branch. The drift check
+   compares the cluster against your checkout, so the checkout must be an up-to-date `main`.
+2. **Confirm nothing is in flight.** Prod users can dispatch at any time.
+   - Read each Workflow's `.status.phase`.
+   - Count a Workflow with no phase as in flight.
+   - Match on the templates it references, not only its name, so a hand-submitted run on the same
+     templates counts.
+   - Fail closed if the list itself fails.
+
+   Don't line-count `argo list --running -o name`: it prints `No workflows found` when there are
    none, which once aborted a deploy on a false positive (roadmap status log, 2026-10-02
-   (deploy)).
+   (deploy)). Define this once per shell:
 
    ```bash
-   rows=$(kubectl get workflows -n runai-busch-lab \
-     -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\n"}{end}') \
-     || { echo "could not list workflows: NOT checked" >&2; exit 1; }
-   busy=$(printf '%s\n' "$rows" | awk -F'\t' \
-     '$1 ~ /^sleap-roots-/ && ($2=="" || $2=="Running" || $2=="Pending")')
-   [ -z "$busy" ] || { printf 'in flight:\n%s\n' "$busy" >&2; exit 1; }
+   srp_idle() (
+     set -o pipefail
+     rows=$(kubectl get workflows -n runai-busch-lab -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.spec.templates[*].dag.tasks[*].templateRef.name}{"\n"}{end}') \
+       || { echo "could not list workflows: NOT checked" >&2; return 1; }
+     busy=$(printf '%s\n' "$rows" | awk -F'\t' '($1 ~ /^sleap-roots-/ || $3 ~ /(^| )sleap-roots-/) && ($2=="" || $2=="Running" || $2=="Pending")') \
+       || { echo "filter failed: NOT checked" >&2; return 1; }
+     [ -z "$busy" ] || { printf 'in flight:\n%s\n' "$busy" >&2; return 1; }
+     echo "idle: no sleap-roots Workflow Running, Pending or without a phase"
+   )
+   srp_idle
    ```
 
-3. **Save a rollback copy** of each template you will change:
-   `kubectl get workflowtemplate <name> -n runai-busch-lab -o yaml > <name>.pre.yaml`.
-4. **Run the drift check:** `wsl -e bash scripts/check_cluster_drift.sh`. Expect `DRIFT` only on the
+   This can't see a batch Bloom has claimed but not yet submitted. Step 8 covers that window.
+3. **Save a rollback copy** of each template you will change, outside the repo:
+
+   ```bash
+   d=~/srp-rollback/$(date +%Y%m%dT%H%M%S); mkdir -p "$d"
+   kubectl get workflowtemplate <name> -n runai-busch-lab -o yaml > "$d/<name>.yaml" \
+     && [ -s "$d/<name>.yaml" ] || echo "ROLLBACK COPY FAILED" >&2
+   ```
+
+4. **Run the drift check:** `bash scripts/check_cluster_drift.sh`. Expect `DRIFT` only on the
    templates you are about to change, and only in the fields you mean to change. A `NOT
    REGISTERED` can also mean a failed read
    ([#109](https://github.com/talmolab/sleap-roots-pipeline/issues/109)).
-5. **Apply, in the order the template comments give.** Some pairs must not be applied in the
-   wrong order (for example, write-back before images-downloader on a bloomctl bump that changes
-   the manifest writer). Re-run step 2 in the same command, immediately before
-   `argo template update`.
-6. **Read back what is live.** For each changed template, compare the live `image:` with the repo.
-   On the predictor or trait-extractor, also compare the digest env var
-   (`SRP_PREDICT_CONTAINER_DIGEST` or `SRT_TRAITS_CONTAINER_DIGEST`); it must move with the tag
-   and digest.
+5. **Apply one template at a time, in the order the template comments give,** re-checking idle in
+   the same command:
+
+   ```bash
+   srp_idle && argo template update <file> -n runai-busch-lab
+   ```
+
+   Some pairs must not be applied in the wrong order. For example, write-back goes before
+   images-downloader on a bloomctl bump that changes the manifest writer.
+6. **Read back what is live.** For each changed template, compare the live image with the repo.
+   On the predictor or trait-extractor, also compare `SRP_PREDICT_CONTAINER_DIGEST` or
+   `SRT_TRAITS_CONTAINER_DIGEST`:
+
+   ```bash
+   kubectl get workflowtemplate <name> -n runai-busch-lab -o jsonpath='{.spec.templates[0].container.image}{"\n"}{range .spec.templates[0].container.env[?(@.name=="SRP_PREDICT_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}{range .spec.templates[0].container.env[?(@.name=="SRT_TRAITS_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}'
+   ```
+
 7. **Run the drift check again.** Expect `IN SYNC` for every template and the ConfigMap. The
    comparison uses parsed YAML, so a comment-only change never drifts and needs no deploy.
-8. **Re-check step 2.** The idle check holds only for the moment it ran. If a run started during
-   the change, note which images it ran.
+8. **Run `srp_idle` again.** The idle check holds only for the moment it ran. If a run started
+   during the change, note which images it ran.
 
-A registry `production` link or unlink takes steps 1, 2 and 8. Its procedure lives with the
-training repo's issue for that link, for example
-[training#72](https://github.com/talmolab/sleap-roots-training/issues/72).
+**To restore a rollback copy:** `argo template update "$d/<name>.yaml" -n runai-busch-lab`. Run
+it through steps 2 and 4–8, like any other change.
+
+**A registry `production` link or unlink takes steps 2 and 8:** `srp_idle` immediately before the
+link and again right after. The link's own procedure lives with the training repo's issue for it,
+for example [training#72](https://github.com/talmolab/sleap-roots-training/issues/72).
 
 ## Switching production off is not a pause
 
@@ -78,23 +118,21 @@ Run the guard and choose a quiet moment instead.
 
 1. **Re-derive the live pins first.** The drift check prints them under "Live image pins". A
    rollback target recorded anywhere may be stale.
-2. **Start at the trait-extractor template's `Rollback` comment**
+2. **For the predictor and trait-extractor, start at the trait-extractor template's `Rollback`
+   comment**
    ([`sleap-roots-trait-extractor-template.yaml`](../../sleap-roots-trait-extractor-template.yaml)).
-   It gives the steps in order:
-   - wheat and sorghum are linked to `production`, so unlink them first, before re-pinning
-     traits; `unlink()` also drops `candidate`;
-   - undoing the latest traits deploy re-pins traits alone;
-   - going further back (bloom#971 phase 1) moves predict first, as the
-     [`sleap-roots-predictor-template.yaml`](../../sleap-roots-predictor-template.yaml) comment
-     says.
-
-   Re-pin the tag, the digest and the digest env var together.
-3. **bloomctl:** all three bloomctl templates move together, to the target in the
+   It lists each rollback layer in order: what to unlink in the registry first, which rollback
+   moves only traits, and which also moves predict, as the
+   [`sleap-roots-predictor-template.yaml`](../../sleap-roots-predictor-template.yaml) comment
+   explains. Re-pin the tag, the digest and the digest env var together.
+3. **For bloomctl:** the exit-gate, images-downloader and write-back templates move together.
+   Roll them back to the **last** `Rollback target:` in the
    [`sleap-roots-images-downloader-template.yaml`](../../sleap-roots-images-downloader-template.yaml)
-   header, in the order it gives.
-4. **Never below the a9 floor.** A pre-a9 bloomctl image would write a legacy `run_manifest.json`
-   into both environments' trees. See the roadmap's "Step 7 … is hardening"
-   ([roadmap](roadmap.md)).
+   header, in the order that bump's paragraph gives.
+4. **Never go below the a9 floor.** That rollback was retired on 2026-10-22, because a pre-a9
+   bloomctl image would start a cumulative legacy `run_manifest.json` in both environments' trees
+   (roadmap, "Step 7 … is hardening", the "Deliberate" bullet: [roadmap](roadmap.md)). Recover from
+   a broken a9-era image by rolling back to an earlier a9 target, or by fixing forward.
 5. **Every rollback is a change to the cluster.** Run the guard.
 
 ## Preconditions nothing enforces
@@ -140,8 +178,11 @@ you see:
   ([bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859));
 - a green run with failed scans reads `complete`, not `partial`
   ([bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857));
-- a run whose Workflow is gone can stay unfinished in Bloom
-  ([bloom#1042](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1042)).
+- a run whose Workflow was deleted before Bloom saw it finish could stay unfinished. The fix
+  ([bloom#1048](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1048)) is on Bloom
+  `main`, and the issue stays open until it is verified
+  ([bloom#1042](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1042)). If a run
+  sits unfinished after its Workflow is gone, check whether your environment has that fix.
 
 A `Failed` Workflow does not mean nothing was written.
 
@@ -156,8 +197,9 @@ A `Failed` Workflow does not mean nothing was written.
   [`openspec/project.md`](../../openspec/project.md), Testing Strategy).
 - **Never point a run with no run id at either shared tree,** `a4_poc` (staging) or
   `bloom_cyl_pipeline/prod` (prod). That covers any bloomctl, predict or traits run outside Argo.
-  Such a run writes the legacy `run_manifest.json`, which readers still honour. Use a scratch
-  tree. The rule and its reasons are in the roadmap's "Step 7 … is hardening"
+  bloomctl then writes the legacy `run_manifest.json`, which readers still honour. predict and
+  traits forward a manifest that is already there, and otherwise run unscoped over the whole input
+  tree. Use a scratch tree. The rule and its reasons are in the roadmap's "Step 7 … is hardening"
   ([roadmap](roadmap.md)).
 - **Never run a pre-a9 bloomctl image against the shared trees,** whether hand-submitted or rolled
   back. The drift check cannot see an image inlined in a hand-submitted Workflow.
