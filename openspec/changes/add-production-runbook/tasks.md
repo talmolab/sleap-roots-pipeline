@@ -259,15 +259,15 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 6. Gate (commit `docs(openspec): record the pre-merge sweep for add-production-runbook (#132)`)
 
-- [ ] 6.1 Run the suite: all PASS.
-- [ ] 6.2 Run `/lint` (two template comments changed): clean.
-- [ ] 6.3 Run `uvx codespell` over every changed file.
-- [ ] 6.4 Run `openspec validate add-production-runbook --strict` and
+- [x] 6.1 Run the suite: all PASS.
+- [x] 6.2 Run `/lint` (two template comments changed): clean.
+- [x] 6.3 Run `uvx codespell` over every changed file.
+- [x] 6.4 Run `openspec validate add-production-runbook --strict` and
   `openspec validate --all --strict`.
-- [ ] 6.5 Check the merge base: `git fetch origin && git merge-base --is-ancestor origin/main HEAD`.
-- [ ] 6.6 Check the `*.yaml` scope: `git diff --name-only origin/main...HEAD -- '*.yaml'` lists only
+- [x] 6.5 Check the merge base: `git fetch origin && git merge-base --is-ancestor origin/main HEAD`.
+- [x] 6.6 Check the `*.yaml` scope: `git diff --name-only origin/main...HEAD -- '*.yaml'` lists only
   the trait-extractor and predictor templates, and 4.2's parsed-YAML check passes for both.
-- [ ] 6.7 Run `/docs-review`.
+- [x] 6.7 Run `/docs-review`.
 
 ## 7. After merge (not in this PR)
 
