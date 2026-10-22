@@ -1027,6 +1027,48 @@ Adversarial 4-lens review. Resolutions:
   image-grain = scan-only for now; local-Supabase pre-merge gate; #13 sub-issues to file. ✅
 
 ### Status log
+- **2026-10-22 (production runbook)** — **The prod runbook is merged:
+  [`operations.md`](operations.md) ([#140](https://github.com/talmolab/sleap-roots-pipeline/pull/140),
+  squash `42a6f17`, closes [#132](https://github.com/talmolab/sleap-roots-pipeline/issues/132)).
+  The below-a9-floor bloomctl rollback is retired (owner).**
+  - **The page:** #132's six sections. It owns one procedure, the guard before any change that
+    reaches both environments:
+    - `srp_idle` fails closed and counts a Workflow by name or by the templates it references;
+    - an up-to-date-`main` check;
+    - one template at a time;
+    - drift check before and after;
+    - read-back.
+
+    It links everything else to its owner and holds no tags, digests or SHAs.
+    `runai_run_pipeline.sh` is documented as not a deploy path.
+  - **Claim-wide corrections in the same PR** (owner decision (a), 2026-10-16):
+    - the no-run-id rule covers both shared trees;
+    - a missing `hostPath` hangs Pending;
+    - the Workflow/pod-log TTL window
+      ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137), filed while scoping);
+    - `argo-user` can read Workflows;
+    - per-run manifests;
+    - predict and traits forward manifests and never write them;
+    - `unlink()` also drops `candidate` and `latest`.
+
+    Template edits are comments only (parsed YAML unchanged), so nothing was deployed.
+  - **Retired 2026-10-22 (owner):** the bloomctl rollback below the a9 floor (reversing row 6), and
+    the predict re-pin below `sha-9a6f20c` tied to it. Since prod went live, its pre-a9 writer would
+    start a cumulative legacy manifest in `bloom_cyl_pipeline/prod`, which has no snapshot to
+    restore. Every standing text that offered it is marked; recovery is an earlier a9 target or a
+    fix-forward.
+  - **Review:**
+    - `/review-openspec`: 3 rounds, 2 BLOCKED, then revised;
+    - `/review-pr`: 2 rounds, both REQUEST_CHANGES, both addressed before merge.
+
+    Every claim on the page was checked against source or live state, read-only. The snippets were
+    run verbatim against `runai-busch-lab`.
+  - **Archived** as `openspec/changes/archive/2026-10-22-add-production-runbook/`. It adds two
+    `cluster-access-docs` requirements and rewords one `per-batch-pipeline` rationale.
+  - **Still open:**
+    - the status dashboard's #132 card (after #136 merges);
+    - porting the `tdd.md`/`ci-debug.md`/`test.md` edits to the vault's command templates;
+    - #137 (the TTL window itself).
 - **2026-10-05 (wheat + sorghum live)** — **#118 is done: wheat and sorghum are in production. The
   `production` link was made, and the prod Bloom E2E passed for both species. #118 and #120 are
   closed.** Times are UTC; the link and E2E fell on the evening of 2026-10-04 Pacific.
