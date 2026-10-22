@@ -33,6 +33,7 @@ README = "README.md"
 ROADMAP = "docs/bloom-integration/roadmap.md"
 SKILL = ".claude/skills/runai/SKILL.md"
 DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace-drift.md"
+PER_RUN_SPEC = "docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
 _passes = 0
 _failures: list[str] = []
@@ -55,6 +56,23 @@ def read(name: str) -> str:
 def norm(text: str) -> str:
     """Collapse whitespace so assertions survive line-wrapping in prose."""
     return re.sub(r"\s+", " ", text)
+
+
+def text_or_empty(name: str) -> str:
+    """read(), but "" for a missing file, so a check on a not-yet-written doc FAILs, not crashes."""
+    path = ROOT / name
+    return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def between(label: str, text: str, start: str, end: str) -> str:
+    """The slice of `text` from `start` up to `end`, after checking both anchors are present.
+
+    Anchored on text, not line numbers, so an unrelated insertion above cannot move it.
+    """
+    i = text.find(start)
+    j = text.find(end, i + len(start)) if i != -1 else -1
+    check(f"{label}: anchors found", i != -1 and j != -1, True)
+    return text[i:j] if i != -1 and j != -1 else ""
 
 
 def registered_templates() -> list[str]:
@@ -388,6 +406,47 @@ def main() -> int:
             if stale_checklist.search(norm(p.read_text(encoding="utf-8")))
         ],
         [],
+    )
+
+    # --- Production runbook and the operating facts it relies on (add-production-runbook) -----
+    # Claim-wide: each fact is checked in every doc that states it, not only the one first found.
+    roadmap = norm(read(ROADMAP))
+
+    # Shared-tree hazards. The no-run-id rule and the pre-a9 rollback hazard apply to both
+    # environments' trees: a4_poc (staging) and bloom_cyl_pipeline/prod (prod, since bloom#988).
+    check(
+        "roadmap: no-run-id rule anchor appears once",
+        roadmap.count("never point a no-run-id"),
+        1,
+    )
+    rule = between("roadmap no-run-id rule", roadmap, "never point a no-run-id", "use a scratch tree")
+    check("roadmap: no-run-id rule names staging's shared tree", "a4_poc" in rule, True)
+    check(
+        "roadmap: no-run-id rule names prod's shared tree",
+        "bloom_cyl_pipeline/prod" in rule,
+        True,
+    )
+    deliberate = between(
+        "roadmap Deliberate bullet", roadmap, "**Deliberate:** a bloomctl rollback", "- **Covered:**"
+    )
+    check(
+        "roadmap: Deliberate rollback bullet names bloom_cyl_pipeline/prod",
+        "bloom_cyl_pipeline/prod" in deliberate,
+        True,
+    )
+    a4_only = re.compile(r"shared `a4_poc` trees?(?![^.]*bloom_cyl_pipeline/prod)")
+    a4_only_docs = [ROADMAP, PER_RUN_SPEC, SKILL]
+    check(
+        "no doc limits the no-run-id rule to a4_poc",
+        [n for n in a4_only_docs if a4_only.search(norm(read(n)))],
+        [],
+    )
+    skill_6 = between("runai SKILL §6", read(SKILL), "## 6.", "## 7.")
+    check("runai SKILL §6 names the no-run-id rule", "no-run-id" in skill_6, True)
+    check(
+        "runai SKILL §6 links the roadmap rule",
+        "](../../../docs/bloom-integration/roadmap.md" in skill_6,
+        True,
     )
 
     if _failures:

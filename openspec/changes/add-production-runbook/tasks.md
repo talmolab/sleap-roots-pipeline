@@ -31,7 +31,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 1. Shared-tree hazards (cluster-access-docs Req 2: The no-run-id rule covers both shared trees)
 
-- [ ] 1.1 Add the assertions:
+- [x] 1.1 Add the assertions:
   - **Rule anchor:** `never point a no-run-id` appears exactly once in the roadmap.
   - **Rule text:** take `between(roadmap_n, "never point a no-run-id", "use a scratch tree")`. It
     contains `a4_poc` and contains `bloom_cyl_pipeline/prod`.
@@ -50,7 +50,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
     'docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md'], expected []`
   - `FAIL  runai SKILL §6 names the no-run-id rule: got False, expected True`
   - `FAIL  runai SKILL §6 links the roadmap rule: got False, expected True`
-- [ ] 1.2 Make the doc edits:
+- [x] 1.2 Make the doc edits:
   - **Roadmap operator rule:** widen it, and its "Reopen #82 if … appears there", to both trees,
     writing `bloom_cyl_pipeline/prod` literally.
   - **Roadmap "Deliberate" bullet:** add that a rollback below the a9 floor also runs the pre-a9

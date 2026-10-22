@@ -722,6 +722,10 @@ won't-fix 2026-10-01 — each path back to a legacy file is covered, deliberate,
 - **Deliberate:** a bloomctl rollback to `sha-28034f6` reverses row 6 and restores the
   snapshotted legacy files on purpose. They are `rr4zj`'s 15-key union, so this knowingly brings
   #71's union back. Any predict re-pin below its `sha-9a6f20c` floor is valid only as part of that.
+  *[Added 2026-10-22: the templates are shared, so since bloom#988 that rollback also runs the
+  pre-a9 writer against prod's tree, `bloom_cyl_pipeline/prod`. That tree never held a legacy
+  `run_manifest.json`, so the writer would start a new cumulative one there, with no snapshot to
+  restore.]*
 - **Covered:** the `local-WSL2-*` workflow YAMLs never mount `a4_poc` and are being removed (#61).
   A re-registered old template image is *detected*, not prevented, the next time
   `check_cluster_drift.sh` is run. Digest pins stop a re-pushed tag.
@@ -729,8 +733,10 @@ won't-fix 2026-10-01 — each path back to a legacy file is covered, deliberate,
   writes `run_manifest.json` by design (§2.9; bloomctl `download_for_predict.py:598`). A
   hand-submitted Workflow carrying an inline pre-a9 bloomctl image is invisible to the drift
   check.
-- **Operator rule:** never point a no-run-id bloomctl, predict or traits run at the shared
-  `a4_poc` trees; use a scratch tree. Reopen #82 if a `run_manifest.json` appears there.
+- **Operator rule:** never point a no-run-id bloomctl, predict or traits run at either
+  environment's shared trees, `a4_poc` (staging) or `bloom_cyl_pipeline/prod` (prod, since
+  bloom#988); use a scratch tree. Reopen #82 if a `run_manifest.json` appears in either.
+  *[Widened 2026-10-22: this rule said `a4_poc` only.]*
 
 The flip's cost isn't worth the residual risk: three consumer releases, four pin bumps, and each
 scan recomputing when next requested.
