@@ -176,9 +176,9 @@ You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed
 >
 > ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
 > `argo template create`/`update` here affects both environments' future runs — see
-> [Cluster identities](docs/cluster-identities.md). Before any `argo template update`, including
-> the one `runai_run_pipeline.sh` runs, follow the guard in the
-> [production runbook](docs/bloom-integration/operations.md).
+> [Cluster identities](docs/cluster-identities.md). Before any `argo template update`, follow the
+> guard in the [production runbook](docs/bloom-integration/operations.md), one template at a time.
+> `runai_run_pipeline.sh` is not a deploy path (below).
 
 ### ▶️ One-Time Setup
 
@@ -195,6 +195,11 @@ semaphore ConfigMap; in WSL, `export PATH=$HOME/bin:$PATH`).
 ```bash
 ./runai_run_pipeline.sh
 ```
+
+It is not a deploy path. It updates all five templates at once, in a fixed order, with no idle
+check between them. Run it only when `scripts/check_cluster_drift.sh` reports `IN SYNC`, so the
+updates change nothing; deploy changes by the guard in the
+[production runbook](docs/bloom-integration/operations.md).
 
 This script will:
 - Create the `sleap-roots-pipeline-semaphores` ConfigMap if absent (never updates it; aborts if it

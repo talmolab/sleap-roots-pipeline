@@ -762,10 +762,11 @@ def main() -> int:
     predict_writes = re.compile(
         r"predict writes the legacy|Such a run writes the legacy"
         r"|predict or traits run \*\*outside Argo\*\* has no run identity, so it writes"
+        r"|runs outside Argo still write `run_manifest\.json`"
     )
     check(
         "no doc says predict or traits writes the legacy manifest",
-        [n for n in (SKILL, OPS, ROADMAP) if predict_writes.search(norm(text_or_empty(n)))],
+        [n for n in (SKILL, OPS, ROADMAP, PER_RUN_SPEC) if predict_writes.search(norm(text_or_empty(n)))],
         [],
     )
     # bloom#1042's fix (bloom#1048) is on Bloom main; the issue is open for verification only.
@@ -814,10 +815,55 @@ def main() -> int:
             "Bumped 2026-10-02",
         ),
     }
+    retired_sites["predictor 2026-09-24 below-floor re-pin"] = between(
+        "predictor 2026-09-24 below-floor re-pin",
+        comment_block(PREDICTOR, "Corrected 2026-10-01: 6.3 ran"),
+        "e025e309 (like 9ac819fb)",
+        "Bumped 2026-09-25",
+    )
+    retired_sites["roadmap A3 'live risk' pointer"] = between(
+        "roadmap A3 live-risk pointer",
+        roadmap,
+        "The live risk is now a rollback below predict's",
+        "**`bloomctl` could not adopt a9",
+    )
+    retired_sites["roadmap row 6 revert order"] = between(
+        "roadmap row 6", roadmap, "| 6 | **bloomctl template pin bumps", "| 7 |"
+    )
     check(
         "below-a9-floor rollback marked retired everywhere it was offered",
         [site for site, text in retired_sites.items() if not retire.search(text)],
         [],
+    )
+
+    # PR #140 review round 2. The launcher is not a deploy path anywhere it is described: its own
+    # header recipe and README's callout and "Run the Pipeline" section, not only the page.
+    launcher_raw = read(LAUNCHER)
+    check(
+        "runai_run_pipeline.sh header: no batch template-update recipe",
+        re.findall(r"^#\s+argo template (?:update|create) \S+", launcher_raw, re.MULTILINE),
+        [],
+    )
+    readme_callout = "\n".join(callout)
+    check(
+        "README callout: does not endorse the launcher's template update",
+        "including\n> the one `runai_run_pipeline.sh` runs" in readme_callout
+        or "including the one `runai_run_pipeline.sh` runs" in norm(readme_callout),
+        False,
+    )
+    run_section = between("README Run the Pipeline", readme_raw, "### ▶️ Run the Pipeline", "\n## ")
+    check("README Run the Pipeline: says the launcher is not a deploy path", "not a deploy path" in run_section, True)
+    # Frontier item 3's rollback bullet: predict-first only to undo bloom#971 phase 1, and the
+    # unlink drops `latest` too.
+    item3 = between("roadmap item 3", roadmap, "3. **[bloom#971]", "4. **UI v1 residue:**")
+    check("roadmap item 3: rollback not 'both images, predict first' unscoped", "**Rollback:** both images, predict first" in item3, False)
+    check("roadmap item 3: unlink names `latest`", bool(re.search(r"unlink[^.]*`latest`", item3)), True)
+    # bloom#1042's fix (bloom#1045 + #1048) is deployed in both environments.
+    check("operations.md: bloom#1042's fix cites both PRs", "bloom/pull/1045" in failing and "bloom/pull/1048" in failing, True)
+    check(
+        "operations.md: bloom#1042's fix is stated as deployed, not to be checked",
+        "check whether your environment has" not in norm(failing) and "deployed" in norm(failing),
+        True,
     )
 
     if _failures:

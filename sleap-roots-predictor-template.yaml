@@ -123,7 +123,8 @@ spec:
         # scan in the (accumulated) run manifest fully recomputes once, and every per-root .slp is
         # renamed once (the model slug embeds registry_id). Re-baseline the A4 "re-run a done batch
         # -> 0 GPU pods" oracle AFTER that run, never across it.
-        # (Rollback from THIS pin; the current rollback target is in the 2026-09-25 entry below.)
+        # (Rollback from THIS pin. The current rollback target is the 2026-10-02 entry's Rollback
+        # below, sha-9a6f20c; the 2026-09-25 entry's 9ac819fb is below the floor.)
         # Rollback BEFORE training 6.3 retires the 13 flat collections: re-pin sha-e025e309...
         # @sha256:4d4064c6... (tag, digest AND SRP_PREDICT_CONTAINER_DIGEST together). AFTER 6.3 an
         # image-only rollback is SILENT -- the old image skips every selector-shaped card and exits
@@ -136,6 +137,8 @@ spec:
         # go that far, restore `production` FIRST with sleap-roots-training
         # docs/migration/2026-09-29-retire-flat-collections.py --rollback [COLLECTION ...] --execute
         # (never without --rollback; it re-links each recorded source v0), not from dc216c7.
+        # [RETIRED 2026-10-22 (owner): a re-pin below the 9a6f20c floor, like reversing row 6, is
+        # no longer offered; see docs/bloom-integration/operations.md, Rollback.]
         # Bumped 2026-09-25 (predict#47, #71's predict reader): sha-9ac819fb... -> sha-9a6f20c0...
         # (predict main; code-identical to the #47 squash 9f39691 -- 9a6f20c only archives the
         # OpenSpec change). Predict now resolves its scope through contracts'

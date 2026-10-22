@@ -282,7 +282,7 @@ release §8 previously assumed. During the rollout all four sites pass `allow_le
 §4 step 5 has deleted the stale files and the fleet is confirmed migrated, they flip to `False`
 and the fail-loud guarantee stops depending on the trees staying clean. (Operationally, step 5's
 deletion alone already delivers it; the flip guards against a legacy file reappearing — see §4.)
-**[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (runs outside Argo still write `run_manifest.json` by design; see the roadmap's "Step 7 … is hardening" operator rule for where they must not point) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]**
+**[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (a no-run-id bloomctl still writes `run_manifest.json` by design, and predict and traits forward one that is present; see the roadmap's "Step 7 … is hardening" operator rule for where such runs must not point) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]**
 
 A required parameter is deliberately less convenient than a defaulted one. The convenience is
 what made the hole invisible.
@@ -480,7 +480,7 @@ The registry migration (§2.8) interleaves with it, so the two are written as on
    would (verified against the released a9, 2026-09-24). **This is the step that makes §2.2
    real.**
 6. **Flip `allow_legacy` to `False`** at all four call sites and re-release the consumers
-   (§2.9). **[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (runs outside Argo still write `run_manifest.json` by design; see the roadmap's "Step 7 … is hardening" operator rule for where they must not point) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]** This is **hardening** (corrected 2026-09-24; an earlier revision called it the step
+   (§2.9). **[⚠️ superseded 2026-10-01 — not done: #82 closed as won't-fix. Step 5's deletion delivers the guarantee; a reappearing legacy file is covered, deliberate, or accepted (a no-run-id bloomctl still writes `run_manifest.json` by design, and predict and traits forward one that is present; see the roadmap's "Step 7 … is hardening" operator rule for where such runs must not point) — see the roadmap's row 7. Flipping a call site stays a safe one-line change if a consumer is released for other reasons.]** This is **hardening** (corrected 2026-09-24; an earlier revision called it the step
    that makes §2.2 real). After step 5 it guards against one thing: a legacy file *reappearing*,
    e.g. from a hand-submitted or rolled-back pre-a9 `bloomctl` image. It is cheap — one keyword per site, no contracts change. It is also safe for local runs:
    the flip is a no-op where no run identity exists, because there `RUN_MANIFEST_FILENAME` is

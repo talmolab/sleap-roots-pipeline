@@ -178,11 +178,12 @@ you see:
   ([bloom#859](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/859));
 - a green run with failed scans reads `complete`, not `partial`
   ([bloom#857](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/857));
-- a run whose Workflow was deleted before Bloom saw it finish could stay unfinished. The fix
-  ([bloom#1048](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1048)) is on Bloom
-  `main`, and the issue stays open until it is verified
-  ([bloom#1042](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1042)). If a run
-  sits unfinished after its Workflow is gone, check whether your environment has that fix.
+- a run whose Workflow was deleted before Bloom saw it finish used to stay unfinished. The fix
+  ([bloom#1045](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1045) and
+  [bloom#1048](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/1048)) is deployed
+  to both environments (both 2026-10-21 Bloom deploys contain it). The issue stays open until the
+  fix is verified ([bloom#1042](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1042)).
+  If a run still sits unfinished after its Workflow is gone, report it there.
 
 A `Failed` Workflow does not mean nothing was written.
 

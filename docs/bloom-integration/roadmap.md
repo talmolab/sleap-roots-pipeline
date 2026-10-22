@@ -399,8 +399,10 @@ order:
      several windows (e.g. rice's 2–5 and 6–10) wasn't exercised; the run predicted on CPU (before
      #117's fix); and the dialog warning reached prod only on 2026-10-04, after this run. Window
      parity between `pipeline_selection.yaml` and the registry: [sleap-roots#274](https://github.com/talmolab/sleap-roots/issues/274) (open).
-   - **Rollback:** both images, predict first (see the 2026-10-02 entries). **[⚠️ item 6's wheat and sorghum cards are linked to `production` (since 2026-10-05), so unlink
-     them first (which also drops their `candidate` alias; see the 2026-10-05 entry): the traits rollback
+   - **Rollback:** to undo this phase, both images, predict first (see the 2026-10-02 entries);
+     undoing only the later traits deploy moves traits alone (trait-extractor template comment). *[Scoped
+     2026-10-22.]* **[⚠️ item 6's wheat and sorghum cards are linked to `production` (since 2026-10-05), so unlink
+     them first (which also drops their `candidate` and `latest` aliases; see the 2026-10-05 entry): the traits rollback
      targets `sha-426ad4d` (the image #119 replaced on 2026-10-04) and `sha-e373b0f` have no rows for them, so their scans would run GPU inference and then
      fail `No pipeline matches`.]**
    - ✅ **Last: the Bloom dialog warning** — bloom #1028 (verified on staging 2026-10-03, archived
@@ -593,7 +595,7 @@ four consumer changes and the template pin bumps. Remaining work, in dependency 
 | 3 | **W&B re-seed** (training group 6) — 6.0–6.2 and 6.5 done: 8 selector-shaped `production` collections live alongside the 13 flat; full `--verify` shows exactly 13 orphans as of 2026-09-24, 0 after 6.3 (talmolab/sleap-roots-training@dc216c7, branch `migrate-model-card-selectors`) | ✅ **done** 2026-09-24; 6.3 done 2026-09-29 (see 4); `update-model-card-selectors` archived 2026-09-30 ([sleap-roots-training#71](https://github.com/talmolab/sleap-roots-training/pull/71)) |
 | 4 | **Deploy predict#34** (predictor pin bump) → then training 6.3 retires the 13 flat collections | ✅ **deployed and confirmed** 2026-09-25 ([#89](https://github.com/talmolab/sleap-roots-pipeline/pull/89), runs `6bhzn` + `fcdrk`); ✅ **training 6.3 done** 2026-09-29: `production` unlinked from the 13 flat collections, none deleted; full `--verify` shows 0 orphans, 0 legacy ([sleap-roots-training#68](https://github.com/talmolab/sleap-roots-training/pull/68), merged 2026-09-30) — see the Status log for the rollback |
 | 5 | **bloomctl adopts a9** — reader *and* writer in one image, so it flips last | ✅ **merged** 2026-09-29 ([bloom#940](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/pull/940), `1bc3056c`; tracked in [bloom#934](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/934), closed 2026-10-01 after 6's E2E); image built `sha-1bc3056@sha256:8e9eb22c…`; ✅ **deployed** 2026-09-29 by row 6 |
-| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
+| 6 | **bloomctl template pin bumps (downloader, write-back, exit-gate) + `argo template update`**, then **snapshot and delete the three stale `run_manifest.json` files** (mandatory — see below), then the live E2E | after 5 **and** bloom#895 *applied*, not merely merged (applied to staging 2026-09-28, Bloom PR #903). **Order (2026-09-29):** drain first, then bump **`write-back` before `images-downloader`** — a workflow straddling a non-atomic `argo template update` must never pair the new per-run writer with the old legacy-only reader; revert in the opposite order *[retired 2026-10-22 (owner): reverting row 6 is no longer offered; see "Step 7 … is hardening"]*. The bump from `sha-28034f6` also carries bloom #880 (write-back redelivery fallback), #882 (lock-only), #884 and #861. ✅ **Done 2026-09-30:** pins merged 2026-09-29 ([#99](https://github.com/talmolab/sleap-roots-pipeline/pull/99), `8526562`, digest-pinned) and registered in that order; stale files snapshotted then deleted; live E2E passed on fresh scans (Bloom runs 12/13/14) — see the Status log |
 | 7 | **[#82](https://github.com/talmolab/sleap-roots-pipeline/issues/82) — flip `allow_legacy=False`** — hardening, not the fix (see below) | ⛔ **closed as won't-fix 2026-10-01** — not needed for correctness after step 6's deletion; see below |
 
 ⚠️ **Adoption order is normative: readers before the writer** — but not for the reason first
@@ -684,7 +686,9 @@ The same shape applies to alias manipulation generally, and training 6.3 removes
 13 collections. **[⚠️ superseded 2026-09-29 — 6.3 ran: 8 selector-shaped `production` cards, and
 none of the 13 flat collections is linked to `production` (all 13 kept, unlinked), so a premature
 bump is moot. The live risk is now a rollback below predict's `sha-9a6f20c`
-floor; see the 2026-09-29 row-4 entry for the rollback order.]**
+floor; see the 2026-09-29 row-4 entry for the rollback order.]** *[Retired 2026-10-22 (owner): a
+rollback below that floor is no longer offered; see the "Deliberate" bullet under "Step 7 … is
+hardening".]*
 
 **`bloomctl` could not adopt a9 by accident** (corrected 2026-09-29; this used to warn that its
 unbounded `>=0.1.0a7` pin let any incidental image rebuild perform step 5 unintentionally). `bloomcli/uv.lock` held

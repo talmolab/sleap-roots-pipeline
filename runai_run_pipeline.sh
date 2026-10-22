@@ -4,19 +4,15 @@ set -euo pipefail
 # NOTE: this launcher targets the in-cluster Argo Server (gpu-master:8888) and requires ARGO_TOKEN
 # exported — it only works from a machine on the internal cluster LAN. The A4 PoC was NOT run this
 # way; it was submitted in Kubernetes mode (no Argo Server) with the argo-user kubeconfig, which is
-# also how the real four-stage end-to-end run (2026-07-30) was submitted:
+# also how the real four-stage end-to-end run (2026-07-30) was submitted. For a hand run that way,
+# once scripts/check_cluster_drift.sh reports IN SYNC:
 #   export KUBECONFIG=~/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
-#   kubectl create -f sleap-roots-pipeline-semaphores.yaml             # first, once (#98)
-#   argo template create sleap-roots-exit-gate-template.yaml         -n runai-busch-lab
-#   argo template update sleap-roots-images-downloader-template.yaml -n runai-busch-lab
-#   argo template update sleap-roots-predictor-template.yaml         -n runai-busch-lab
-#   argo template update sleap-roots-trait-extractor-template.yaml   -n runai-busch-lab
-#   argo template update sleap-roots-write-back-template.yaml        -n runai-busch-lab
 #   argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> -n runai-busch-lab
-# Use that path if gpu-master:8888 is unreachable from your box.
-# `create`, not `update`, for the exit-gate (#56) the first time: `update` errors on a template
-# that does not exist yet. Register it BEFORE submitting any five-task DAG, or submission fails
-# on an unresolvable templateRef.
+# Use that path if gpu-master:8888 is unreachable from your box. Registering or updating a template
+# (and creating the #98 semaphore ConfigMap) is a change to both Bloom environments: do it one
+# template at a time by the guard in docs/bloom-integration/operations.md, never as a batch. A
+# template's first registration is `create`, not `update` (`update` errors on a template that does
+# not exist yet), and every template must be registered before any five-task DAG is submitted.
 #
 # NOTE: `runai-busch-lab` is shared by Bloom's staging AND production dispatch. Since bloom#988
 # each environment's Workflows differ by an `environment` label, by stage root and by Secret, but
