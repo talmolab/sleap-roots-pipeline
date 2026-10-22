@@ -301,6 +301,8 @@ the paths are shared within an environment (see
 
 ## Related
 
+- [Production runbook](bloom-integration/operations.md) — the guard before any change to the
+  shared templates, rollback entry points, and what to do when a run fails
 - [`bloom-pipeline-serviceaccount.yaml`](../bloom-pipeline-serviceaccount.yaml) — the requested
   RBAC for `bloom-pipeline`, and the template for a new identity
 - [`openspec/specs/per-batch-pipeline/spec.md`](../openspec/specs/per-batch-pipeline/spec.md) —

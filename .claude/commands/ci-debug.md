@@ -27,7 +27,8 @@ kubeconfig (`.claude/skills/runai/SKILL.md` §1a). Which identity can do what is
 A Bloom-dispatched Workflow is deleted at most `WORKFLOWS_K8S_TTL_SECONDS` (default 3600) after it
 completes, and its pods and logs may go sooner
 ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)). After that, the evidence
-left is the Bloom run's per-scan results and the files on the environment's stage tree.
+left is the Bloom run's per-scan results and the files on the environment's stage tree; see the
+[production runbook](../../docs/bloom-integration/operations.md#when-a-run-fails).
 
 ### Step 1: Find the failing workflow and node
 

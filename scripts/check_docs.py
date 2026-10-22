@@ -36,6 +36,16 @@ DRIFT_PLAN = "docs/superpowers/plans/2026-09-15-cluster-identities-and-namespace
 CI_DEBUG = ".claude/commands/ci-debug.md"
 PREDICTOR = "sleap-roots-predictor-template.yaml"
 TRAIT_EXTRACTOR = "sleap-roots-trait-extractor-template.yaml"
+TDD = ".claude/commands/tdd.md"
+OPS = "docs/bloom-integration/operations.md"
+OPS_SECTIONS = [
+    "Before any change to the cluster",
+    "Switching production off is not a pause",
+    "Rollback",
+    "Preconditions nothing enforces",
+    "When a run fails",
+    "Standing operator rules",
+]
 LAUNCHER = "runai_run_pipeline.sh"
 PER_RUN_SPEC ="docs/superpowers/specs/2026-09-21-per-run-run-manifest-identity-design.md"
 
@@ -77,6 +87,19 @@ def between(label: str, text: str, start: str, end: str) -> str:
     j = text.find(end, i + len(start)) if i != -1 else -1
     check(f"{label}: anchors found", i != -1 and j != -1, True)
     return text[i:j] if i != -1 and j != -1 else ""
+
+
+def md_section(page: str, heading: str) -> str:
+    """A `## heading` section of a markdown page, up to the next `## ` heading of any kind.
+
+    Ending at *any* heading, not the next expected one, keeps a reordered page from bleeding one
+    section into another: the order check fails alone.
+    """
+    i = page.find(f"## {heading}\n")
+    if i == -1:
+        return ""
+    j = page.find("\n## ", i + 1)
+    return page[i:] if j == -1 else page[i:j]
 
 
 def comment_block(name: str, anchor: str) -> str:
@@ -540,6 +563,162 @@ def main() -> int:
         bool(re.search(r"unlink\(\)[^.]*candidate", trait_rollback)),
         True,
     )
+
+    # --- The production runbook (#132) --------------------------------------------------------
+    # One page; the guard procedure lives here and everything else is linked, not copied.
+    ops_raw = text_or_empty(OPS)
+    check("operations.md exists", (ROOT / OPS).exists(), True)
+    check(
+        "operations.md: the six #132 sections, in order",
+        re.findall(r"^## (.+)$", ops_raw, re.MULTILINE),
+        OPS_SECTIONS,
+    )
+    before, pause, rollback, precond, failing, standing = (
+        md_section(ops_raw, h) for h in OPS_SECTIONS
+    )
+    for token in (
+        ".status.phase",
+        "scripts/check_cluster_drift.sh",
+        "runai_run_pipeline.sh",
+        "SRP_PREDICT_CONTAINER_DIGEST",
+        "SRT_TRAITS_CONTAINER_DIGEST",
+    ):
+        check(f"operations.md 'Before any change': names {token}", token in before, True)
+    check(
+        "operations.md 'not a pause': names CYL_PIPELINE_TRIGGER_ENABLED",
+        "CYL_PIPELINE_TRIGGER_ENABLED" in pause,
+        True,
+    )
+    check(
+        "operations.md 'not a pause': links cluster-identities",
+        "](../cluster-identities.md" in pause,
+        True,
+    )
+    for template in (TRAIT_EXTRACTOR, PREDICTOR, "sleap-roots-images-downloader-template.yaml"):
+        check(f"operations.md 'Rollback': links {template}", f"](../../{template}" in rollback, True)
+    check(
+        "operations.md 'Preconditions': links the semaphore ConfigMap header",
+        "](../../sleap-roots-pipeline-semaphores.yaml" in precond,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': names WORKFLOWS_K8S_TTL_SECONDS",
+        "WORKFLOWS_K8S_TTL_SECONDS" in failing,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': links ci-debug",
+        "](../../.claude/commands/ci-debug.md" in failing,
+        True,
+    )
+    check(
+        "operations.md 'When a run fails': links the exit-gate template",
+        "](../../sleap-roots-exit-gate-template.yaml" in failing,
+        True,
+    )
+    check(
+        "operations.md 'Standing rules': names prod's shared tree",
+        "bloom_cyl_pipeline/prod" in standing,
+        True,
+    )
+    # These issues are the rules' sources at time of writing; closing one means updating this.
+    check(
+        "operations.md links its repo issues",
+        [
+            n
+            for n in (63, 106, 109, 127, 128, 137)
+            if not re.search(rf"github\.com/talmolab/sleap-roots-pipeline/issues/{n}(?!\d)", ops_raw)
+        ],
+        [],
+    )
+    check(
+        "operations.md links its Bloom issues",
+        [
+            n
+            for n in (857, 859, 939, 1042)
+            if not re.search(
+                rf"github\.com/Salk-Harnessing-Plants-Initiative/bloom/issues/{n}(?!\d)", ops_raw
+            )
+        ],
+        [],
+    )
+    ops_dir = (ROOT / OPS).parent
+    check(
+        "operations.md: every relative link resolves",
+        [
+            t
+            for t in re.findall(r"\]\(([^)\s]+)\)", ops_raw)
+            if not t.startswith(("http://", "https://", "#"))
+            and not (ops_dir / t.split("#")[0]).exists()
+        ],
+        [],
+    )
+    # Live pins drift by the week; the page re-derives them with the drift check instead.
+    check(
+        "operations.md hard-codes no image tag, digest or commit SHA",
+        re.findall(
+            r"\bsha-[0-9a-f]{7,}|sha256:[0-9a-f]{6,}"
+            r"|(?<![\w/#.-])(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}(?!\w)",
+            ops_raw,
+        ),
+        [],
+    )
+    # The runbook joins the claim-wide scans above.
+    check("operations.md does not limit the no-run-id rule to a4_poc", bool(a4_only.search(norm(ops_raw))), False)
+    check("operations.md does not say a missing hostPath fails startup", bool(startup_fail.search(norm(ops_raw))), False)
+
+    # Inbound links, from where a reader is when they need the page.
+    callout = []
+    lines = readme_raw.splitlines()
+    k = next((i for i, ln in enumerate(lines) if ln.startswith("> ⚠️ This namespace is shared by Bloom's staging")), None)
+    check("README: shared-namespace callout anchor found", k is not None, True)
+    if k is not None:
+        for ln in lines[k:]:
+            if not ln.startswith(">"):
+                break
+            callout.append(ln)
+    check(
+        "README: shared-namespace callout links the runbook",
+        "](docs/bloom-integration/operations.md" in "\n".join(callout),
+        True,
+    )
+    check(
+        "README Troubleshooting: links the runbook",
+        "](docs/bloom-integration/operations.md" in troubleshooting,
+        True,
+    )
+    hard = between("roadmap hard constraint", roadmap, "**Shared templates, production live", "- **Argo stays**")
+    check("roadmap hard constraint: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", hard)), True)
+    check("roadmap hard constraint: no idle restatement", "Running or Pending" in hard, False)
+    item10 = between(
+        "roadmap item 10",
+        roadmap,
+        "10. **Production hardening backlog**",
+        "**Closed since the 2026-10-01 review**",
+    )
+    check("roadmap item 10: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", item10)), True)
+    check("roadmap item 10: no 'No prod runbook exists'", "No prod runbook exists" in item10, False)
+    check(
+        "cluster-identities: links the runbook",
+        "](bloom-integration/operations.md" in ident_raw,
+        True,
+    )
+    tdd_live = between("tdd Live acceptance tests", read(TDD), "## Live acceptance tests", "\n## ")
+    check(
+        "tdd Live acceptance tests: links the runbook",
+        "](../../docs/bloom-integration/operations.md" in tdd_live,
+        True,
+    )
+    check("tdd Live acceptance tests: no idle restatement", "Running or Pending" in tdd_live, False)
+    project_live = between(
+        "project.md Live acceptance", norm(read("openspec/project.md")), "**Live acceptance**", "(A4, later)"
+    )
+    check(
+        "project.md Live acceptance: links the runbook",
+        "](../docs/bloom-integration/operations.md" in project_live,
+        True,
+    )
+    check("project.md Live acceptance: no idle restatement", "Running or Pending" in project_live, False)
 
     if _failures:
         print(f"\n=== {len(_failures)} FAILED, {_passes} passed ===")

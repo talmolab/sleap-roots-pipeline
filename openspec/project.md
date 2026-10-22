@@ -144,8 +144,9 @@ The checks:
   the red baseline (live pod spec, events, or log) before the fix. `runai-busch-lab` is shared by
   Bloom staging and production, so **never register a template from an unmerged branch**:
   pre-merge, probe with a throwaway Workflow that inlines the edited template; after merge,
-  register from `main` (drift check before/after) and re-run the same observation. `/tdd` has
-  the steps.
+  register from `main` by the guard in the
+  [production runbook](../docs/bloom-integration/operations.md) and re-run the same observation.
+  `/tdd` has the steps.
 - (A4, later) end-to-end on a reference scan: idempotent re-delivery + notification on
   success **and** failure.
 

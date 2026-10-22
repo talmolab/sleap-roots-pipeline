@@ -169,7 +169,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 5. The runbook and its inbound links (cluster-access-docs Req 1)
 
-- [ ] 5.1 Add the assertions, against `ops = text_or_empty(OPS)`:
+- [x] 5.1 Add the assertions, against `ops = text_or_empty(OPS)`:
   - **Exists:** `OPS` exists.
   - **Headings:** `re.findall(r"^## (.+)$", ops, re.M)` equals the six headings, in order.
   - **"Before any change to the cluster":** contains `.status.phase`,
@@ -217,7 +217,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
   The no-pin and links-resolve checks pass vacuously on an empty page; 5.3 proves them. List every
   FAIL line in the commit body.
-- [ ] 5.2 Write `operations.md` per design.md:
+- [x] 5.2 Write `operations.md` per design.md:
   - the guard procedure in full;
   - every other rule as one or two sentences plus a link to its owner;
   - Rollback starts at the trait-extractor `Rollback` comment ("it states which rollback needs
@@ -243,7 +243,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
   numbers). Record the date in the commit body.
 
   Validate: 5.1 PASSes; green.
-- [ ] 5.3 Prove the content checks are not vacuous. Stage the page first (`git add`). Then run one
+- [x] 5.3 Prove the content checks are not vacuous. Stage the page first (`git add`). Then run one
   mutation at a time; each run must FAIL on exactly the targeted check:
   - delete each checked phrase or link **only inside its own section**;
   - swap two whole sections (heading and body);

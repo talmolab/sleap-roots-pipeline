@@ -98,10 +98,10 @@ Track B — Bloom trait export (B3): export jobs and routes [bloom #996](https:/
 - **Shared templates, production live (2026-10-04).** Bloom staging and prod dispatch through the
   same `sleap-roots-*` WorkflowTemplates, semaphore ConfigMap and model registry. Every
   `argo template update` (deploy *or* rollback) and every registry `production` link reaches both
-  at once. Before each one, confirm no `sleap-roots-*` Workflow is Running or Pending (by
-  `.status.phase`), and run `check_cluster_drift.sh` before and after. The idle check is
-  point-in-time now that prod users can start runs. Switching prod's trigger off is not a pause:
+  at once. Before each one, follow the guard in the [production runbook](operations.md)
+  (its "Before any change to the cluster" section). Switching prod's trigger off is not a pause:
   it fails every batch the worker claims and takes a container restart (`docs/cluster-identities.md`).
+  *[Updated 2026-10-22: the guard steps moved to the runbook (#132).]*
 - **Argo stays** — orchestration remains declarative YAML.
 - **Warm predict worker + stateless traits jobs** — avoid per-scan model reload.
 
@@ -507,11 +507,13 @@ order:
     - **Re-baseline the A4 "0 GPU pods" oracle** on the current SHAs, after the first real run
       following the 2026-10-04 traits `sha-e45b6bf` deploy (carried from the 2026-10-02 deploy
       entry's "Still to do"; any earlier baseline is stale; no completion is recorded).
-    - **No prod runbook exists:** [#132](https://github.com/talmolab/sleap-roots-pipeline/issues/132)
-      (filed 2026-10-04) proposes `docs/bloom-integration/operations.md`, collecting the rollback
-      orders (item 3: predict first; item 6: unlink first), the drift check,
-      the #106/#127/#128 operator rules, item 5's stage-root precondition, and who watches failed
-      runs (with #18 closed, nobody is alerted on failure; the run panel shows it).
+    - **The prod runbook:** [operations.md](operations.md)
+      ([#132](https://github.com/talmolab/sleap-roots-pipeline/issues/132)). It holds the guard
+      for any change to the shared templates or registry, and links the rest: the rollback
+      orders (the trait-extractor comment says when predict goes first), the stage-root and Secret
+      preconditions, the #106/#127/#128 rules, and where a failed run's evidence lives. With #18
+      closed, nobody is alerted, and a Bloom run's Workflow and logs are gone within
+      `WORKFLOWS_K8S_TTL_SECONDS` ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)).
 
 **Closed since the 2026-10-01 review** (owner's calls and the bloom#900 fix, all 2026-10-01):
 

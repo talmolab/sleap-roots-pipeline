@@ -176,7 +176,9 @@ You can run the pipeline on the Run:AI GPU cluster using the Argo Server exposed
 >
 > ⚠️ This namespace is shared by Bloom's staging **and** production dispatch. An
 > `argo template create`/`update` here affects both environments' future runs — see
-> [Cluster identities](docs/cluster-identities.md).
+> [Cluster identities](docs/cluster-identities.md). Before any `argo template update`, including
+> the one `runai_run_pipeline.sh` runs, follow the guard in the
+> [production runbook](docs/bloom-integration/operations.md).
 
 ### ▶️ One-Time Setup
 
@@ -306,7 +308,8 @@ argo submit sleap-roots-pipeline.yaml --parameter scan-ids=<id1>,<id2> --watch
 > A Bloom-dispatched Workflow is deleted at most `WORKFLOWS_K8S_TTL_SECONDS` (default 3600) after
 > it completes, and its pods and logs may go sooner
 > ([#137](https://github.com/talmolab/sleap-roots-pipeline/issues/137)). The commands below work
-> only inside that window; hand-submitted Workflows carry no TTL.
+> only inside that window; hand-submitted Workflows carry no TTL. For a Bloom-dispatched run, start
+> at the [production runbook's "When a run fails"](docs/bloom-integration/operations.md#when-a-run-fails).
 
 ```bash
 argo list -n runai-busch-lab
