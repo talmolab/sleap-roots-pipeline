@@ -2,7 +2,7 @@
 
 Red-first (`openspec/project.md`, "tasks.md conventions"; `/tdd`).
 
-**Each numbered section 1–5 is one commit.** Its first task adds assertions to
+**Each numbered section 1–5 is one commit; section 8 is four (8.1–8.3, 8.4, 8.5, 8.6–8.7).** Its first task adds assertions to
 `scripts/check_docs.py` and runs the suite; the run must be red for the stated reason. Its second
 task edits the docs to green. The commit holds both, the quoted FAIL lines go in its body, and the
 section's tasks are ticked in it. **Never commit a red suite.**
@@ -26,7 +26,8 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 - [x] 0.1 Commit this change directory after user approval, before any `check_docs.py` edit. The
   commit body records:
-  - the two `/review-openspec` rounds: 2026-10-04 (BLOCKED) and 2026-10-16 (BLOCKED, then revised);
+  - the three `/review-openspec` rounds: 2026-10-04 (BLOCKED), 2026-10-16 (BLOCKED, then revised),
+    and round 3 (nothing blocking);
   - the owner's scope decision, option (a), 2026-10-16.
 
 ## 1. Shared-tree hazards (cluster-access-docs Req 2: The no-run-id rule covers both shared trees)
@@ -235,7 +236,7 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
   - `openspec/project.md` "Live acceptance": link the page.
 
   Also update `.claude/commands/test.md`'s table of files the suites read. Add `operations.md`,
-  `tdd.md`, the 2026-09-21 design spec, the two templates,
+  `tdd.md`, the 2026-09-21 design spec, the templates,
   `runai_run_pipeline.sh` and the roadmap (missing already).
 
   Before committing, re-check every factual claim on the page against its source or live state,
@@ -260,13 +261,14 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 ## 6. Gate (commit `docs(openspec): record the pre-merge sweep for add-production-runbook (#132)`)
 
 - [x] 6.1 Run the suite: all PASS.
-- [x] 6.2 Run `/lint` (two template comments changed): clean.
+- [x] 6.2 Run `/lint` (template comments changed): clean.
 - [x] 6.3 Run `uvx codespell` over every changed file.
 - [x] 6.4 Run `openspec validate add-production-runbook --strict` and
   `openspec validate --all --strict`.
 - [x] 6.5 Check the merge base: `git fetch origin && git merge-base --is-ancestor origin/main HEAD`.
 - [x] 6.6 Check the `*.yaml` scope: `git diff --name-only origin/main...HEAD -- '*.yaml'` lists only
-  the trait-extractor and predictor templates, and 4.2's parsed-YAML check passes for both.
+  the trait-extractor and predictor templates (and, after 8.4, images-downloader), and 4.2's
+  parsed-YAML check passes for each.
 - [x] 6.7 Run `/docs-review`.
 
 ## 7. After merge (not in this PR)
@@ -280,7 +282,8 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 ## 8. PR #140 review fixes (in this PR, before merge)
 
 - [x] 8.1 Assert the guard's safety properties and the review's claim fixes. Red before the edits:
-  the guard property list (9 missing), the launcher header, the Rollback layer restatement,
+  the guard property list (recorded as 9 missing; 11 once fail-closed was split per clause and the
+  templateRef column got its own key, before the commit), the launcher header, the Rollback layer restatement,
   "predict writes the legacy manifest" (SKILL, page, roadmap), bloom#1042's fix, and the
   predictor and trait-extractor rollback comments. Also widen the idle-restatement check from the
   literal "Running or Pending", and normalise the cumulative-manifest scan.
@@ -299,4 +302,19 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 - [x] 8.3 Mutation-prove the new checks. Each mutation produced exactly one FAIL on its target,
   after two vacuous checks found this way were tightened.
 - [x] 8.4 Retire the below-a9-floor rollback (owner decision (b), 2026-10-22), red first (next
-  commit).
+  commit `a7c90ff`).
+- [x] 8.5 Review round 2: the launcher's header recipe and README's callout no longer present it as a
+  deploy path. The retirement sweep now also marks the predictor's 2026-09-24 paragraph, the
+  roadmap's A3 pointer and row 6. Roadmap item 3's rollback is scoped and names `latest`.
+  bloom#1042's fix is stated as deployed. The per-run design spec's manifest-writer claim is fixed.
+  Red first (9 FAILs, in the commit body).
+- [x] 8.6 Review round 2:
+  - **Guard:** `srp_idle` also matches steps and `workflowTemplateRef` references. Step 1 checks
+    for an up-to-date clean `main`. The rollback copy is a fail-closed loop. An emergency restore is
+    separate from a planned re-pin PR. bloomctl reverts in the reverse order.
+  - **Checks:** guard properties are function-scoped. `idle_restated` matches either order. The
+    Rollback layers check is structural. The manifest-writer scan is broadened.
+  - **Spec and artifacts:** scenarios cover each check, and the stale artifact counts are fixed.
+  - **Proof:** red first, and the snippets were run verbatim, read-only, live.
+- [x] 8.7 "unlink names `latest`" was a regression lock, not red-first: the fact was already
+  true when the check was added.

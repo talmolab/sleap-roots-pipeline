@@ -3,8 +3,9 @@
 ## Context
 
 #132 asks for one page. Most of its content already exists, in sources that have owners and are
-kept current by their own process. Two `/review-openspec` rounds shaped this design. Round 1
-(2026-10-04) and round 2 (2026-10-16) were both BLOCKED, then revised. They found five problems:
+kept current by their own process. Three `/review-openspec` rounds shaped this design. Round 1
+(2026-10-04) and round 2 (2026-10-16) were both BLOCKED, then revised; round 3 found nothing
+blocking, and its three IMPORTANT findings were applied. The first two rounds found five problems:
 
 - "Predict first" is not a general rollback rule.
 - Two standing procedures disagree with the page: `/tdd` step 3 has no idle check, and the
@@ -70,10 +71,10 @@ the page.
 correction, roadmap 2026-10-05 entry). That fact goes into the comment, since the comment owns the
 procedure.
 
-**Below the a9 floor.** Retired by the owner on 2026-10-22, after the PR #140 review found that
-the sources still offered it. That is not offered as a rollback. It reverses row 6, and its pre-a9 writer
-would start a new cumulative legacy manifest in `bloom_cyl_pipeline/prod`, which never had one, so
-there is nothing to restore.
+**Below the a9 floor.** Retired by the owner on 2026-10-22, after the PR #140 review found the
+sources still offered it. It reverses row 6, and its pre-a9 writer would start a new cumulative
+legacy manifest in `bloom_cyl_pipeline/prod`, which never had one, so there is nothing to restore.
+Recovery from a broken a9-era image is an earlier a9 target or a fix-forward.
 
 ### Failure evidence: the TTL window
 
@@ -86,7 +87,8 @@ Verified read-only:
   Hand-submitted Workflows carry none.
 - **Unreadable.** The controller's podGC default can't be read, so pods may go sooner.
 
-The page therefore says "at most", names the variable, links #137, and copies no number.
+The page therefore says "at most", names the variable and links #137. It gives the shipped
+default only in words ("an hour"), as Bloom's default, not as the live value.
 
 ### Spec placement
 
@@ -120,7 +122,8 @@ claim-wide correction that lives in a spec rather than a doc, so it can't be ass
 - The status dashboard, while #136 is open on it. Post-merge.
 - runai SKILL §8. Its "Mount error" row is about `runai workspace --host-path`, whose volume type
   isn't verified here. Its pod-log row is about a running pod, inside any TTL.
-- Any cluster, Bloom or registry write. The two template edits are comments, and the parsed YAML is
+- Any cluster, Bloom or registry write. The three template edits (predictor, trait-extractor, images-downloader) are comments, and the
+parsed YAML is
   unchanged.
 
 ## Risks

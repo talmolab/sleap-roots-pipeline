@@ -13,8 +13,9 @@ The repository SHALL have one operator page for running the pipeline in producti
 6. "Standing operator rules"
 
 **The guard procedure.** The page SHALL be the canonical statement of the guard procedure for a
-change that reaches both environments: an `argo template update`, `runai_run_pipeline.sh`, or a
-registry `production` link. The semaphore retune is owned by the ConfigMap's header and is outside
+change that reaches both environments: an `argo template update` or `create`, or a registry
+`production` link. The page, README and the launcher's header SHALL say that
+`runai_run_pipeline.sh` is not a deploy path. The semaphore retune is owned by the ConfigMap's header and is outside
 the guard. Three places SHALL link to the page for the idle guard and SHALL NOT restate the idle
 condition:
 
@@ -59,9 +60,18 @@ capability's rule against parity claims.
   `openspec/project.md`'s "Live acceptance" bullet each link to the page
 - **AND** the guard is a function that fails closed when the Workflow list or its filter fails,
   counts a Workflow with no phase as in flight, and matches hand-submitted runs by `templateRef`
-- **AND** it says `runai_run_pipeline.sh` is not a deploy path
+- **AND** inside the `srp_idle` function it runs under `pipefail`, fails closed when the list or the
+  filter fails, counts a Workflow with no phase as in flight, and lists DAG, steps and
+  `workflowTemplateRef` template references
+- **AND** it checks for an up-to-date clean `main`, chains `srp_idle && argo template update`, copies
+  each template in one loop that fails closed, gives the digest read-back command, and separates an
+  emergency restore from a planned re-pin PR
+- **AND** a registry link takes steps 2 and 8
+- **AND** the page, README's callout and "Run the Pipeline" section, and the launcher's header each
+  say `runai_run_pipeline.sh` is not a deploy path, and the launcher's header has no batch
+  template-update recipe
 - **AND** the roadmap's hard constraint, `tdd.md` and `openspec/project.md` don't restate the idle
-  condition in any phrasing
+  condition as a phase list (Running and Pending, in either order), `.status.phase` or "no phase"
 
 #### Scenario: Switching production off is not presented as a pause
 
@@ -84,6 +94,7 @@ capability's rule against parity claims.
 - **WHEN** `scripts/check_docs.py` scans the page
 - **THEN** it links this repo's issues #63, #106, #109, #127, #128 and #137
 - **AND** it links Bloom issues #857, #859, #939 and #1042
+- **AND** it states bloom#1042's fix (Bloom PRs #1045 and #1048) as deployed, linking both PRs
 
 #### Scenario: No pin, digest or commit SHA is hard-coded
 
@@ -147,7 +158,24 @@ environment a rule that applies to both.
   the images-downloader header's restore line and the predictor's below-floor sentence
 - **THEN** each carries the "retired 2026-10-22" marker
 
+#### Scenario: Rollback sends the operator to the owners, in scope
+
+- **WHEN** `scripts/check_docs.py` reads the page's "Rollback" section and the rollback comments
+- **THEN** the page's step 2 is a pointer to the trait-extractor comment, not a list of layers
+- **AND** bloomctl goes to the last `Rollback target:`, reverting in the reverse of the deploy order
+- **AND** the page states the below-a9-floor rollback as retired on 2026-10-22
+- **AND** the predictor comment scopes predict-first to undoing bloom#971 phase 1, and the
+  trait-extractor comment starts with step (0), the idle check
+- **AND** the roadmap's frontier item 3 rollback bullet is scoped the same way
+
+#### Scenario: Manifest writers are stated as observed
+
+- **WHEN** `scripts/check_docs.py` scans runai SKILL, the runbook, the roadmap and the 2026-09-21
+  design spec
+- **THEN** none says predict or traits writes, creates or starts a legacy run manifest
+
 #### Scenario: The unlink procedure names its side effect
 
 - **WHEN** `scripts/check_docs.py` reads the trait-extractor template's rollback comment
-- **THEN** a sentence that names `unlink()` also names `candidate`
+- **THEN** a sentence that names `unlink()` also names `candidate`, and one names `latest`
+- **AND** the roadmap's frontier item 3 names `latest` too

@@ -6,16 +6,17 @@ section. For everything else it gives the rule in a sentence or two and links th
 the detail. Follow the link rather than a copy: the sources are kept current, and this page
 deliberately holds no image tags, digests or commit SHAs.
 
-**Where to run the commands.** Use an interactive WSL shell under the `argo-user` kubeconfig:
+**Where to run the commands.** Use an interactive WSL shell under the `argo-user` kubeconfig, in
+your clone of this repo:
 
 ```bash
 export PATH=$HOME/bin:$PATH KUBECONFIG=$HOME/.kube/kubeconfig-runai-busch-lab-argo-user.yaml
-cd /mnt/c/repos/sleap-roots-pipeline   # an up-to-date main checkout
+cd /mnt/c/repos/sleap-roots-pipeline   # your clone; adjust the path
 ```
 
-Don't paste the snippets through `wsl -e bash -c "…"` from PowerShell. PowerShell expands the `$`s
-first, and the idle check would then silently pass. Where the CLIs live is in
-[the runai skill, §1a](../../.claude/skills/runai/SKILL.md).
+WSL's git can't use a worktree created from Windows; use a clone. Paste the snippets into that
+shell, not through `wsl -e bash -c "…"` from PowerShell: PowerShell expands `$` inside double
+quotes first. Where the CLIs live is in [the runai skill, §1a](../../.claude/skills/runai/SKILL.md).
 
 ## Before any change to the cluster
 
@@ -24,7 +25,7 @@ ConfigMap and the same model registry (see
 [Cluster identities → Namespace facts that bite](../cluster-identities.md#namespace-facts-that-bite)).
 So two kinds of change reach **both** environments at once:
 
-- **Template updates.** Every `argo template update`, whether a deploy or a rollback.
+- **Template updates.** Every `argo template update` or `create`, whether a deploy or a rollback.
 - **Registry links.** Every registry `production` link or unlink.
 
 Retuning the semaphore limits is separate; its procedure is in the
@@ -37,23 +38,28 @@ when the drift check already reports `IN SYNC`.
 
 The guard:
 
-1. **Work from `main`.** Never register a template from an unmerged branch. The drift check
-   compares the cluster against your checkout, so the checkout must be an up-to-date `main`.
-2. **Confirm nothing is in flight.** Prod users can dispatch at any time.
-   - Read each Workflow's `.status.phase`.
-   - Count a Workflow with no phase as in flight.
-   - Match on the templates it references, not only its name, so a hand-submitted run on the same
-     templates counts.
-   - Fail closed if the list itself fails.
+1. **Work from an up-to-date, clean `main`.** Never register a template from an unmerged branch.
+   A clone may be shared and on another branch, and the drift check silently compares against
+   whatever is checked out, so check:
 
-   Don't line-count `argo list --running -o name`: it prints `No workflows found` when there are
-   none, which once aborted a deploy on a false positive (roadmap status log, 2026-10-02
-   (deploy)). Define this once per shell:
+   ```bash
+   git fetch -q origin && [ "$(git rev-parse --abbrev-ref HEAD)" = main ] && [ -z "$(git status --porcelain)" ] \
+     && [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] && echo "on up-to-date main" \
+     || echo "NOT an up-to-date clean main: stop" >&2
+   ```
+
+2. **Confirm nothing is in flight.** `srp_idle` passes only when no `sleap-roots` Workflow is
+   Running, Pending or still without a phase. It counts a Workflow by its name or by the templates
+   it references (DAG, steps, or `workflowTemplateRef`), so a hand run on the same templates
+   counts. It fails closed if the list or the filter fails. (Don't line-count
+   `argo list --running -o name`: it prints `No workflows found` when there are none, which once
+   aborted a deploy on a false positive; roadmap status log, 2026-10-02 (deploy).) Define it once
+   per shell:
 
    ```bash
    srp_idle() (
      set -o pipefail
-     rows=$(kubectl get workflows -n runai-busch-lab -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.spec.templates[*].dag.tasks[*].templateRef.name}{"\n"}{end}') \
+     rows=$(kubectl get workflows -n runai-busch-lab -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.phase}{"\t"}{.spec.templates[*].dag.tasks[*].templateRef.name} {.spec.templates[*].steps[*][*].templateRef.name} {.spec.workflowTemplateRef.name}{"\n"}{end}') \
        || { echo "could not list workflows: NOT checked" >&2; return 1; }
      busy=$(printf '%s\n' "$rows" | awk -F'\t' '($1 ~ /^sleap-roots-/ || $3 ~ /(^| )sleap-roots-/) && ($2=="" || $2=="Running" || $2=="Pending")') \
        || { echo "filter failed: NOT checked" >&2; return 1; }
@@ -63,13 +69,17 @@ The guard:
    srp_idle
    ```
 
-   This can't see a batch Bloom has claimed but not yet submitted. Step 8 covers that window.
-3. **Save a rollback copy** of each template you will change, outside the repo:
+   It can't see a batch Bloom has claimed but not yet submitted, or a hand run with inlined images
+   under another name. Step 8 covers the first.
+3. **Save a rollback copy** of each template you will change, outside the repo. List the
+   templates by name:
 
    ```bash
-   d=~/srp-rollback/$(date +%Y%m%dT%H%M%S); mkdir -p "$d"
-   kubectl get workflowtemplate <name> -n runai-busch-lab -o yaml > "$d/<name>.yaml" \
-     && [ -s "$d/<name>.yaml" ] || echo "ROLLBACK COPY FAILED" >&2
+   d=~/srp-rollback/$(date +%Y%m%dT%H%M%S); mkdir -p "$d"; echo "rollback dir: $d"
+   for n in sleap-roots-predictor-template; do
+     kubectl get workflowtemplate "$n" -n runai-busch-lab -o yaml > "$d/$n.yaml" && [ -s "$d/$n.yaml" ] \
+       || { echo "ROLLBACK COPY FAILED: $n (do not proceed)" >&2; rm -f "$d/$n.yaml"; }
+   done
    ```
 
 4. **Run the drift check:** `bash scripts/check_cluster_drift.sh`. Expect `DRIFT` only on the
@@ -80,17 +90,18 @@ The guard:
    the same command:
 
    ```bash
-   srp_idle && argo template update <file> -n runai-busch-lab
+   srp_idle && argo template update sleap-roots-predictor-template.yaml -n runai-busch-lab
    ```
 
    Some pairs must not be applied in the wrong order. For example, write-back goes before
-   images-downloader on a bloomctl bump that changes the manifest writer.
-6. **Read back what is live.** For each changed template, compare the live image with the repo.
-   On the predictor or trait-extractor, also compare `SRP_PREDICT_CONTAINER_DIGEST` or
-   `SRT_TRAITS_CONTAINER_DIGEST`:
+   images-downloader on a bloomctl bump that changes the manifest writer. A template's first
+   registration is `argo template create`; the drift check reports it `NOT REGISTERED` before.
+6. **Read back what is live.** The drift check in step 7 compares the whole template, so this is a
+   human check that the tag and digest pair up. On the predictor or trait-extractor, it also
+   prints `SRP_PREDICT_CONTAINER_DIGEST` or `SRT_TRAITS_CONTAINER_DIGEST`:
 
    ```bash
-   kubectl get workflowtemplate <name> -n runai-busch-lab -o jsonpath='{.spec.templates[0].container.image}{"\n"}{range .spec.templates[0].container.env[?(@.name=="SRP_PREDICT_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}{range .spec.templates[0].container.env[?(@.name=="SRT_TRAITS_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}'
+   kubectl get workflowtemplate sleap-roots-predictor-template -n runai-busch-lab -o jsonpath='{.spec.templates[0].container.image}{"\n"}{range .spec.templates[0].container.env[?(@.name=="SRP_PREDICT_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}{range .spec.templates[0].container.env[?(@.name=="SRT_TRAITS_CONTAINER_DIGEST")]}{.name}={.value}{"\n"}{end}'
    ```
 
 7. **Run the drift check again.** Expect `IN SYNC` for every template and the ConfigMap. The
@@ -98,8 +109,15 @@ The guard:
 8. **Run `srp_idle` again.** The idle check holds only for the moment it ran. If a run started
    during the change, note which images it ran.
 
-**To restore a rollback copy:** `argo template update "$d/<name>.yaml" -n runai-busch-lab`. Run
-it through steps 2 and 4–8, like any other change.
+**A planned rollback is an ordinary change:** re-pin in a PR, merge it, then run the guard.
+
+**An emergency restore of a rollback copy** comes ahead of that revert PR, and only when waiting for
+a merge would do more harm:
+`srp_idle && argo template update "$d/<name>.yaml" -n runai-busch-lab`, then steps 6 and 8. `$d`
+is the directory step 3 printed; in a new shell, find it with `ls -d ~/srp-rollback/*`. The update
+takes the live `resourceVersion`, so the stale one in the copy is accepted. The drift check now
+reports `DRIFT` on that template against `main`. That is expected, and it can't gate other
+changes until the revert PR merges, so open the revert PR at once.
 
 **A registry `production` link or unlink takes steps 2 and 8:** `srp_idle` immediately before the
 link and again right after. The link's own procedure lives with the training repo's issue for it,
@@ -128,7 +146,8 @@ Run the guard and choose a quiet moment instead.
 3. **For bloomctl:** the exit-gate, images-downloader and write-back templates move together.
    Roll them back to the **last** `Rollback target:` in the
    [`sleap-roots-images-downloader-template.yaml`](../../sleap-roots-images-downloader-template.yaml)
-   header, in the order that bump's paragraph gives.
+   header. That bump's paragraph says whether order matters; where it gives a deploy order, roll
+   back in the reverse order.
 4. **Never go below the a9 floor.** That rollback was retired on 2026-10-22, because a pre-a9
    bloomctl image would start a cumulative legacy `run_manifest.json` in both environments' trees
    (roadmap, "Step 7 … is hardening", the "Deliberate" bullet: [roadmap](roadmap.md)). Recover from

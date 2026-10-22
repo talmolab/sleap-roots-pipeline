@@ -691,7 +691,9 @@ def main() -> int:
         True,
     )
     # The idle condition, in any phrasing, belongs on the runbook only.
-    idle_restated = re.compile(r"Running\W+(?:or\W+)?Pending|\.status\.phase|no phase", re.IGNORECASE)
+    idle_restated = re.compile(
+        r"(?:Running|Pending)\W+(?:(?:or|and)\W+)?(?:Running|Pending)|\.status\.phase|no phase", re.IGNORECASE
+    )
     hard = between("roadmap hard constraint", roadmap, "**Shared templates, production live", "- **Argo stays**")
     check("roadmap hard constraint: links the runbook", bool(re.search(r"\]\((\./)?operations\.md", hard)), True)
     check("roadmap hard constraint: no idle restatement", bool(idle_restated.search(hard)), False)
@@ -728,21 +730,29 @@ def main() -> int:
     # The guard itself (PR #140 review). Its safety properties, not only its tokens: it fails
     # closed, counts a Workflow with no phase as in flight, sees hand-submitted runs on the same
     # templates (matched by templateRef, not only by name), and chains into each update.
+    # Function-scoped where it matters (review round 2): a property stated only in prose, or a
+    # clause moved outside srp_idle's body, does not count.
+    fn = between("srp_idle body", before, "srp_idle() (", "\n   )\n")
     guard_props = {
-        "is a function, not an exit-ing paste": "srp_idle()" in before,
-        "runs under pipefail": "set -o pipefail" in before,
-        "fails closed on a failed list": bool(
-            re.search(r'\|\|\s*\{ echo "could not list workflows[^}]*return 1', before)
-        ),
-        "fails closed on a failed filter": bool(re.search(r'\|\|\s*\{ echo "filter failed[^}]*return 1', before)),
-        "counts a Workflow with no phase as in flight": '$2==""' in before,
-        "lists each Workflow's templateRefs": ".dag.tasks[*].templateRef.name}" in before,
-        "matches hand-submitted runs by templateRef": "$3 ~ /(^| )sleap-roots-/" in before,
+        "is a subshell function, not an exit-ing paste": "srp_idle() (" in before,
+        "runs under pipefail": "set -o pipefail" in fn,
+        "fails closed on a failed list": bool(re.search(r'\|\|\s*\{ echo "could not list workflows[^}]*return 1', fn)),
+        "fails closed on a failed filter": bool(re.search(r'\|\|\s*\{ echo "filter failed[^}]*return 1', fn)),
+        "counts a Workflow with no phase as in flight": '$2==""' in fn,
+        "lists DAG templateRefs": ".dag.tasks[*].templateRef.name}" in fn,
+        "lists steps templateRefs": ".steps[*][*].templateRef.name}" in fn,
+        "lists a workflowTemplateRef": "{.spec.workflowTemplateRef.name}" in fn,
+        "matches hand-submitted runs by templateRef": "$3 ~ /(^| )sleap-roots-/" in fn,
         "chains into each update": "srp_idle && argo template update" in before,
-        "checks the rollback copy is non-empty": "[ -s " in before,
+        "verifies an up-to-date clean main": "git rev-parse origin/main" in before,
+        "copies each template in one loop": "for n in" in before,
+        "rollback copy fails closed and removes an empty file": bool(
+            re.search(r'\|\|\s*\{ echo "ROLLBACK COPY FAILED[^}]*rm -f', before)
+        ),
         "gives the digest read-back command": "env[?(@.name==" in before,
-        "says the launcher is not a deploy path": "not a deploy path" in before,
+        "says the launcher is not a deploy path": "**`runai_run_pipeline.sh` is not a deploy path.**" in before,
         "a registry link takes steps 2 and 8": "steps 2 and 8" in before,
+        "separates an emergency restore from a planned re-pin": "emergency" in before and "revert PR" in before,
     }
     check(
         "operations.md guard: properties missing",
@@ -752,17 +762,25 @@ def main() -> int:
     launcher_note = comment_block(LAUNCHER, "NOTE: `runai-busch-lab`")
     check("runai_run_pipeline.sh header: says it is not a deploy path", "not a deploy path" in launcher_note, True)
     # Rollback links its owner instead of restating the layers.
+    # Step 2 defers to the trait-extractor comment: no nested list of layers, kept short.
+    step2 = between("Rollback step 2", rollback, "For the predictor and trait-extractor", "3. **For bloomctl")
+    check("operations.md 'Rollback' step 2: does not list the layers", bool(re.search(r"\n\s+- ", step2)), False)
+    check("operations.md 'Rollback' step 2: stays a pointer (< 700 chars)", len(step2) < 700, True)
+    check("operations.md 'Rollback': bloomctl goes to the last Rollback target", "**last** `Rollback target:`" in rollback, True)
+    check("operations.md 'Rollback': bloomctl reverts in the reverse of the deploy order", "reverse order" in rollback, True)
     check(
-        "operations.md 'Rollback': does not restate the rollback layers",
-        bool(re.search(r"traits alone|predict first", rollback)),
-        False,
+        "operations.md 'Rollback': the below-a9-floor rollback is retired",
+        bool(re.search(r"Never go below the a9 floor\.\*\* That rollback was retired on 2026-10-22", norm(rollback))),
+        True,
     )
     # Only bloomctl creates a run manifest; predict and traits forward one that is present
     # (sleap-roots-predict run_manifest.copy_run_manifest_forward), else run unscoped.
     predict_writes = re.compile(
-        r"predict writes the legacy|Such a run writes the legacy"
+        r"\b(?:predict|traits)\b[^.]{0,40}\b(?:writes|creates|starts)\b[^.]{0,30}\b(?:legacy|run_manifest)"
+        r"|Such a run writes the legacy"
         r"|predict or traits run \*\*outside Argo\*\* has no run identity, so it writes"
-        r"|runs outside Argo still write `run_manifest\.json`"
+        r"|runs outside Argo still write `run_manifest\.json`",
+        re.IGNORECASE,
     )
     check(
         "no doc says predict or traits writes the legacy manifest",
