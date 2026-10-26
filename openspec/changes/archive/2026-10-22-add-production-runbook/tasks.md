@@ -273,10 +273,15 @@ not a mention. No live-cluster behavior changes, so there is no red baseline or 
 
 ## 7. After merge (not in this PR)
 
-- [ ] 7.1 A post-merge PR adds the roadmap status-log entry, archives the change, and applies both
-  deltas to the specs (#129 pattern).
-- [ ] 7.2 After #136 merges, refresh the dashboard's #132 card.
-- [ ] 7.3 `tdd.md`, `ci-debug.md` and `test.md` are rendered from the vault's canonical command templates.
+- [x] 7.1 A post-merge PR adds the roadmap status-log entry, archives the change, and applies both
+  deltas to the specs (#129 pattern). Done in the archive PR after #140 merged as `42a6f17`.
+
+**Follow-ups outside this change** (not tasks of it, so not checkboxes; each is open as of
+2026-10-22):
+
+- After #136 merges, refresh the status dashboard's #132 card, which still says there is no
+  runbook.
+- `tdd.md`, `ci-debug.md` and `test.md` are rendered from the vault's canonical command templates.
   Port the repo-specific edits there, or confirm the re-render keeps them.
 
 ## 8. PR #140 review fixes (in this PR, before merge)
