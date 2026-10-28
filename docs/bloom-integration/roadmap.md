@@ -1033,8 +1033,8 @@ Adversarial 4-lens review. Resolutions:
   [training#85](https://github.com/talmolab/sleap-roots-training/pull/85), which
   records the publish that completed training#3; `production` unchanged at 11). Promotion is gated in
   [training#84](https://github.com/talmolab/sleap-roots-training/issues/84). A new **A3-plates** row
-  collects the plate path's pieces, which were scattered: predict#19 and #25, sleap-roots#126 and
-  #252, and Bloom dispatch, filed today as
+  collects the plate path's pieces, which were scattered: predict#19 and predict#25, sleap-roots#126 and
+  sleap-roots#252, and Bloom dispatch, filed today as
   [bloom#1162](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1162). The plate age
   window (cards 2–7 days, traits 7–14) is undecided and has no issue. Medicago plate models are now
   tracked in [training#86](https://github.com/talmolab/sleap-roots-training/issues/86), and the circumnutation
