@@ -1033,7 +1033,7 @@ Adversarial 4-lens review. Resolutions:
   which completes training#3; `production` unchanged at 11). Promotion is gated in
   [training#84](https://github.com/talmolab/sleap-roots-training/issues/84). A new **A3-plates** row
   collects the plate path's pieces, which were scattered: predict#19, sleap-roots#126/#252/#274, and
-  Bloom dispatch, which has no issue yet. Medicago and circumnutation models are now tracked in
+  Bloom dispatch, now [bloom#1162](https://github.com/Salk-Harnessing-Plants-Initiative/bloom/issues/1162). Medicago and circumnutation models are now tracked in
   [training#86](https://github.com/talmolab/sleap-roots-training/issues/86) and
   [training#87](https://github.com/talmolab/sleap-roots-training/issues/87).
 - **2026-10-22 (production runbook)** — **The prod runbook is merged:
